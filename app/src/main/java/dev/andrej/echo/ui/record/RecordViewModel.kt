@@ -15,12 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-/**
- * One language the device offers.
- *
- * @param installed true when the model is already on the phone and can be used right away;
- *   false when the device supports it but the model still has to be downloaded.
- */
+/** @param installed false means the device supports it but the model must be downloaded first. */
 data class LanguageOption(
     val tag: String,
     val label: String,
@@ -29,24 +24,19 @@ data class LanguageOption(
 
 data class RecordUiState(
     val isRecording: Boolean = false,
-    /** Speech that has settled and will not change. */
     val committedText: String = "",
-    /** The recognizer's current guess, replaced as it refines. */
     val partialText: String = "",
     val level: Float = 0f,
     val languages: List<LanguageOption> = emptyList(),
     val language: LanguageOption? = null,
-    /** Set while a language model download is in flight. */
     val downloadingLanguage: String? = null,
     val availability: Availability = Availability.Available,
     val error: FailureReason? = null,
 ) {
-    /** What the user sees: settled words plus the guess currently in flight. */
     val displayText: String = listOf(committedText, partialText)
         .filter { it.isNotBlank() }
         .joinToString(" ")
 
-    /** Recording is only possible once the chosen language's model is on the device. */
     val canRecord: Boolean = availability is Availability.Available && language?.installed == true
 }
 
@@ -69,12 +59,6 @@ class RecordViewModel(
         refreshLanguages()
     }
 
-    /**
-     * Asks the device which languages it can transcribe, and picks one that actually works.
-     *
-     * Worth calling again after a model download: the newly installed language only shows up
-     * in a fresh support query.
-     */
     fun refreshLanguages() {
         viewModelScope.launch {
             val support = engine.languageSupport()
@@ -82,8 +66,6 @@ class RecordViewModel(
                 LanguageOption(tag = tag, label = tag.displayName(), installed = tag in support.installed)
             }
 
-            // Prefer the remembered language, but only if the device still offers it; otherwise
-            // fall back to something installed so the app is usable without a download.
             val remembered = options.firstOrNull { it.tag == settings.languageTag }
             val selected = remembered
                 ?: options.firstOrNull { it.installed }
@@ -105,8 +87,6 @@ class RecordViewModel(
         settings.languageTag = tag
         _uiState.value = _uiState.value.copy(language = option, error = null)
 
-        // A language the device supports but has not downloaded is useless until the model
-        // arrives, so ask the system for it rather than failing when the user hits record.
         if (!option.installed) {
             engine.requestModelDownload(tag)
             _uiState.value = _uiState.value.copy(downloadingLanguage = tag)
@@ -118,7 +98,6 @@ class RecordViewModel(
 
         val language = _uiState.value.language ?: return
         if (!language.installed) {
-            // Nothing to record with yet. The download was already requested in setLanguage.
             engine.requestModelDownload(language.tag)
             _uiState.value = _uiState.value.copy(downloadingLanguage = language.tag)
             return
@@ -134,7 +113,6 @@ class RecordViewModel(
 
         listenJob = viewModelScope.launch {
             engine.transcribe(language.tag).collect { event ->
-                // Once a failure has stopped the session, ignore anything still in flight.
                 if (!_uiState.value.isRecording) return@collect
 
                 _uiState.value = when (event) {
@@ -190,6 +168,5 @@ class RecordViewModel(
         if (existing.isBlank()) addition.trim() else "${existing.trim()} ${addition.trim()}"
 }
 
-/** "en-GB" becomes "English (United Kingdom)" in the user's own language. */
 private fun String.displayName(): String =
     Locale.forLanguageTag(this).getDisplayName(Locale.getDefault()).ifBlank { this }

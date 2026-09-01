@@ -38,7 +38,7 @@ class RecordViewModelTest {
     @After
     fun tearDown() = Dispatchers.resetMain()
 
-    /** A repository whose disk writes run on the test scheduler, so advanceUntilIdle covers them. */
+    // Writes run on the test scheduler so advanceUntilIdle covers them.
     private fun repository() = JsonTranscriptRepository(tempFolder.newFolder(), dispatcher)
 
     private fun viewModel(
@@ -58,8 +58,6 @@ class RecordViewModelTest {
         installed: List<String> = listOf("en-GB"),
         supported: List<String> = listOf("en-US", "de-DE"),
     ) = FakeTranscriptionEngine(events, availability, LanguageSupport(installed, supported))
-
-    // --- language selection, the source of the ERROR_LANGUAGE_UNAVAILABLE bug ---
 
     @Test
     fun `defaults to a language the device has installed`() = runTest {
@@ -92,7 +90,6 @@ class RecordViewModelTest {
 
         advanceUntilIdle()
 
-        // sl-SI is unsupported on this device, so it must not appear as a choice.
         assertFalse(viewModel.uiState.value.languages.any { it.tag == "sl-SI" })
     }
 
@@ -191,8 +188,6 @@ class RecordViewModelTest {
         assertEquals("en-US", viewModel.uiState.value.language?.tag)
         assertFalse(viewModel.uiState.value.language?.installed == true)
     }
-
-    // --- transcription behaviour ---
 
     @Test
     fun `partial text replaces the previous partial`() = runTest {

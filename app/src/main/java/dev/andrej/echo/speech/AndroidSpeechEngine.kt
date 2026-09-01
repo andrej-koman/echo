@@ -23,19 +23,8 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 
 /**
- * Transcribes speech with Android's on-device recognizer.
- *
- * Two things about [SpeechRecognizer] shape this class:
- *
- * 1. It is built for one-shot dictation — it ends the session as soon as the speaker pauses.
- *    Echo wants continuous transcription, so this class silently starts a new recognition
- *    session whenever one finishes, and keeps feeding results into the same flow. A pause is
- *    not the end of anything, and `ERROR_NO_MATCH` during silence is not a failure.
- * 2. Its methods must be called from the main thread, which is why the flow is pinned to
- *    [Dispatchers.Main].
- *
- * Only the on-device recognizer is used, so audio never leaves the phone. That API requires
- * Android 13 (API 33), which is this app's minimum.
+ * Only the on-device recognizer is used, so audio never leaves the phone. Its calls must all
+ * happen on the main thread, hence the flowOn and Handler below.
  */
 class AndroidSpeechEngine(private val context: Context) : TranscriptionEngine {
 
@@ -44,13 +33,6 @@ class AndroidSpeechEngine(private val context: Context) : TranscriptionEngine {
         else -> Availability.Available
     }
 
-    /**
-     * Asks the recognizer which languages it has and which it could download.
-     *
-     * This is what stops the app from requesting a locale the device does not hold: a phone
-     * can support en-US while only en-GB is actually installed, and asking for the missing one
-     * fails with ERROR_LANGUAGE_UNAVAILABLE.
-     */
     override suspend fun languageSupport(): LanguageSupport =
         withContext(Dispatchers.Main) {
             suspendCancellableCoroutine { continuation ->
@@ -86,12 +68,10 @@ class AndroidSpeechEngine(private val context: Context) : TranscriptionEngine {
         }
 
     override fun requestModelDownload(language: String) {
-        // Must run on the main thread like every other recognizer call.
         Handler(Looper.getMainLooper()).post {
+            // Not destroyed: destroying the client can cancel the download it just handed off.
             val recognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
             recognizer.triggerModelDownload(baseIntent(language))
-            // Not destroyed immediately: the download is handed to the system, and destroying
-            // the client too early can cancel it. It is released when the process ends.
         }
     }
 
@@ -105,8 +85,6 @@ class AndroidSpeechEngine(private val context: Context) : TranscriptionEngine {
     override fun transcribe(language: String): Flow<TranscriptionEvent> = callbackFlow {
         val recognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
 
-        // Guards the restart loop: a session that ends because the user stopped must not be
-        // restarted, and a recognizer that fails immediately must not be retried forever.
         var listening = true
         var consecutiveFailures = 0
 
@@ -129,7 +107,7 @@ class AndroidSpeechEngine(private val context: Context) : TranscriptionEngine {
             override fun onResults(results: Bundle) {
                 consecutiveFailures = 0
                 results.firstTranscript()?.let { trySend(TranscriptionEvent.Final(it)) }
-                // A result means this session is over. Immediately open the next one.
+                // SpeechRecognizer is one-shot; a result ends the session, so open the next one.
                 restart()
             }
 
@@ -137,13 +115,11 @@ class AndroidSpeechEngine(private val context: Context) : TranscriptionEngine {
                 trySend(TranscriptionEvent.Level(rmsdB))
             }
 
-            override fun onEndOfSpeech() {
-                // The speaker paused. onResults or onError follows, which handles the restart.
-            }
+            override fun onEndOfSpeech() = Unit
 
             override fun onError(error: Int) {
                 when (error) {
-                    // Silence, not a problem: keep the session alive.
+                    // Silence, not a problem.
                     SpeechRecognizer.ERROR_NO_MATCH,
                     SpeechRecognizer.ERROR_SPEECH_TIMEOUT,
                     -> restart()
@@ -158,8 +134,6 @@ class AndroidSpeechEngine(private val context: Context) : TranscriptionEngine {
                     SpeechRecognizer.ERROR_RECOGNIZER_BUSY ->
                         fail(FailureReason.RecognizerBusy)
 
-                    // Transient client/server hiccups are common across OEMs. Retry a few
-                    // times, then give up rather than spinning forever.
                     else -> {
                         consecutiveFailures++
                         Log.w(TAG, "Recognition error $error (failure $consecutiveFailures)")

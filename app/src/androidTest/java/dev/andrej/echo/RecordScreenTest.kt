@@ -23,9 +23,6 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
-/**
- * Drives the record screen against a scripted engine, so no microphone or permission is needed.
- */
 class RecordScreenTest {
 
     @get:Rule
@@ -92,7 +89,6 @@ class RecordScreenTest {
         )
         composeRule.setContent { EchoTheme { RecordScreen(viewModel(engine)) } }
 
-        // Labels are localised device names, so match on the language name rather than the tag.
         composeRule.waitUntil(timeoutMillis = 3_000) {
             composeRule.onAllNodesWithTag(TAG_LANGUAGE_ROW).fetchSemanticsNodes().isNotEmpty()
         }

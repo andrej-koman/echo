@@ -3,7 +3,7 @@ package dev.andrej.echo.data
 import android.content.Context
 
 interface SettingsStore {
-    /** The chosen speech language as a BCP-47 tag, or null before the user has picked one. */
+    /** BCP-47 tag, null before the user has picked one. */
     var languageTag: String?
 }
 

@@ -12,16 +12,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 
-/**
- * Keeps transcripts in a single JSON file inside [directory].
- *
- * The whole list is held in memory and rewritten on every change. That is fine at this scale
- * (a few hundred short text entries) and keeps the code readable; if the list ever grows
- * large enough for that to hurt, this class is the only thing that has to change.
- */
 class JsonTranscriptRepository(
     private val directory: File,
-    /** Where disk writes happen. Injectable so tests can run them on the test scheduler. */
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : TranscriptRepository {
 
@@ -70,8 +62,7 @@ class JsonTranscriptRepository(
             json.decodeFromString<List<Transcript>>(file.readText())
                 .sortedByDescending { it.createdAt }
         } catch (e: Exception) {
-            // A corrupt or half-written file must not take the app down. Starting from empty
-            // loses history, which is better than never launching again.
+            // Losing history beats never launching again.
             emptyList()
         }
     }
@@ -79,7 +70,6 @@ class JsonTranscriptRepository(
     private fun writeToDisk(transcripts: List<Transcript>) {
         directory.mkdirs()
 
-        // Write to a temporary file first so a crash mid-write cannot corrupt the real one.
         val temp = File(directory, "$FILE_NAME.tmp")
         temp.writeText(json.encodeToString(transcripts))
         temp.renameTo(file)

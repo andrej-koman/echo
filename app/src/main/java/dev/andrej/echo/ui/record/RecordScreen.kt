@@ -93,17 +93,13 @@ fun RecordScreen(
             ErrorCard(reason = reason, onDismiss = viewModel::dismissError)
         }
 
-        when (val availability = state.availability) {
+        when (state.availability) {
             is Availability.NoRecognizer -> Text(
                 text = "This device has no on-device speech recognition. " +
                     "Check Settings › System › Languages & input › On-device speech recognition.",
                 style = MaterialTheme.typography.bodyMedium,
             )
 
-            is Availability.LanguageUnavailable -> Text(
-                text = "No speech model installed for ${availability.language}.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
 
             Availability.Available -> RecordButton(
                 isRecording = state.isRecording,
@@ -128,8 +124,6 @@ private fun LanguagePicker(
     enabled: Boolean,
     onSelect: (String) -> Unit,
 ) {
-    // The list comes from the device, not from a hardcoded set: a phone may support a locale
-    // without having downloaded its model, and may not support a language at all.
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier.testTag(TAG_LANGUAGE_ROW),
@@ -194,7 +188,7 @@ private fun RecordButton(
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
-    // Android reports RMS roughly in -2..10 dB; map that to a gentle pulse.
+    // Android reports RMS roughly in -2..10 dB.
     val targetScale = if (isRecording) 1f + (level.coerceIn(0f, 10f) / 40f) else 1f
     val scale by animateFloatAsState(targetValue = targetScale, label = "recordPulse")
 

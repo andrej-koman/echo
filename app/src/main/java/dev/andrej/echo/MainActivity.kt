@@ -9,9 +9,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        val container = (application as EchoApplication).container
+
         setContent {
             EchoTheme {
-                EchoApp()
+                EchoApp(viewModelFactory = container.viewModelFactory)
             }
         }
     }

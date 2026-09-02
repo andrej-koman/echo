@@ -77,7 +77,9 @@ tokens and kit, not ported from a design.
 - Shadows are ink-tinted, never black — black reads grey against cornsilk. Use
   `Modifier.echoShadow(...)`, never `Modifier.shadow()`.
 - DM Sans (UI and display) and Space Mono (durations, timers, counts only) are bundled as static
-  TTFs in `res/font`. Icons are hand-authored VectorDrawables tracing lucide 0.454 — Material's
+  TTFs in `res/font`. The mascot is a raster `drawable-xxxhdpi/mascot_echo.png` (the polished
+  artwork), reused as the adaptive launcher foreground inside a 66dp safe-zone layer-list; the
+  monochrome launcher layer stays a vector. Icons are hand-authored VectorDrawables tracing lucide 0.454 — Material's
   filled glyphs do not match, and `material-icons-extended` is not worth its size.
 - Ambient animation (breathing, ripples, dots, shimmer) must check `LocalReducedMotion`, which
   reads `ANIMATOR_DURATION_SCALE`. It is decoration, not feedback. `Waveform` is the exception:

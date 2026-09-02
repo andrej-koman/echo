@@ -23,6 +23,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import dev.andrej.echo.auth.Account
 import dev.andrej.echo.auth.AuthState
 import dev.andrej.echo.ui.auth.AccountScreen
 import dev.andrej.echo.ui.auth.AuthViewModel
@@ -38,12 +39,14 @@ import dev.andrej.echo.ui.components.RecordButtonState
 import dev.andrej.echo.ui.components.TabBar
 import dev.andrej.echo.ui.components.TabItem
 import dev.andrej.echo.ui.detail.TranscriptDetailScreen
+import dev.andrej.echo.ui.home.HomeScreen
 import dev.andrej.echo.ui.record.RecordViewModel
 import dev.andrej.echo.ui.theme.EchoTheme
 import dev.andrej.echo.ui.transcripts.TranscriptsScreen
 import dev.andrej.echo.ui.transcripts.TranscriptsViewModel
 
 private object Routes {
+    const val HOME = "home"
     const val TASKS = "tasks"
     const val NOTES = "notes"
     const val REMINDERS = "reminders"
@@ -56,13 +59,14 @@ private object Routes {
 }
 
 private val Tabs = listOf(
+    TabItem(Routes.HOME, "Home", R.drawable.ic_home),
     TabItem(Routes.TASKS, "Tasks", R.drawable.ic_list_checks),
     TabItem(Routes.NOTES, "Notes", R.drawable.ic_file_text),
     TabItem(Routes.REMINDERS, "Reminders", R.drawable.ic_bell),
     TabItem(Routes.TRANSCRIPTS, "Transcripts", R.drawable.ic_audio_waveform),
 )
 
-private val StubTabs = Tabs.dropLast(1)
+private val StubTabs = Tabs.drop(1).dropLast(1)
 
 @Composable
 fun EchoApp(
@@ -112,13 +116,25 @@ private fun SignedInApp(
     Box(modifier = Modifier.fillMaxSize()) {
         NavHost(
             navController = navController,
-            startDestination = Routes.TASKS,
+            startDestination = Routes.HOME,
             modifier = Modifier.fillMaxSize(),
             enterTransition = { EnterTransition.None },
             exitTransition = { ExitTransition.None },
             popEnterTransition = { EnterTransition.None },
             popExitTransition = { ExitTransition.None },
         ) {
+            composable(Routes.HOME) {
+                val transcriptsViewModel: TranscriptsViewModel = viewModel(factory = viewModelFactory)
+                HomeScreen(
+                    viewModel = transcriptsViewModel,
+                    userName = (authState as? AuthState.SignedIn)?.account?.firstName(),
+                    onStartRecording = { navController.navigate(Routes.CAPTURE) },
+                    onOpenAccount = { navController.navigate(Routes.ACCOUNT) },
+                    onSeeAll = { navController.navigate(Routes.TRANSCRIPTS) },
+                    onOpen = { navController.navigate(Routes.detail(it)) },
+                )
+            }
+
             StubTabs.forEach { tab ->
                 composable(tab.route) {
                     StubTab(tab = tab, onOpenAccount = { navController.navigate(Routes.ACCOUNT) })
@@ -185,7 +201,7 @@ private fun BottomBar(
                 onSelect = { route ->
                     if (route != selected) {
                         navController.navigate(route) {
-                            popUpTo(Routes.TASKS) { saveState = true }
+                            popUpTo(Routes.HOME) { saveState = true }
                             launchSingleTop = true
                             restoreState = true
                         }
@@ -235,3 +251,6 @@ private fun StubTab(tab: TabItem, onOpenAccount: () -> Unit) {
         }
     }
 }
+
+private fun Account.firstName(): String? =
+    displayName?.trim()?.substringBefore(' ')?.takeIf { it.isNotEmpty() }

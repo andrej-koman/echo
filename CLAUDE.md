@@ -29,6 +29,7 @@ data/         Transcript, TranscriptRepository (JSON file), SettingsStore, AuthS
 auth/         AuthRepository interface + GoogleAuthRepository (Credential Manager)
 ui/theme/     OutLoud design tokens (Color, Type, Shape, Spacing, Elevation, Motion, Theme)
 ui/components/ the ported design system kit
+ui/home/      HomeScreen — greeting, capture actions, recent notes
 ui/capture/   CaptureScreen — Listening and Processing
 ui/record/    RecordViewModel (still named for its old screen)
 ui/auth/      SignInScreen, AccountScreen, AuthViewModel
@@ -39,7 +40,7 @@ AppContainer manual DI, no Hilt
 Engine sits behind an interface so a different backend (e.g. Whisper) can replace it without touching UI.
 `AuthRepository` is behind an interface for the same reason — Google is the only provider today.
 
-Four tabs: Tasks / Notes / Reminders / Transcripts. The bar is icon-only — no labels, no
+Five tabs: Home / Tasks / Notes / Reminders / Transcripts, Home the start destination. The bar is icon-only — no labels, no
 selection crossfade — and the NavHost runs with every transition set to `None`: the design's
 screen changes read as jank on device, so switching is a hard cut. `EchoApp` gates on `AuthState` outside the
 NavHost, so signing out drops the whole graph rather than unwinding a back stack.
@@ -89,6 +90,8 @@ tokens and kit, not ported from a design.
   outer spinner arc share one period; it is ambient, so it checks `LocalReducedMotion`.
   `success()` needs `VibrationEffect.EFFECT_DOUBLE_CLICK` and so needs the `VIBRATE` permission
   and its own check of `Settings.System.HAPTIC_FEEDBACK_ENABLED`.
+- Home reads its recent notes from `TranscriptsViewModel`; it has no view model of its own. Its
+  "Upload audio" and "Type a note" cards are inert — nothing implements either yet.
 - The three content tabs (Tasks / Notes / Reminders) are stubs: the design's routing of a
   transcript into notes, todos and reminders does not exist yet. `STUB_PROCESSING_DELAY_MS` in
   `RecordViewModel` is a placeholder hold so the Processing screen is visible; delete it once

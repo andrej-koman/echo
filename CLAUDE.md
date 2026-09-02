@@ -81,9 +81,16 @@ tokens and kit, not ported from a design.
   `Modifier.echoShadow(...)`, never `Modifier.shadow()`.
 - DM Sans (UI and display) and Space Mono (durations, timers, counts only) are bundled as static
   TTFs in `res/font`. The mascot is a raster `drawable-xxxhdpi/mascot_echo.png` (the polished
-  artwork), reused as the adaptive launcher foreground inside a 66dp safe-zone layer-list; the
-  monochrome launcher layer stays a vector. Icons are hand-authored VectorDrawables tracing lucide 0.454 — Material's
-  filled glyphs do not match, and `material-icons-extended` is not worth its size.
+  artwork) on a square 1024px canvas with the ghost centred in it — `Mascot` renders it with
+  `ContentScale.Fit` into a square, so a non-square canvas both shrinks and offsets him. It is
+  reused as the adaptive launcher foreground inside a 52dp layer-list box, which puts ~42dp of
+  ghost inside the 72dp launcher mask; at the old 66dp his tail clipped. The monochrome launcher
+  layer stays a vector, and its `<group>` scale/translate is tuned so its bounds match the
+  raster foreground's to within a fraction of a dp — change one and re-measure the other. The
+  launcher background is `Paper050` (`#FFFDF5`), not the app's `Paper100` page cornsilk: at
+  launcher size the darker cornsilk reads as a dull beige tile. Icons
+  are hand-authored VectorDrawables tracing lucide 0.454 — Material's filled glyphs do not
+  match, and `material-icons-extended` is not worth its size.
 - Ambient animation (breathing, ripples, dots, shimmer) must check `LocalReducedMotion`, which
   reads `ANIMATOR_DURATION_SCALE`. It is decoration, not feedback. `Waveform` is the exception:
   its bars are a scrolling history of the real mic level, so they keep moving regardless.

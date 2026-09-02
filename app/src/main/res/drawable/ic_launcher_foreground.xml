@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Adaptive foreground: the mascot inside the 66dp safe zone of the 108dp canvas. -->
+<!-- Adaptive foreground: the mascot small inside the 108dp canvas. 52dp box, and the
+     artwork fills ~81% of its own square, so the ghost reads ~42dp against the 72dp mask. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item
         android:drawable="@drawable/mascot_echo"
         android:gravity="center"
-        android:width="66dp"
-        android:height="66dp" />
+        android:width="52dp"
+        android:height="52dp" />
 </layer-list>

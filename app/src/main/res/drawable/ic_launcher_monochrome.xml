@@ -4,7 +4,8 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <group android:translateX="22" android:translateY="22" android:scaleX="0.62" android:scaleY="0.62">
+    <!-- Sized and centred to match the raster foreground: ~42dp of ghost on the 108dp canvas. -->
+    <group android:translateX="26" android:translateY="28.6" android:scaleX="0.56" android:scaleY="0.56">
         <path
             android:pathData="M14 47C14 25.5 30.1 9 50 9C69.9 9 86 25.5 86 47L86 74C86 77.6 82.1 79.9 79 78.1L74.5 75.5C72.3 74.2 69.5 74.6 67.7 76.5L64.6 79.8C62.2 82.3 58.2 82.3 55.8 79.8L53 76.9C51 74.8 47.6 74.8 45.6 76.9L42.8 79.8C40.4 82.3 36.4 82.3 34 79.8L30.9 76.5C29.1 74.6 26.3 74.2 24.1 75.5L19.6 78.1C16.5 79.9 14 77.6 14 74Z"
             android:strokeColor="#000000"

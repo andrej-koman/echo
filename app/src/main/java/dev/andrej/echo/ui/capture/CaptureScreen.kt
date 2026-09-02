@@ -59,6 +59,7 @@ import dev.andrej.echo.ui.components.RecordButton
 import dev.andrej.echo.ui.components.RecordButtonSize
 import dev.andrej.echo.ui.components.RecordButtonState
 import dev.andrej.echo.ui.components.ProcessingSpinner
+import dev.andrej.echo.ui.components.SPINNER_PERIOD_MS
 import dev.andrej.echo.ui.components.RecordRipples
 import dev.andrej.echo.ui.components.RecordingTimer
 import dev.andrej.echo.ui.components.SkeletonBar
@@ -67,6 +68,7 @@ import dev.andrej.echo.ui.components.Waveform
 import dev.andrej.echo.ui.record.RecordUiState
 import dev.andrej.echo.ui.record.RecordViewModel
 import dev.andrej.echo.ui.theme.EchoTheme
+import dev.andrej.echo.ui.theme.LocalReducedMotion
 import dev.andrej.echo.ui.theme.Paper200
 import dev.andrej.echo.ui.theme.rememberEchoHaptics
 import kotlinx.coroutines.delay
@@ -294,6 +296,15 @@ private fun ListeningState(
 
 @Composable
 private fun ProcessingState(state: RecordUiState) {
+    val haptics = rememberEchoHaptics()
+    val reduced = LocalReducedMotion.current
+    LaunchedEffect(reduced) {
+        while (!reduced) {
+            delay(SPINNER_PERIOD_MS.toLong())
+            haptics.pulse()
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()

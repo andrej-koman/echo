@@ -31,6 +31,9 @@ class EchoHaptics(
     /** Capture closes: a crisp release, audio in, processing started. */
     fun release() = view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_RELEASE)
 
+    /** Ambient beat while Echo is thinking: the softest thing the platform will play. */
+    fun pulse() = view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+
     /** The take is filed away: a double pulse you can feel without looking. */
     fun success() {
         if (!hapticsEnabled()) return

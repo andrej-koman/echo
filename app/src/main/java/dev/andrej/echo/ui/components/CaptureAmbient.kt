@@ -96,6 +96,9 @@ fun ThinkingDots(modifier: Modifier = Modifier) {
     }
 }
 
+/** One turn of the outer arc. The processing haptic pulses on the same beat. */
+const val SPINNER_PERIOD_MS = 1100
+
 /** The bronze disc with its two counter-spinning arcs, shown while processing. */
 @Composable
 fun ProcessingSpinner(modifier: Modifier = Modifier) {
@@ -111,7 +114,7 @@ fun ProcessingSpinner(modifier: Modifier = Modifier) {
     val outer by transition.animateFloat(
         initialValue = 0f,
         targetValue = if (reduced) 0f else 360f,
-        animationSpec = infiniteRepeatable(animation = tween(1100, easing = LinearEasing)),
+        animationSpec = infiniteRepeatable(animation = tween(SPINNER_PERIOD_MS, easing = LinearEasing)),
         label = "spinnerOuter",
     )
 

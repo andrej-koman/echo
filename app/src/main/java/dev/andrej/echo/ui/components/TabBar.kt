@@ -1,12 +1,10 @@
 package dev.andrej.echo.ui.components
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,9 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,7 +22,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.andrej.echo.ui.theme.EchoTheme
 import dev.andrej.echo.ui.theme.rememberEchoHaptics
@@ -59,8 +54,8 @@ fun TabBar(
                 )
             }
             .padding(
-                top = 8.dp,
-                bottom = 10.dp,
+                top = 10.dp,
+                bottom = 12.dp,
                 start = EchoTheme.spacing.gutterScreen,
                 end = EchoTheme.spacing.gutterScreen,
             ),
@@ -89,16 +84,10 @@ private fun Tab(
     val haptics = rememberEchoHaptics()
     val interactionSource = remember { MutableInteractionSource() }
 
-    val tint by animateColorAsState(
-        targetValue = if (active) colors.textAccent else colors.textTertiary,
-        label = "tabTint",
-    )
-    val pillColor by animateColorAsState(
-        targetValue = if (active) colors.surfaceAccentSoft else Color.Transparent,
-        label = "tabPill",
-    )
+    val tint = if (active) colors.textAccent else colors.textTertiary
+    val pillColor = if (active) colors.surfaceAccentSoft else Color.Transparent
 
-    Column(
+    Box(
         modifier = modifier
             .defaultMinSize(minHeight = EchoTheme.spacing.tapMin)
             .clickable(
@@ -110,30 +99,22 @@ private fun Tab(
                 },
             )
             .padding(vertical = 2.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(3.dp),
+        contentAlignment = Alignment.Center,
     ) {
         Box(
             modifier = Modifier
-                .width(34.dp)
-                .height(26.dp)
+                .width(48.dp)
+                .height(36.dp)
                 .clip(EchoTheme.radii.pill)
                 .background(pillColor),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 painter = painterResource(item.iconRes),
-                contentDescription = null,
+                contentDescription = item.label,
                 tint = tint,
-                modifier = Modifier.size(19.dp),
+                modifier = Modifier.size(24.dp),
             )
         }
-        Text(
-            text = item.label,
-            style = EchoTheme.typography.micro.copy(
-                fontWeight = if (active) FontWeight.Medium else FontWeight.Normal,
-            ),
-            color = tint,
-        )
     }
 }

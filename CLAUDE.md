@@ -39,7 +39,9 @@ AppContainer manual DI, no Hilt
 Engine sits behind an interface so a different backend (e.g. Whisper) can replace it without touching UI.
 `AuthRepository` is behind an interface for the same reason — Google is the only provider today.
 
-Four tabs: Tasks / Notes / Reminders / Transcripts. `EchoApp` gates on `AuthState` outside the
+Four tabs: Tasks / Notes / Reminders / Transcripts. The bar is icon-only — no labels, no
+selection crossfade — and the NavHost runs with every transition set to `None`: the design's
+screen changes read as jank on device, so switching is a hard cut. `EchoApp` gates on `AuthState` outside the
 NavHost, so signing out drops the whole graph rather than unwinding a back stack.
 
 ## Notes
@@ -83,6 +85,8 @@ tokens and kit, not ported from a design.
   `tick()` (every button, icon button and tab tap), `engage()` / `release()` (record button down
   and stop), `success()` (the take is filed away, on leaving Capture). Everything but `success()`
   goes through `View.performHapticFeedback`, which already honours the system haptic setting;
+  `pulse()` beats once per `SPINNER_PERIOD_MS` under the Processing screen, so the haptic and the
+  outer spinner arc share one period; it is ambient, so it checks `LocalReducedMotion`.
   `success()` needs `VibrationEffect.EFFECT_DOUBLE_CLICK` and so needs the `VIBRATE` permission
   and its own check of `Settings.System.HAPTIC_FEEDBACK_ENABLED`.
 - The three content tabs (Tasks / Notes / Reminders) are stubs: the design's routing of a

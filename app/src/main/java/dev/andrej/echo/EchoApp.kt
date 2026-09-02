@@ -1,6 +1,8 @@
 package dev.andrej.echo
 
 import androidx.activity.compose.LocalActivity
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -112,6 +114,10 @@ private fun SignedInApp(
             navController = navController,
             startDestination = Routes.TASKS,
             modifier = Modifier.fillMaxSize(),
+            enterTransition = { EnterTransition.None },
+            exitTransition = { ExitTransition.None },
+            popEnterTransition = { EnterTransition.None },
+            popExitTransition = { ExitTransition.None },
         ) {
             StubTabs.forEach { tab ->
                 composable(tab.route) {

@@ -6,12 +6,15 @@ import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -24,16 +27,21 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.andrej.echo.R
 import dev.andrej.echo.ui.components.ButtonVariant
 import dev.andrej.echo.ui.components.EchoButton
+import dev.andrej.echo.ui.components.EchoCard
 import dev.andrej.echo.ui.components.EchoIconButton
 import dev.andrej.echo.ui.components.EchoTopBar
-import dev.andrej.echo.ui.history.HistoryViewModel
-import dev.andrej.echo.ui.history.asDateTime
 import dev.andrej.echo.ui.theme.EchoTheme
+import dev.andrej.echo.ui.transcripts.TranscriptsViewModel
+import dev.andrej.echo.ui.transcripts.clock
+import dev.andrej.echo.ui.transcripts.title
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun TranscriptDetailScreen(
     transcriptId: String,
-    viewModel: HistoryViewModel,
+    viewModel: TranscriptsViewModel,
     onDeleted: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -44,11 +52,13 @@ fun TranscriptDetailScreen(
 
     Column(modifier = modifier.fillMaxSize()) {
         EchoTopBar(
-            title = "Transcript",
-            subtitle = transcript?.let { "${it.createdAt.asDateTime()} · ${it.language}" },
+            title = transcript?.let { title(it.text) } ?: "Transcript",
+            subtitle = transcript?.let {
+                "${detailDate.format(Date(it.createdAt))} · ${clock(it.durationMs)}"
+            },
             leading = {
                 EchoIconButton(
-                    iconRes = R.drawable.ic_chevron_down,
+                    iconRes = R.drawable.ic_chevron_left,
                     contentDescription = "Back",
                     onClick = onBack,
                 )
@@ -71,24 +81,45 @@ fun TranscriptDetailScreen(
                 .fillMaxSize()
                 .padding(EchoTheme.spacing.gutterScreen)
                 .navigationBarsPadding(),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5),
         ) {
-            Text(
-                text = transcript.text,
-                modifier = Modifier
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState())
-                    .testTag(TAG_DETAIL_TEXT),
-                style = EchoTheme.typography.body,
-                color = EchoTheme.colors.textPrimary,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "TRANSCRIPT",
+                    style = EchoTheme.typography.microCaps,
+                    color = EchoTheme.colors.textTertiary,
+                )
+                HorizontalDivider(
+                    modifier = Modifier.weight(1f),
+                    color = EchoTheme.colors.borderSubtle,
+                )
+                Text(
+                    text = "${wordCount(transcript.text)} words · ${transcript.language}",
+                    style = EchoTheme.typography.micro,
+                    color = EchoTheme.colors.textTertiary,
+                )
+            }
+
+            EchoCard(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                Text(
+                    text = transcript.text,
+                    modifier = Modifier
+                        .verticalScroll(rememberScrollState())
+                        .testTag(TAG_DETAIL_TEXT),
+                    style = EchoTheme.typography.body,
+                    color = EchoTheme.colors.textPrimary,
+                )
+            }
 
             EchoButton(
                 text = "Copy",
                 onClick = { context.copyToClipboard(transcript.text) },
                 variant = ButtonVariant.Secondary,
                 fullWidth = true,
-                modifier = Modifier.fillMaxWidth(),
             )
 
             EchoButton(
@@ -99,11 +130,16 @@ fun TranscriptDetailScreen(
                 },
                 variant = ButtonVariant.Danger,
                 fullWidth = true,
-                modifier = Modifier.fillMaxWidth(),
             )
+
+            Box(Modifier.height(EchoTheme.spacing.s2))
         }
     }
 }
+
+private val detailDate = SimpleDateFormat("d MMM, HH:mm", Locale.getDefault())
+
+private fun wordCount(text: String) = text.trim().split(Regex("\\s+")).count { it.isNotBlank() }
 
 private fun Context.copyToClipboard(text: String) {
     val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager

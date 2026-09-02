@@ -25,28 +25,46 @@ Wireless debugging drops often: `adb connect <ip:port>` from Settings → Develo
 
 ```
 speech/       TranscriptionEngine interface + AndroidSpeechEngine (SpeechRecognizer)
-data/         Transcript, TranscriptRepository (JSON file), SettingsStore
+data/         Transcript, TranscriptRepository (JSON file), SettingsStore, AuthStore
+auth/         AuthRepository interface + GoogleAuthRepository (Credential Manager)
 ui/theme/     OutLoud design tokens (Color, Type, Shape, Spacing, Elevation, Motion, Theme)
 ui/components/ the ported design system kit
 ui/capture/   CaptureScreen — Listening and Processing
 ui/record/    RecordViewModel (still named for its old screen)
-ui/history/, ui/detail/
+ui/auth/      SignInScreen, AccountScreen, AuthViewModel
+ui/transcripts/, ui/detail/
 AppContainer manual DI, no Hilt
 ```
 
 Engine sits behind an interface so a different backend (e.g. Whisper) can replace it without touching UI.
+`AuthRepository` is behind an interface for the same reason — Google is the only provider today.
+
+Four tabs: Tasks / Notes / Reminders / Transcripts. `EchoApp` gates on `AuthState` outside the
+NavHost, so signing out drops the whole graph rather than unwinding a back stack.
 
 ## Notes
 
 - Languages come from the device via `checkRecognitionSupport()` — never hardcode locales. This phone has only `en-GB` installed; `sl-SI` is unsupported on-device.
 - `SpeechRecognizer` ends on silence; `AndroidSpeechEngine` restarts sessions to stay continuous. `ERROR_NO_MATCH` is silence, not failure.
 - No Room: KSP has no release matching Kotlin 2.4.10.
+- Sign-in needs `google_web_client_id` in `res/values/auth.xml` — the OAuth **web** client ID,
+  plus an Android client ID registered with this package and signing SHA-1. Left blank in the
+  repo: `GoogleAuthRepository` then reports itself unconfigured instead of failing opaquely.
+- No server verifies the Google ID token; the account is a local label. `GoogleIdTokenCredential`
+  has no email field of its own — `id` is the email address for Google accounts.
+- Transcripts have no stored title. `TranscriptsViewModel.title()` derives one from the opening
+  of the text (first sentence, or six words). Delete it once recordings carry real titles.
 
 ## Design system
 
 Screens follow the "OutLoud" design system, authored in Claude Design (project
-`2a9bb6ef-f934-49c1-847f-36e5231c11db`, file `Echo Screens.dc.html`). Read it with the
-claude_design MCP rather than guessing at values.
+`2a9bb6ef-f934-49c1-847f-36e5231c11db`). Two design files: `Echo Screens.dc.html` (global
+modules, core screens, capture flow, detail, empty states) and `Echo Transcripts.dc.html`
+(the archive and the transcript detail). Read them with the claude_design MCP rather than
+guessing at values.
+
+Neither file has a sign-in artboard — `SignInScreen` and `AccountScreen` are composed from the
+tokens and kit, not ported from a design.
 
 - Tokens live in `ui/theme/` and are reached through the `EchoTheme` object
   (`EchoTheme.colors.recordLive`), not through `MaterialTheme`. Material's `ColorScheme` carries

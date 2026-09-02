@@ -1,5 +1,6 @@
 package dev.andrej.echo
 
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,12 +14,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import dev.andrej.echo.auth.AuthState
+import dev.andrej.echo.ui.auth.AccountScreen
+import dev.andrej.echo.ui.auth.AuthViewModel
+import dev.andrej.echo.ui.auth.SignInScreen
 import dev.andrej.echo.ui.capture.CaptureScreen
 import dev.andrej.echo.ui.components.EchoIconButton
 import dev.andrej.echo.ui.components.EchoTopBar
@@ -30,17 +36,18 @@ import dev.andrej.echo.ui.components.RecordButtonState
 import dev.andrej.echo.ui.components.TabBar
 import dev.andrej.echo.ui.components.TabItem
 import dev.andrej.echo.ui.detail.TranscriptDetailScreen
-import dev.andrej.echo.ui.history.HistoryScreen
-import dev.andrej.echo.ui.history.HistoryViewModel
 import dev.andrej.echo.ui.record.RecordViewModel
 import dev.andrej.echo.ui.theme.EchoTheme
+import dev.andrej.echo.ui.transcripts.TranscriptsScreen
+import dev.andrej.echo.ui.transcripts.TranscriptsViewModel
 
 private object Routes {
     const val TASKS = "tasks"
     const val NOTES = "notes"
     const val REMINDERS = "reminders"
+    const val TRANSCRIPTS = "transcripts"
     const val CAPTURE = "capture"
-    const val HISTORY = "history"
+    const val ACCOUNT = "account"
     const val DETAIL = "detail/{id}"
 
     fun detail(id: String) = "detail/$id"
@@ -50,12 +57,49 @@ private val Tabs = listOf(
     TabItem(Routes.TASKS, "Tasks", R.drawable.ic_list_checks),
     TabItem(Routes.NOTES, "Notes", R.drawable.ic_file_text),
     TabItem(Routes.REMINDERS, "Reminders", R.drawable.ic_bell),
+    TabItem(Routes.TRANSCRIPTS, "Transcripts", R.drawable.ic_audio_waveform),
 )
+
+private val StubTabs = Tabs.dropLast(1)
 
 @Composable
 fun EchoApp(
     viewModelFactory: ViewModelProvider.Factory,
     modifier: Modifier = Modifier,
+) {
+    val authViewModel: AuthViewModel = viewModel(factory = viewModelFactory)
+    val authState by authViewModel.state.collectAsStateWithLifecycle()
+    val activity = LocalActivity.current
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(EchoTheme.colors.surfacePage),
+    ) {
+        when (authState) {
+            AuthState.Unknown -> Unit
+
+            AuthState.SignedOut -> SignInScreen(
+                busy = authViewModel.busy,
+                error = authViewModel.error,
+                onSignInWithGoogle = { activity?.let(authViewModel::signIn) },
+                onContinueWithoutAccount = authViewModel::continueAsGuest,
+            )
+
+            else -> SignedInApp(
+                viewModelFactory = viewModelFactory,
+                authState = authState,
+                onSignOut = authViewModel::signOut,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SignedInApp(
+    viewModelFactory: ViewModelProvider.Factory,
+    authState: AuthState,
+    onSignOut: () -> Unit,
 ) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -63,20 +107,25 @@ fun EchoApp(
 
     val onTabs = route in Tabs.map { it.route }
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(EchoTheme.colors.surfacePage),
-    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
         NavHost(
             navController = navController,
             startDestination = Routes.TASKS,
             modifier = Modifier.fillMaxSize(),
         ) {
-            Tabs.forEach { tab ->
+            StubTabs.forEach { tab ->
                 composable(tab.route) {
-                    StubTab(tab = tab, onOpenHistory = { navController.navigate(Routes.HISTORY) })
+                    StubTab(tab = tab, onOpenAccount = { navController.navigate(Routes.ACCOUNT) })
                 }
+            }
+
+            composable(Routes.TRANSCRIPTS) {
+                val transcriptsViewModel: TranscriptsViewModel = viewModel(factory = viewModelFactory)
+                TranscriptsScreen(
+                    viewModel = transcriptsViewModel,
+                    onOpen = { navController.navigate(Routes.detail(it)) },
+                    onOpenAccount = { navController.navigate(Routes.ACCOUNT) },
+                )
             }
 
             composable(Routes.CAPTURE) {
@@ -87,19 +136,18 @@ fun EchoApp(
                 )
             }
 
-            composable(Routes.HISTORY) {
-                val historyViewModel: HistoryViewModel = viewModel(factory = viewModelFactory)
-                HistoryScreen(
-                    viewModel = historyViewModel,
-                    onOpen = { navController.navigate(Routes.detail(it)) },
+            composable(Routes.ACCOUNT) {
+                AccountScreen(
+                    state = authState,
+                    onSignOut = onSignOut,
                     onBack = { navController.popBackStack() },
                 )
             }
 
             composable(Routes.DETAIL) { entry ->
-                val historyViewModel: HistoryViewModel = viewModel(factory = viewModelFactory)
+                val transcriptsViewModel: TranscriptsViewModel = viewModel(factory = viewModelFactory)
                 TranscriptDetailScreen(
-                    viewModel = historyViewModel,
+                    viewModel = transcriptsViewModel,
                     transcriptId = entry.arguments?.getString("id").orEmpty(),
                     onDeleted = { navController.popBackStack() },
                     onBack = { navController.popBackStack() },
@@ -159,16 +207,16 @@ private fun BottomBar(
 }
 
 @Composable
-private fun StubTab(tab: TabItem, onOpenHistory: () -> Unit) {
+private fun StubTab(tab: TabItem, onOpenAccount: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize()) {
         EchoTopBar(
             title = tab.label,
             leading = { Mascot(size = 30.dp) },
             trailing = {
                 EchoIconButton(
-                    iconRes = R.drawable.ic_settings,
-                    contentDescription = "History",
-                    onClick = onOpenHistory,
+                    iconRes = R.drawable.ic_user,
+                    contentDescription = "Account",
+                    onClick = onOpenAccount,
                 )
             },
         )

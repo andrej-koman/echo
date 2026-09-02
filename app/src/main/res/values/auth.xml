@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      OAuth 2.0 *web* client ID from the Google Cloud project (not the Android client ID).
+      The Android client ID still has to exist and carry this app's package name and signing
+      SHA-1, or Credential Manager returns no credential. Left empty: sign-in reports itself
+      as unconfigured instead of failing opaquely.
+    -->
+    <string name="google_web_client_id" translatable="false"></string>
+</resources>

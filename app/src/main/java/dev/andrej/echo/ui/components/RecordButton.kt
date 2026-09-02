@@ -37,6 +37,7 @@ import dev.andrej.echo.ui.theme.Clay500
 import dev.andrej.echo.ui.theme.EchoTheme
 import dev.andrej.echo.ui.theme.LocalReducedMotion
 import dev.andrej.echo.ui.theme.echoShadow
+import dev.andrej.echo.ui.theme.rememberEchoHaptics
 
 enum class RecordButtonState { Idle, Recording }
 
@@ -62,6 +63,7 @@ fun RecordButton(
     val diameter = size.diameter
     val reduced = LocalReducedMotion.current
 
+    val haptics = rememberEchoHaptics()
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
 
@@ -128,7 +130,10 @@ fun RecordButton(
                     enabled = enabled,
                     interactionSource = interactionSource,
                     indication = null,
-                    onClick = onClick,
+                    onClick = {
+                        if (live) haptics.release() else haptics.engage()
+                        onClick()
+                    },
                 )
                 .semantics { this.contentDescription = label },
             contentAlignment = Alignment.Center,

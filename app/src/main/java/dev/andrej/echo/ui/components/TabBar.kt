@@ -29,6 +29,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.andrej.echo.ui.theme.EchoTheme
+import dev.andrej.echo.ui.theme.rememberEchoHaptics
 
 data class TabItem(
     val route: String,
@@ -85,6 +86,7 @@ private fun Tab(
     modifier: Modifier = Modifier,
 ) {
     val colors = EchoTheme.colors
+    val haptics = rememberEchoHaptics()
     val interactionSource = remember { MutableInteractionSource() }
 
     val tint by animateColorAsState(
@@ -102,7 +104,10 @@ private fun Tab(
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
-                onClick = onClick,
+                onClick = {
+                    haptics.tick()
+                    onClick()
+                },
             )
             .padding(vertical = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally,

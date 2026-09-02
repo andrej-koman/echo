@@ -20,6 +20,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.andrej.echo.ui.theme.EchoTheme
+import dev.andrej.echo.ui.theme.rememberEchoHaptics
 
 enum class IconButtonVariant { Ghost, Soft, Inverse }
 
@@ -51,6 +52,7 @@ fun EchoIconButton(
         IconButtonVariant.Inverse -> colors.textInverse
     }
 
+    val haptics = rememberEchoHaptics()
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -67,7 +69,10 @@ fun EchoIconButton(
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
-                onClick = onClick,
+                onClick = {
+                    haptics.tick()
+                    onClick()
+                },
             ),
         contentAlignment = Alignment.Center,
     ) {

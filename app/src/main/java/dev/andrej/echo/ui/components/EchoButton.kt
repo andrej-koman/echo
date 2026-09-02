@@ -33,6 +33,7 @@ import dev.andrej.echo.ui.theme.EchoShadow
 import dev.andrej.echo.ui.theme.EchoTheme
 import dev.andrej.echo.ui.theme.echoShadow
 import dev.andrej.echo.ui.theme.hairline
+import dev.andrej.echo.ui.theme.rememberEchoHaptics
 
 enum class ButtonVariant { Primary, Secondary, Soft, Ghost, Inverse, Danger }
 
@@ -89,6 +90,7 @@ fun EchoButton(
         ButtonSize.Lg -> EchoTheme.typography.body
     }
 
+    val haptics = rememberEchoHaptics()
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -115,7 +117,10 @@ fun EchoButton(
                 enabled = !off,
                 interactionSource = interactionSource,
                 indication = null,
-                onClick = onClick,
+                onClick = {
+                    haptics.tick()
+                    onClick()
+                },
             )
             .padding(horizontal = size.horizontal)
             .alpha(if (loading) 0.75f else 1f),

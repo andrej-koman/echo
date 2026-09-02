@@ -68,6 +68,7 @@ import dev.andrej.echo.ui.record.RecordUiState
 import dev.andrej.echo.ui.record.RecordViewModel
 import dev.andrej.echo.ui.theme.EchoTheme
 import dev.andrej.echo.ui.theme.Paper200
+import dev.andrej.echo.ui.theme.rememberEchoHaptics
 import kotlinx.coroutines.delay
 
 const val TAG_RECORD_BUTTON = "record_button"
@@ -83,6 +84,7 @@ fun CaptureScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val haptics = rememberEchoHaptics()
 
     var permissionGranted by remember {
         mutableStateOf(
@@ -115,6 +117,7 @@ fun CaptureScreen(
     // Leave once the take has been filed away, not before.
     LaunchedEffect(started, state.isRecording, state.isProcessing) {
         if (started && !state.isRecording && !state.isProcessing && state.error == null) {
+            haptics.success()
             onDone()
         }
     }

@@ -9,11 +9,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -58,15 +62,20 @@ private object Routes {
     fun detail(id: String) = "detail/$id"
 }
 
+// The record button takes the middle slot of the bar, so Reminders lost its tab. The route stays
+// so it can come back once it holds anything.
 private val Tabs = listOf(
     TabItem(Routes.HOME, "Home", R.drawable.ic_home),
     TabItem(Routes.TASKS, "Tasks", R.drawable.ic_list_checks),
     TabItem(Routes.NOTES, "Notes", R.drawable.ic_file_text),
-    TabItem(Routes.REMINDERS, "Reminders", R.drawable.ic_bell),
     TabItem(Routes.TRANSCRIPTS, "Transcripts", R.drawable.ic_audio_waveform),
 )
 
-private val StubTabs = Tabs.drop(1).dropLast(1)
+private val StubTabs = listOf(
+    TabItem(Routes.TASKS, "Tasks", R.drawable.ic_list_checks),
+    TabItem(Routes.NOTES, "Notes", R.drawable.ic_file_text),
+    TabItem(Routes.REMINDERS, "Reminders", R.drawable.ic_bell),
+)
 
 @Composable
 fun EchoApp(
@@ -111,7 +120,7 @@ private fun SignedInApp(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val route = backStackEntry?.destination?.route
 
-    val onTabs = route in Tabs.map { it.route }
+    val onTabs = route in Tabs.map { it.route } + Routes.REMINDERS
 
     Box(modifier = Modifier.fillMaxSize()) {
         NavHost(
@@ -198,6 +207,7 @@ private fun BottomBar(
             TabBar(
                 items = Tabs,
                 selected = selected,
+                centerGap = true,
                 onSelect = { route ->
                     if (route != selected) {
                         navController.navigate(route) {
@@ -216,15 +226,25 @@ private fun BottomBar(
             )
         }
 
-        RecordButton(
-            state = RecordButtonState.Idle,
-            onClick = { navController.navigate(Routes.CAPTURE) },
-            size = RecordButtonSize.Md,
+        Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
-                .padding(bottom = 62.dp),
-        )
+                .offset(y = 4.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(72.dp)
+                    .clip(CircleShape)
+                    .background(EchoTheme.colors.surfaceBar),
+            )
+            RecordButton(
+                state = RecordButtonState.Idle,
+                onClick = { navController.navigate(Routes.CAPTURE) },
+                size = RecordButtonSize.Sm,
+            )
+        }
     }
 }
 

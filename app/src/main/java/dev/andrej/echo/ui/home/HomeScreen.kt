@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Icon
@@ -36,6 +35,8 @@ import dev.andrej.echo.ui.components.EchoButton
 import dev.andrej.echo.ui.components.EchoCard
 import dev.andrej.echo.ui.components.EchoIconButton
 import dev.andrej.echo.ui.components.EchoSearchField
+import dev.andrej.echo.ui.components.EchoTopBar
+import dev.andrej.echo.ui.components.Mascot
 import dev.andrej.echo.ui.components.SectionHeader
 import dev.andrej.echo.ui.components.Waveform
 import dev.andrej.echo.ui.theme.EchoTheme
@@ -63,27 +64,21 @@ fun HomeScreen(
     val date = remember { dateFormat.format(Date()) }
 
     Column(modifier = modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(
-                    horizontal = EchoTheme.spacing.gutterScreen,
-                    vertical = EchoTheme.spacing.s5,
-                ),
-            horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5),
-            verticalAlignment = Alignment.CenterVertically,
+        EchoTopBar(
+            leading = { Mascot(size = 30.dp) },
+            trailing = {
+                EchoIconButton(
+                    iconRes = R.drawable.ic_user,
+                    contentDescription = "Account",
+                    onClick = onOpenAccount,
+                )
+            },
         ) {
             EchoSearchField(
                 value = state.query,
                 onValueChange = viewModel::search,
                 placeholder = "Search for notes…",
                 modifier = Modifier.weight(1f),
-            )
-            EchoIconButton(
-                iconRes = R.drawable.ic_user,
-                contentDescription = "Account",
-                onClick = onOpenAccount,
             )
         }
 
@@ -92,6 +87,7 @@ fun HomeScreen(
             contentPadding = PaddingValues(
                 start = EchoTheme.spacing.gutterScreen,
                 end = EchoTheme.spacing.gutterScreen,
+                top = 14.dp,
                 bottom = 150.dp,
             ),
             verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5),

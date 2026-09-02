@@ -27,6 +27,38 @@ fun EchoTopBar(
     leading: @Composable (RowScope.() -> Unit)? = null,
     trailing: @Composable (RowScope.() -> Unit)? = null,
 ) {
+    EchoTopBar(modifier = modifier, leading = leading, trailing = trailing) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(1.dp),
+        ) {
+            Text(
+                text = title,
+                style = EchoTheme.typography.titleSm,
+                color = EchoTheme.colors.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    style = EchoTheme.typography.micro,
+                    color = EchoTheme.colors.textTertiary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun EchoTopBar(
+    modifier: Modifier = Modifier,
+    leading: @Composable (RowScope.() -> Unit)? = null,
+    trailing: @Composable (RowScope.() -> Unit)? = null,
+    content: @Composable RowScope.() -> Unit,
+) {
     val colors = EchoTheme.colors
 
     Row(
@@ -48,29 +80,7 @@ fun EchoTopBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         leading?.invoke(this)
-
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(1.dp),
-        ) {
-            Text(
-                text = title,
-                style = EchoTheme.typography.titleSm,
-                color = colors.textPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (subtitle != null) {
-                Text(
-                    text = subtitle,
-                    style = EchoTheme.typography.micro,
-                    color = colors.textTertiary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-
+        content()
         trailing?.invoke(this)
     }
 }

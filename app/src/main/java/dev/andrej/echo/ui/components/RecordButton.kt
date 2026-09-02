@@ -14,6 +14,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -22,9 +23,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -34,6 +35,7 @@ import dev.andrej.echo.ui.theme.Bronze400
 import dev.andrej.echo.ui.theme.Bronze500
 import dev.andrej.echo.ui.theme.Clay400
 import dev.andrej.echo.ui.theme.Clay500
+import dev.andrej.echo.R
 import dev.andrej.echo.ui.theme.EchoTheme
 import dev.andrej.echo.ui.theme.LocalReducedMotion
 import dev.andrej.echo.ui.theme.echoShadow
@@ -42,7 +44,7 @@ import dev.andrej.echo.ui.theme.rememberEchoHaptics
 enum class RecordButtonState { Idle, Recording }
 
 enum class RecordButtonSize(val diameter: Dp) {
-    Sm(56.dp),
+    Sm(64.dp),
     Md(72.dp),
     Lg(96.dp),
 }
@@ -109,9 +111,12 @@ fun RecordButton(
             modifier = Modifier
                 .size(diameter)
                 .scale(breathe * press)
-                .echoShadow(
-                    if (live) EchoTheme.elevation.haloClay else EchoTheme.elevation.haloBronze,
-                    cornerRadius = diameter / 2,
+                .then(
+                    if (live) {
+                        Modifier.echoShadow(EchoTheme.elevation.haloClay, cornerRadius = diameter / 2)
+                    } else {
+                        Modifier
+                    },
                 )
                 .echoShadow(EchoTheme.elevation.shadow3, cornerRadius = diameter / 2)
                 .clip(EchoTheme.radii.pill)
@@ -141,7 +146,12 @@ fun RecordButton(
             if (live) {
                 StopGlyph(diameter)
             } else {
-                MicGlyph(diameter)
+                Icon(
+                    painter = painterResource(R.drawable.ic_mic),
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(diameter * 0.42f),
+                )
             }
         }
     }
@@ -159,51 +169,6 @@ private fun ExpandingRing(diameter: Dp, phase: Float, color: Color) {
             color = color.copy(alpha = alpha),
             radius = this.size.minDimension / 2f - 1.dp.toPx(),
             style = Stroke(width = 2.dp.toPx()),
-        )
-    }
-}
-
-@Composable
-private fun MicGlyph(diameter: Dp) {
-    val glyph = diameter * 0.42f
-    Canvas(modifier = Modifier.size(glyph)) {
-        val unit = this.size.width / 24f
-        val stroke = Stroke(
-            width = 1.9f * unit,
-            cap = androidx.compose.ui.graphics.StrokeCap.Round,
-        )
-
-        drawRoundRect(
-            color = Color.White,
-            topLeft = Offset(9f * unit, 2f * unit),
-            size = Size(6f * unit, 11f * unit),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(3f * unit),
-            style = stroke,
-        )
-        drawArc(
-            color = Color.White,
-            startAngle = 0f,
-            sweepAngle = 180f,
-            useCenter = false,
-            topLeft = Offset(5f * unit, 5f * unit),
-            size = Size(14f * unit, 14f * unit),
-            style = stroke,
-        )
-        listOf(5f, 19f).forEach { x ->
-            drawLine(
-                color = Color.White,
-                start = Offset(x * unit, 10f * unit),
-                end = Offset(x * unit, 12f * unit),
-                strokeWidth = 1.9f * unit,
-                cap = androidx.compose.ui.graphics.StrokeCap.Round,
-            )
-        }
-        drawLine(
-            color = Color.White,
-            start = Offset(12f * unit, 18f * unit),
-            end = Offset(12f * unit, 21f * unit),
-            strokeWidth = 1.9f * unit,
-            cap = androidx.compose.ui.graphics.StrokeCap.Round,
         )
     }
 }

@@ -6,6 +6,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -38,6 +39,7 @@ fun TabBar(
     selected: String,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
+    centerGap: Boolean = false,
 ) {
     val colors = EchoTheme.colors
 
@@ -62,7 +64,10 @@ fun TabBar(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        items.forEach { item ->
+        items.forEachIndexed { index, item ->
+            if (centerGap && index == items.size / 2) {
+                Spacer(modifier = Modifier.weight(1f))
+            }
             Tab(
                 item = item,
                 active = item.route == selected,

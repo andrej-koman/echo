@@ -70,7 +70,7 @@ data class EchoColors(
     val surfaceAccentSoft: Color = Bronze100,
     val surfaceSageSoft: Color = Sage100,
     val surfaceScrim: Color = AlphaInk40,
-    val surfaceBar: Color = AlphaPaper80,
+    val surfaceBar: Color = Paper050,
 
     val textPrimary: Color = Ink900,
     val textSecondary: Color = Ink600,

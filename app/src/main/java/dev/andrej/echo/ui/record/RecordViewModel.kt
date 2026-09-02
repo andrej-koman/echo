@@ -10,6 +10,7 @@ import dev.andrej.echo.speech.TranscriptionEngine
 import dev.andrej.echo.speech.TranscriptionEvent
 import java.util.Locale
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,6 +25,10 @@ data class LanguageOption(
 
 data class RecordUiState(
     val isRecording: Boolean = false,
+    /** Set between stopping and the transcript being filed away. */
+    val isProcessing: Boolean = false,
+    /** Wall clock at which the current take began. The screen ticks its own timer off this. */
+    val startedAtMillis: Long = 0,
     val committedText: String = "",
     val partialText: String = "",
     val level: Float = 0f,
@@ -106,6 +111,8 @@ class RecordViewModel(
         startedAt = clock()
         _uiState.value = _uiState.value.copy(
             isRecording = true,
+            isProcessing = false,
+            startedAtMillis = startedAt,
             committedText = "",
             partialText = "",
             error = null,
@@ -136,11 +143,35 @@ class RecordViewModel(
     }
 
     fun stopRecording() {
+        val state = stop() ?: return
+        val text = state.displayText.trim()
+
+        _uiState.value = _uiState.value.copy(isProcessing = true)
+
+        viewModelScope.launch {
+            if (text.isNotBlank()) {
+                repository.save(
+                    text = text,
+                    language = state.language?.tag.orEmpty(),
+                    durationMs = clock() - startedAt,
+                )
+            }
+            delay(STUB_PROCESSING_DELAY_MS)
+            _uiState.value = _uiState.value.copy(isProcessing = false)
+        }
+    }
+
+    /** Stops without filing anything away. */
+    fun discard() {
+        stop()
+    }
+
+    private fun stop(): RecordUiState? {
         listenJob?.cancel()
         listenJob = null
 
         val state = _uiState.value
-        val text = state.displayText.trim()
+        if (!state.isRecording) return null
 
         _uiState.value = state.copy(
             isRecording = false,
@@ -148,16 +179,7 @@ class RecordViewModel(
             partialText = "",
             level = 0f,
         )
-
-        if (text.isBlank()) return
-
-        viewModelScope.launch {
-            repository.save(
-                text = text,
-                language = state.language?.tag.orEmpty(),
-                durationMs = clock() - startedAt,
-            )
-        }
+        return state
     }
 
     fun dismissError() {
@@ -166,6 +188,14 @@ class RecordViewModel(
 
     private fun append(existing: String, addition: String): String =
         if (existing.isBlank()) addition.trim() else "${existing.trim()} ${addition.trim()}"
+
+    companion object {
+        /**
+         * Stands in for the routing work the design's Processing screen is waiting on, which
+         * does not exist yet. Delete this and the isProcessing hold once it does.
+         */
+        const val STUB_PROCESSING_DELAY_MS = 2000L
+    }
 }
 
 private fun String.displayName(): String =

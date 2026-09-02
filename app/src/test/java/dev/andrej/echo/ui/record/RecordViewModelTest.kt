@@ -345,6 +345,63 @@ class RecordViewModelTest {
     }
 
     @Test
+    fun `stopping holds in processing until the stub delay elapses`() = runTest {
+        val viewModel = viewModel(engine(listOf(TranscriptionEvent.Final("text"))))
+        advanceUntilIdle()
+        viewModel.startRecording()
+        advanceUntilIdle()
+
+        viewModel.stopRecording()
+        assertTrue(viewModel.uiState.value.isProcessing)
+
+        advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.isProcessing)
+    }
+
+    @Test
+    fun `discarding keeps nothing and never enters processing`() = runTest {
+        val repository = repository()
+        val viewModel = viewModel(
+            engine = engine(listOf(TranscriptionEvent.Final("forget me"))),
+            repository = repository,
+        )
+        advanceUntilIdle()
+        viewModel.startRecording()
+        advanceUntilIdle()
+
+        viewModel.discard()
+        advanceUntilIdle()
+
+        assertTrue(repository.transcripts.first().isEmpty())
+        assertFalse(viewModel.uiState.value.isRecording)
+        assertFalse(viewModel.uiState.value.isProcessing)
+    }
+
+    @Test
+    fun `stopping when not recording does nothing`() = runTest {
+        val repository = repository()
+        val viewModel = viewModel(engine = engine(), repository = repository)
+        advanceUntilIdle()
+
+        viewModel.stopRecording()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isProcessing)
+        assertTrue(repository.transcripts.first().isEmpty())
+    }
+
+    @Test
+    fun `the take start time is published for the timer`() = runTest {
+        val viewModel = viewModel(engine())
+        advanceUntilIdle()
+
+        viewModel.startRecording()
+        advanceUntilIdle()
+
+        assertEquals(42L, viewModel.uiState.value.startedAtMillis)
+    }
+
+    @Test
     fun `unavailable recognizer is reported before recording starts`() = runTest {
         val viewModel = viewModel(engine(availability = Availability.NoRecognizer))
 

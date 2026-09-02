@@ -94,6 +94,7 @@ class AndroidSpeechEngine(private val context: Context) : TranscriptionEngine {
 
         fun restart() {
             if (!listening) return
+            trySend(TranscriptionEvent.Level(SILENCE_DB))
             recognizer.cancel()
             recognizer.startListening(intent())
         }
@@ -113,6 +114,7 @@ class AndroidSpeechEngine(private val context: Context) : TranscriptionEngine {
 
             override fun onRmsChanged(rmsdB: Float) {
                 trySend(TranscriptionEvent.Level(rmsdB))
+                Log.d(TAG, "RMS $rmsdB")
             }
 
             override fun onEndOfSpeech() = Unit
@@ -170,5 +172,6 @@ class AndroidSpeechEngine(private val context: Context) : TranscriptionEngine {
     private companion object {
         const val TAG = "AndroidSpeechEngine"
         const val MAX_CONSECUTIVE_FAILURES = 3
+        const val SILENCE_DB = -2f
     }
 }

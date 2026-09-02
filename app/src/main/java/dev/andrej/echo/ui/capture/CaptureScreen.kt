@@ -461,6 +461,16 @@ private fun FailureReason.message(): String = when (this) {
     FailureReason.Unknown -> "Something went wrong while listening."
 }
 
-/** The engine reports roughly -2f..10f dB; the waveform wants 0f..1f. */
+/** The engine reports -2f..10f dB; the waveform wants 0f..1f. */
 private fun normalisedLevel(level: Float): Float =
-    ((level + 2f) / 12f).coerceIn(0f, 1f)
+    ((level - NOISE_FLOOR_DB) / (LOUD_DB - NOISE_FLOOR_DB)).coerceIn(0f, 1f)
+
+/** Room tone on this phone reads up to ~0.9 dB, so anything under this is nothing at all. */
+private const val NOISE_FLOOR_DB = 1.5f
+
+/**
+ * Not headroom for shouting: the recogniser clamps at 10.0 and ordinary speech already reaches it,
+ * so a raised voice reads the same as a normal one. The waveform's height is what keeps peaks
+ * from dominating.
+ */
+private const val LOUD_DB = 10f

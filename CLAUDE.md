@@ -59,7 +59,8 @@ claude_design MCP rather than guessing at values.
   TTFs in `res/font`. Icons are hand-authored VectorDrawables tracing lucide 0.454 — Material's
   filled glyphs do not match, and `material-icons-extended` is not worth its size.
 - Ambient animation (breathing, ripples, dots, shimmer) must check `LocalReducedMotion`, which
-  reads `ANIMATOR_DURATION_SCALE`. It is decoration, not feedback.
+  reads `ANIMATOR_DURATION_SCALE`. It is decoration, not feedback. `Waveform` is the exception:
+  its bars are a scrolling history of the real mic level, so they keep moving regardless.
 - The three content tabs (Tasks / Notes / Reminders) are stubs: the design's routing of a
   transcript into notes, todos and reminders does not exist yet. `STUB_PROCESSING_DELAY_MS` in
   `RecordViewModel` is a placeholder hold so the Processing screen is visible; delete it once

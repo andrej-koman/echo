@@ -1,17 +1,14 @@
 package dev.andrej.echo.ui.components
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -20,13 +17,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.andrej.echo.ui.theme.EchoTheme
-import dev.andrej.echo.ui.theme.LocalReducedMotion
-import kotlin.math.abs
-import kotlin.math.sin
+import kotlinx.coroutines.delay
+
+private const val SAMPLE_MS = 70L
+private const val ATTACK = 0.6f
+private const val DECAY = 0.12f
 
 /**
- * @param level microphone loudness, 0f..1f. Scales the whole waveform, so the bars move with
- *   the voice rather than running a canned animation.
+ * @param level microphone loudness, 0f..1f. While [live] the bars are a scrolling history of it,
+ * newest on the right, so the shape is the last few seconds of actual sound.
  */
 @Composable
 fun Waveform(
@@ -34,27 +33,30 @@ fun Waveform(
     bars: Int = 42,
     level: Float = 0f,
     live: Boolean = false,
-    height: Dp = 88.dp,
+    height: Dp = 40.dp,
     barWidth: Dp = 3.dp,
     gap: Dp = 3.dp,
     color: Color = EchoTheme.colors.waveformActive,
     idleColor: Color = EchoTheme.colors.waveformIdle,
 ) {
-    val reduced = LocalReducedMotion.current
-    val amplitudes = remember(bars) { amplitudes(bars) }
+    val currentLevel by rememberUpdatedState(level)
+    val history = remember(bars) { mutableStateListOf<Float>().apply { repeat(bars) { add(0f) } } }
+    val idleProfile = remember(bars) { idleProfile(bars) }
 
-    val transition = rememberInfiniteTransition(label = "waveform")
-    val cycle by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "waveformCycle",
-    )
-
-    val animate = live && !reduced
+    LaunchedEffect(live, bars) {
+        if (!live) {
+            for (i in history.indices) history[i] = 0f
+            return@LaunchedEffect
+        }
+        var smoothed = 0f
+        while (true) {
+            val target = currentLevel.coerceIn(0f, 1f)
+            smoothed += (target - smoothed) * if (target > smoothed) ATTACK else DECAY
+            history.removeAt(0)
+            history.add(smoothed)
+            delay(SAMPLE_MS)
+        }
+    }
 
     Canvas(
         modifier = modifier
@@ -67,14 +69,9 @@ fun Waveform(
         val startX = (size.width - totalWidth) / 2f
         val minHeight = 3.dp.toPx()
 
-        amplitudes.forEachIndexed { index, amplitude ->
-            val wobble = if (animate) {
-                0.65f + 0.35f * abs(sin((cycle * 2f + index * 0.35f) * Math.PI).toFloat())
-            } else {
-                1f
-            }
-            val scaled = amplitude * wobble * (0.25f + level.coerceIn(0f, 1f) * 0.75f)
-            val barHeight = maxOf(minHeight, scaled * size.height)
+        repeat(bars) { index ->
+            val fraction = if (live) history[index] else idleProfile[index] * 0.25f
+            val barHeight = maxOf(minHeight, fraction * size.height)
             val x = startX + index * (barPx + gapPx)
 
             drawRoundRect(
@@ -87,8 +84,8 @@ fun Waveform(
     }
 }
 
-/** The design system's deterministic pseudo-random bar profile. */
-private fun amplitudes(count: Int): List<Float> {
+/** The design system's deterministic pseudo-random profile, used for the resting state only. */
+private fun idleProfile(count: Int): List<Float> {
     var seed = 7
     return List(count) {
         seed = (seed * 1103515245 + 12345) and 0x7FFFFFFF

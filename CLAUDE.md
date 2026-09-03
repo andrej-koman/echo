@@ -25,7 +25,11 @@ Wireless debugging drops often: `adb connect <ip:port>` from Settings → Develo
 
 ```
 speech/       TranscriptionEngine interface + AndroidSpeechEngine (SpeechRecognizer)
-data/         Transcript, TranscriptRepository (JSON file), SettingsStore, AuthStore
+ai/           LlmRunner interface + MlKitLlmRunner (Gemini Nano) and LiteRtLlmRunner (bundled
+              Qwen3), ModelStore/HttpModelDownloader for the weights, AnalysisPrompt,
+              TranscriptAnalyzer
+data/         Transcript, TranscriptRepository (JSON file), Task/Reminder + DerivedRepository
+              (derived.json), SettingsStore, AuthStore
 auth/         AuthRepository interface + GoogleAuthRepository (Credential Manager)
 ui/theme/     OutLoud design tokens (Color, Type, Shape, Spacing, Elevation, Motion, Theme)
 ui/components/ the ported design system kit
@@ -117,7 +121,32 @@ tokens and kit, not ported from a design.
   inert); with data it is two sections, "Up next" then "Recent notes" — no greeting, no action cards.
   "Up next" is `StubUpNext`, three hardcoded items, until transcripts are routed into todos and
   reminders. Recent note cards carry no tag pill: `Transcript` has no tag field.
-- The three content tabs (Tasks / Notes / Reminders) are stubs: the design's routing of a
-  transcript into notes, todos and reminders does not exist yet. `STUB_PROCESSING_DELAY_MS` in
-  `RecordViewModel` is a placeholder hold so the Processing screen is visible; delete it once
-  there is real work to wait on.
+- The three content tabs (Tasks / Notes / Reminders) are still stubs, but the data behind them
+  is real: `RecordViewModel.stopRecording` now saves the transcript and then runs
+  `TranscriptAnalyzer`, writing `Task`/`Reminder` rows and a title and summary back onto the
+  transcript. The Processing screen holds for that work — `STUB_PROCESSING_DELAY_MS` is gone.
+  The transcript is saved *before* analysis, so no model failure can cost a recording.
+
+## On-device AI
+
+Analysis runs on whichever backend the device has, picked once per process by `LlmRunnerProvider`
+(first usable wins; `NeedsDownload` still beats the next candidate — the download is the user's
+call). One prompt and one parser serve both, so a new backend costs one class.
+
+- **Gemini Nano is not available on the S24.** AICore is installed
+  (`0.release.samsungslsi.prod_aicore_20260723`) but `checkStatus()` *throws*
+  `[606] FEATURE_NOT_FOUND: Feature 636 is not available`. Google's device list starts Samsung at
+  the S25; blog posts claiming S24 support are from the retired AI Edge dev preview. Unsupported
+  devices throw rather than return `UNAVAILABLE`, so the `GenAiException` catch in
+  `MlKitLlmRunner.availability()` is load-bearing — without it every non-Nano phone crashes.
+- **Nano is foreground-only** (`BACKGROUND_USE_BLOCKED`; foreground services do not qualify).
+  That is why analysis lives on the Processing screen and there is no service or WorkManager.
+- Fallback is Qwen3-1.7B int4 `.litertlm` (977MB) via LiteRT-LM. The format must be `.litertlm`,
+  never GGUF — the wrong format fails silently on load. Gemma repos on HuggingFace are
+  `gated: auto` and 401 an anonymous download; `litert-community/Qwen3-1.7B` is not gated.
+- `Engine.initialize()` costs ~19s against ~5s of inference, so it is held open for the life of
+  the process and warmed up when Capture opens, from an application-scoped coroutine in
+  `AppContainer` — leaving Capture must not cancel a half-finished init.
+- `ModelStore.delete()` sweeps every file prefixed with the model's name: LiteRT-LM writes a
+  `..._mldrift_weight_cache.bin` beside the weights that is dead without them.
+- MediaPipe LLM Inference is maintenance-only; LiteRT-LM replaces it.

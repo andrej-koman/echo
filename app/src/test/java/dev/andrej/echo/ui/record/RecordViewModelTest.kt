@@ -1,12 +1,18 @@
 package dev.andrej.echo.ui.record
 
+import dev.andrej.echo.ai.FakeLlmRunner
+import dev.andrej.echo.ai.LlmAvailability
+import dev.andrej.echo.ai.LlmRunner
+import dev.andrej.echo.ai.TranscriptAnalyzer
 import dev.andrej.echo.data.FakeSettingsStore
+import dev.andrej.echo.data.JsonDerivedRepository
 import dev.andrej.echo.data.JsonTranscriptRepository
 import dev.andrej.echo.speech.Availability
 import dev.andrej.echo.speech.FailureReason
 import dev.andrej.echo.speech.FakeTranscriptionEngine
 import dev.andrej.echo.speech.LanguageSupport
 import dev.andrej.echo.speech.TranscriptionEvent
+import java.time.ZoneId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -41,16 +47,26 @@ class RecordViewModelTest {
     // Writes run on the test scheduler so advanceUntilIdle covers them.
     private fun repository() = JsonTranscriptRepository(tempFolder.newFolder(), dispatcher)
 
+    private fun derivedRepository() = JsonDerivedRepository(tempFolder.newFolder(), dispatcher)
+
     private fun viewModel(
         engine: FakeTranscriptionEngine = FakeTranscriptionEngine(),
         settings: FakeSettingsStore = FakeSettingsStore(),
         repository: JsonTranscriptRepository = repository(),
+        derived: JsonDerivedRepository = derivedRepository(),
+        runner: LlmRunner = FakeLlmRunner(availability = LlmAvailability.Unsupported("no model")),
+        warmup: () -> Unit = {},
     ) = RecordViewModel(
         engine = engine,
         repository = repository,
+        derived = derived,
+        analyzer = TranscriptAnalyzer({ runner }, ZoneId.of("UTC")),
         settings = settings,
+        warmup = warmup,
         clock = { 42L },
     )
+
+    private fun analyzingRunner(json: String) = FakeLlmRunner(responses = listOf(json))
 
     private fun engine(
         events: List<TranscriptionEvent> = emptyList(),
@@ -345,7 +361,7 @@ class RecordViewModelTest {
     }
 
     @Test
-    fun `stopping holds in processing until the stub delay elapses`() = runTest {
+    fun `stopping holds in processing until the work is done`() = runTest {
         val viewModel = viewModel(engine(listOf(TranscriptionEvent.Final("text"))))
         advanceUntilIdle()
         viewModel.startRecording()
@@ -356,6 +372,91 @@ class RecordViewModelTest {
 
         advanceUntilIdle()
         assertFalse(viewModel.uiState.value.isProcessing)
+    }
+
+    @Test
+    fun `analysis fills in the title, the tasks and the reminders`() = runTest {
+        val repository = repository()
+        val derived = derivedRepository()
+        val viewModel = viewModel(
+            engine = engine(listOf(TranscriptionEvent.Final("call the plumber"))),
+            repository = repository,
+            derived = derived,
+            runner = analyzingRunner(
+                """{"title":"Plumber","summary":"Call them.","tasks":["call the plumber"],
+                   "reminders":[{"text":"call the plumber","due":"2026-09-04T10:00"}]}""",
+            ),
+        )
+        advanceUntilIdle()
+        viewModel.startRecording()
+        advanceUntilIdle()
+
+        viewModel.stopRecording()
+        advanceUntilIdle()
+
+        val transcript = repository.transcripts.first().single()
+        assertEquals("Plumber", transcript.title)
+        assertEquals("Call them.", transcript.summary)
+        assertEquals(42L, transcript.analyzedAt)
+
+        val task = derived.tasks.first().single()
+        assertEquals("call the plumber", task.text)
+        assertEquals(transcript.id, task.sourceTranscriptId)
+        assertEquals(transcript.id, derived.reminders.first().single().sourceTranscriptId)
+    }
+
+    @Test
+    fun `a transcript survives a model that cannot run`() = runTest {
+        val repository = repository()
+        val derived = derivedRepository()
+        val viewModel = viewModel(
+            engine = engine(listOf(TranscriptionEvent.Final("keep me"))),
+            repository = repository,
+            derived = derived,
+            runner = FakeLlmRunner(availability = LlmAvailability.Unsupported("no model")),
+        )
+        advanceUntilIdle()
+        viewModel.startRecording()
+        advanceUntilIdle()
+
+        viewModel.stopRecording()
+        advanceUntilIdle()
+
+        assertEquals("keep me", repository.transcripts.first().single().text)
+        assertEquals(null, repository.transcripts.first().single().title)
+        assertTrue(derived.tasks.first().isEmpty())
+        assertFalse(viewModel.uiState.value.isProcessing)
+    }
+
+    @Test
+    fun `a transcript survives a model that throws`() = runTest {
+        val repository = repository()
+        val derived = derivedRepository()
+        val viewModel = viewModel(
+            engine = engine(listOf(TranscriptionEvent.Final("keep me too"))),
+            repository = repository,
+            derived = derived,
+            runner = FakeLlmRunner(throwOnGenerate = true),
+        )
+        advanceUntilIdle()
+        viewModel.startRecording()
+        advanceUntilIdle()
+
+        viewModel.stopRecording()
+        advanceUntilIdle()
+
+        assertEquals("keep me too", repository.transcripts.first().single().text)
+        assertTrue(derived.tasks.first().isEmpty())
+        assertFalse(viewModel.uiState.value.isProcessing)
+    }
+
+    @Test
+    fun `opening the screen warms the model up`() = runTest {
+        var warmups = 0
+        viewModel(warmup = { warmups++ })
+        advanceUntilIdle()
+
+        assertEquals(1, warmups)
     }
 
     @Test

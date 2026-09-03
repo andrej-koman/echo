@@ -13,6 +13,19 @@ class TranscriptAnalyzer(
     private val zone: ZoneId = ZoneId.systemDefault(),
 ) {
 
+    /**
+     * Pays the model's startup cost early. Worth ~19s on the LiteRT path, which would otherwise
+     * land on the Processing screen after the user stops recording.
+     */
+    suspend fun warmup() {
+        try {
+            val runner = runners()
+            if (runner.availability() == LlmAvailability.Ready) runner.warmup()
+        } catch (e: Exception) {
+            // The first analysis pays for it instead.
+        }
+    }
+
     suspend fun analyze(transcript: Transcript): Analysis? {
         if (transcript.text.isBlank()) return null
 

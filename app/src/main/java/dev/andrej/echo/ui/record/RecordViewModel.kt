@@ -2,7 +2,10 @@ package dev.andrej.echo.ui.record
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import dev.andrej.echo.ai.TranscriptAnalyzer
+import dev.andrej.echo.data.DerivedRepository
 import dev.andrej.echo.data.SettingsStore
+import dev.andrej.echo.data.Transcript
 import dev.andrej.echo.data.TranscriptRepository
 import dev.andrej.echo.speech.Availability
 import dev.andrej.echo.speech.FailureReason
@@ -10,7 +13,6 @@ import dev.andrej.echo.speech.TranscriptionEngine
 import dev.andrej.echo.speech.TranscriptionEvent
 import java.util.Locale
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -48,7 +50,10 @@ data class RecordUiState(
 class RecordViewModel(
     private val engine: TranscriptionEngine,
     private val repository: TranscriptRepository,
+    private val derived: DerivedRepository,
+    private val analyzer: TranscriptAnalyzer,
     private val settings: SettingsStore,
+    private val warmup: () -> Unit = {},
     private val clock: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
 
@@ -62,6 +67,7 @@ class RecordViewModel(
 
     init {
         refreshLanguages()
+        warmup()
     }
 
     fun refreshLanguages() {
@@ -150,15 +156,34 @@ class RecordViewModel(
 
         viewModelScope.launch {
             if (text.isNotBlank()) {
-                repository.save(
+                // Saved before analysis so a missing, failing or unsupported model can only cost
+                // the extras, never the recording itself.
+                val transcript = repository.save(
                     text = text,
                     language = state.language?.tag.orEmpty(),
                     durationMs = clock() - startedAt,
                 )
+                analyze(transcript)
             }
-            delay(STUB_PROCESSING_DELAY_MS)
             _uiState.value = _uiState.value.copy(isProcessing = false)
         }
+    }
+
+    private suspend fun analyze(transcript: Transcript) {
+        val analysis = analyzer.analyze(transcript) ?: return
+
+        derived.replaceFor(
+            transcriptId = transcript.id,
+            tasks = analysis.tasks,
+            reminders = analysis.reminders,
+            createdAt = clock(),
+        )
+        repository.attachAnalysis(
+            id = transcript.id,
+            title = analysis.title,
+            summary = analysis.summary,
+            analyzedAt = clock(),
+        )
     }
 
     /** Stops without filing anything away. */
@@ -188,14 +213,6 @@ class RecordViewModel(
 
     private fun append(existing: String, addition: String): String =
         if (existing.isBlank()) addition.trim() else "${existing.trim()} ${addition.trim()}"
-
-    companion object {
-        /**
-         * Stands in for the routing work the design's Processing screen is waiting on, which
-         * does not exist yet. Delete this and the isProcessing hold once it does.
-         */
-        const val STUB_PROCESSING_DELAY_MS = 2000L
-    }
 }
 
 private fun String.displayName(): String =

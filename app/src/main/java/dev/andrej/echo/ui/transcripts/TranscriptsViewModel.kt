@@ -2,6 +2,8 @@ package dev.andrej.echo.ui.transcripts
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import dev.andrej.echo.ai.TranscriptAnalyzer
+import dev.andrej.echo.data.DerivedRepository
 import dev.andrej.echo.data.Transcript
 import dev.andrej.echo.data.TranscriptRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,10 +41,14 @@ data class TranscriptsUiState(
 
 class TranscriptsViewModel(
     private val repository: TranscriptRepository,
+    private val derived: DerivedRepository,
+    private val analyzer: TranscriptAnalyzer,
     private val now: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
 
     private val query = MutableStateFlow("")
+    private val _analyzingId = MutableStateFlow<String?>(null)
+    val analyzingId: StateFlow<String?> = _analyzingId
 
     val transcripts: StateFlow<List<Transcript>> = repository.transcripts
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -66,6 +72,33 @@ class TranscriptsViewModel(
     fun delete(id: String) {
         viewModelScope.launch { repository.delete(id) }
     }
+
+    fun analyze(transcriptId: String) {
+        if (_analyzingId.value != null) return
+
+        viewModelScope.launch {
+            _analyzingId.value = transcriptId
+            try {
+                val transcript = transcripts.value.firstOrNull { it.id == transcriptId } ?: return@launch
+                val analysis = analyzer.analyze(transcript) ?: return@launch
+
+                derived.replaceFor(
+                    transcriptId = transcript.id,
+                    tasks = analysis.tasks,
+                    reminders = analysis.reminders,
+                    createdAt = now(),
+                )
+                repository.attachAnalysis(
+                    id = transcript.id,
+                    title = analysis.title,
+                    summary = analysis.summary,
+                    analyzedAt = now(),
+                )
+            } finally {
+                _analyzingId.value = null
+            }
+        }
+    }
 }
 
 private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
@@ -79,15 +112,15 @@ internal fun group(transcripts: List<Transcript>, now: Long): List<TranscriptGro
 
 private fun Transcript.asRow() = TranscriptRow(
     id = id,
-    title = title(text),
-    excerpt = text.trim(),
+    title = title ?: title(text),
+    excerpt = summary ?: text.trim(),
     duration = clock(durationMs),
     time = timeFormat.format(Date(createdAt)),
 )
 
 /**
- * Nothing names a recording yet, so the row title is the opening of what was said, cut at the
- * first sentence end or at six words — whichever comes first.
+ * Fallback for a transcript analysis has not named yet — the opening of what was said, cut at
+ * the first sentence end or at six words, whichever comes first.
  */
 internal fun title(text: String): String {
     val trimmed = text.trim()

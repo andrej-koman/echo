@@ -47,12 +47,13 @@ fun TranscriptDetailScreen(
     modifier: Modifier = Modifier,
 ) {
     val transcripts by viewModel.transcripts.collectAsStateWithLifecycle()
+    val analyzingId by viewModel.analyzingId.collectAsStateWithLifecycle()
     val transcript = transcripts.firstOrNull { it.id == transcriptId }
     val context = LocalContext.current
 
     Column(modifier = modifier.fillMaxSize()) {
         EchoTopBar(
-            title = transcript?.let { title(it.text) } ?: "Transcript",
+            title = transcript?.let { it.title ?: title(it.text) } ?: "Transcript",
             subtitle = transcript?.let {
                 "${detailDate.format(Date(it.createdAt))} · ${clock(it.durationMs)}"
             },
@@ -115,12 +116,26 @@ fun TranscriptDetailScreen(
                 )
             }
 
-            EchoButton(
-                text = "Copy",
-                onClick = { context.copyToClipboard(transcript.text) },
-                variant = ButtonVariant.Secondary,
-                fullWidth = true,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
+            ) {
+                EchoButton(
+                    text = "Copy",
+                    onClick = { context.copyToClipboard(transcript.text) },
+                    variant = ButtonVariant.Secondary,
+                    modifier = Modifier.weight(1f),
+                )
+
+                EchoButton(
+                    text = "Analyze",
+                    onClick = { viewModel.analyze(transcript.id) },
+                    variant = ButtonVariant.Secondary,
+                    loading = analyzingId == transcript.id,
+                    enabled = analyzingId == null,
+                    modifier = Modifier.weight(1f),
+                )
+            }
 
             EchoButton(
                 text = "Delete",

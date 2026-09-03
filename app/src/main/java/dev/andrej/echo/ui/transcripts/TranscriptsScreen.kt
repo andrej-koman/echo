@@ -138,7 +138,7 @@ fun TranscriptsScreen(
 }
 
 @Composable
-private fun TranscriptRow(
+internal fun TranscriptRow(
     row: TranscriptRow,
     onOpen: () -> Unit,
 ) {

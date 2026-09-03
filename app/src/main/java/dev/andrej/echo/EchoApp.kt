@@ -29,14 +29,11 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import dev.andrej.echo.auth.AuthState
 import dev.andrej.echo.ui.auth.AccountScreen
+import dev.andrej.echo.ui.auth.AiViewModel
 import dev.andrej.echo.ui.auth.AuthViewModel
 import dev.andrej.echo.ui.auth.SignInScreen
 import dev.andrej.echo.ui.capture.CaptureScreen
 import dev.andrej.echo.ui.components.EchoIconButton
-import dev.andrej.echo.ui.components.EchoTopBar
-import dev.andrej.echo.ui.components.EmptyState
-import dev.andrej.echo.ui.components.Mascot
-import dev.andrej.echo.ui.components.MascotVariant
 import dev.andrej.echo.ui.components.RecordButton
 import dev.andrej.echo.ui.components.RecordButtonSize
 import dev.andrej.echo.ui.components.RecordButtonState
@@ -44,8 +41,14 @@ import dev.andrej.echo.ui.components.TabBar
 import dev.andrej.echo.ui.components.TabItem
 import dev.andrej.echo.ui.detail.TranscriptDetailScreen
 import dev.andrej.echo.ui.home.HomeScreen
+import dev.andrej.echo.ui.home.HomeViewModel
 import dev.andrej.echo.ui.record.RecordViewModel
+import dev.andrej.echo.ui.reminders.RemindersScreen
+import dev.andrej.echo.ui.reminders.RemindersViewModel
+import dev.andrej.echo.ui.tasks.TasksScreen
+import dev.andrej.echo.ui.tasks.TasksViewModel
 import dev.andrej.echo.ui.theme.EchoTheme
+import dev.andrej.echo.ui.transcripts.NotesScreen
 import dev.andrej.echo.ui.transcripts.TranscriptsScreen
 import dev.andrej.echo.ui.transcripts.TranscriptsViewModel
 
@@ -69,12 +72,6 @@ private val Tabs = listOf(
     TabItem(Routes.TASKS, "Tasks", R.drawable.ic_list_checks),
     TabItem(Routes.NOTES, "Notes", R.drawable.ic_file_text),
     TabItem(Routes.TRANSCRIPTS, "Transcripts", R.drawable.ic_audio_waveform),
-)
-
-private val StubTabs = listOf(
-    TabItem(Routes.TASKS, "Tasks", R.drawable.ic_list_checks),
-    TabItem(Routes.NOTES, "Notes", R.drawable.ic_file_text),
-    TabItem(Routes.REMINDERS, "Reminders", R.drawable.ic_bell),
 )
 
 @Composable
@@ -133,9 +130,9 @@ private fun SignedInApp(
             popExitTransition = { ExitTransition.None },
         ) {
             composable(Routes.HOME) {
-                val transcriptsViewModel: TranscriptsViewModel = viewModel(factory = viewModelFactory)
+                val homeViewModel: HomeViewModel = viewModel(factory = viewModelFactory)
                 HomeScreen(
-                    viewModel = transcriptsViewModel,
+                    viewModel = homeViewModel,
                     onSeeTasks = { navController.selectTab(Routes.TASKS) },
                     onOpenAccount = { navController.navigate(Routes.ACCOUNT) },
                     onSeeAll = { navController.selectTab(Routes.TRANSCRIPTS) },
@@ -143,10 +140,31 @@ private fun SignedInApp(
                 )
             }
 
-            StubTabs.forEach { tab ->
-                composable(tab.route) {
-                    StubTab(tab = tab, onOpenAccount = { navController.navigate(Routes.ACCOUNT) })
-                }
+            composable(Routes.TASKS) {
+                val tasksViewModel: TasksViewModel = viewModel(factory = viewModelFactory)
+                TasksScreen(
+                    viewModel = tasksViewModel,
+                    onOpenSource = { navController.navigate(Routes.detail(it)) },
+                    onOpenAccount = { navController.navigate(Routes.ACCOUNT) },
+                )
+            }
+
+            composable(Routes.NOTES) {
+                val transcriptsViewModel: TranscriptsViewModel = viewModel(factory = viewModelFactory)
+                NotesScreen(
+                    viewModel = transcriptsViewModel,
+                    onOpen = { navController.navigate(Routes.detail(it)) },
+                    onOpenAccount = { navController.navigate(Routes.ACCOUNT) },
+                )
+            }
+
+            composable(Routes.REMINDERS) {
+                val remindersViewModel: RemindersViewModel = viewModel(factory = viewModelFactory)
+                RemindersScreen(
+                    viewModel = remindersViewModel,
+                    onOpenSource = { navController.navigate(Routes.detail(it)) },
+                    onOpenAccount = { navController.navigate(Routes.ACCOUNT) },
+                )
             }
 
             composable(Routes.TRANSCRIPTS) {
@@ -167,10 +185,16 @@ private fun SignedInApp(
             }
 
             composable(Routes.ACCOUNT) {
+                val aiViewModel: AiViewModel = viewModel(factory = viewModelFactory)
+                val aiState by aiViewModel.state.collectAsStateWithLifecycle()
                 AccountScreen(
                     state = authState,
+                    aiState = aiState,
                     onSignOut = onSignOut,
                     onBack = { navController.popBackStack() },
+                    onDownloadModel = aiViewModel.onDownloadModel,
+                    onCancelDownload = aiViewModel.onCancelDownload,
+                    onDeleteModel = aiViewModel.onDeleteModel,
                 )
             }
 
@@ -256,33 +280,4 @@ private fun BottomBar(
     }
 }
 
-@Composable
-private fun StubTab(tab: TabItem, onOpenAccount: () -> Unit) {
-    val variant = when (tab.route) {
-        Routes.TASKS -> MascotVariant.Tasks
-        Routes.NOTES -> MascotVariant.Notes
-        else -> MascotVariant.Plain
-    }
-    Column(modifier = Modifier.fillMaxSize()) {
-        EchoTopBar(
-            title = tab.label,
-            leading = { Mascot(size = 30.dp, variant = variant) },
-            trailing = {
-                EchoIconButton(
-                    iconRes = R.drawable.ic_user,
-                    contentDescription = "Account",
-                    onClick = onOpenAccount,
-                )
-            },
-        )
-        Box(modifier = Modifier.fillMaxSize().padding(bottom = 150.dp)) {
-            EmptyState(
-                title = "Nothing here yet",
-                body = "Tap the button below and say something. " +
-                    "Echo files it into ${tab.label.lowercase()} for you.",
-                variant = variant,
-            )
-        }
-    }
-}
 

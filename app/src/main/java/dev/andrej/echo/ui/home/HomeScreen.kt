@@ -42,29 +42,20 @@ import dev.andrej.echo.ui.components.ThinkingDots
 import dev.andrej.echo.ui.components.Waveform
 import dev.andrej.echo.ui.theme.EchoTheme
 import dev.andrej.echo.ui.transcripts.TranscriptRow
-import dev.andrej.echo.ui.transcripts.TranscriptsViewModel
 
 private const val RECENT_COUNT = 3
 
-/** Placeholder until transcripts are routed into todos and reminders. */
-private data class UpNextItem(val title: String, val detail: String, val isEvent: Boolean)
-
-private val StubUpNext = listOf(
-    UpNextItem("Send Amanda the cut deck", "9:00 AM today", isEvent = false),
-    UpNextItem("Studio walkthrough", "11:00 AM tomorrow", isEvent = true),
-    UpNextItem("Measure the radiator gap", "From Kitchen dimensions", isEvent = false),
-)
-
 @Composable
 fun HomeScreen(
-    viewModel: TranscriptsViewModel,
+    viewModel: HomeViewModel,
     onOpenAccount: () -> Unit,
     onSeeTasks: () -> Unit,
     onSeeAll: () -> Unit,
     onOpen: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val state by viewModel.state.collectAsStateWithLifecycle()
+    val state by viewModel.notes.collectAsStateWithLifecycle()
+    val upNext by viewModel.upNext.collectAsStateWithLifecycle()
     val recent = state.groups.flatMap { it.items }.take(RECENT_COUNT)
 
     Column(modifier = modifier.fillMaxSize()) {
@@ -130,15 +121,17 @@ fun HomeScreen(
                 ),
                 verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5),
             ) {
-                item {
-                    SectionHeader(
-                        title = "Up next",
-                        hint = "See all",
-                        modifier = Modifier.clickable(onClick = onSeeTasks),
-                    )
-                }
+                if (upNext.isNotEmpty()) {
+                    item {
+                        SectionHeader(
+                            title = "Up next",
+                            hint = "See all",
+                            modifier = Modifier.clickable(onClick = onSeeTasks),
+                        )
+                    }
 
-                item { UpNextCard(items = StubUpNext) }
+                    item { UpNextCard(items = upNext, onOpen = onOpen) }
+                }
 
                 item {
                     SectionHeader(
@@ -159,12 +152,14 @@ fun HomeScreen(
 }
 
 @Composable
-private fun UpNextCard(items: List<UpNextItem>) {
+private fun UpNextCard(items: List<UpNextItem>, onOpen: (String) -> Unit) {
     EchoCard(modifier = Modifier.fillMaxWidth(), padding = CardPadding.Md) {
         Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s6)) {
             items.forEach { item ->
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpen(item.sourceTranscriptId) },
                     horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

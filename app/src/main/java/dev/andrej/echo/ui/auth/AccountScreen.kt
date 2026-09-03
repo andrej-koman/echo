@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -20,6 +21,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.andrej.echo.R
+import dev.andrej.echo.ai.AiCardState
 import dev.andrej.echo.auth.AuthState
 import dev.andrej.echo.ui.components.ButtonVariant
 import dev.andrej.echo.ui.components.EchoButton
@@ -31,8 +33,12 @@ import dev.andrej.echo.ui.theme.EchoTheme
 @Composable
 fun AccountScreen(
     state: AuthState,
+    aiState: AiCardState,
     onSignOut: () -> Unit,
     onBack: () -> Unit,
+    onDownloadModel: () -> Unit,
+    onCancelDownload: () -> Unit,
+    onDeleteModel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
@@ -90,6 +96,13 @@ fun AccountScreen(
                 }
             }
 
+            AiCard(
+                state = aiState,
+                onDownload = onDownloadModel,
+                onCancel = onCancelDownload,
+                onDelete = onDeleteModel,
+            )
+
             Text(
                 text = "Recordings and transcripts are stored on this device only. " +
                     "Signing out leaves them where they are.",
@@ -105,6 +118,73 @@ fun AccountScreen(
             )
 
             Box(Modifier.navigationBarsPadding())
+        }
+    }
+}
+
+@Composable
+private fun AiCard(
+    state: AiCardState,
+    onDownload: () -> Unit,
+    onCancel: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    if (state is AiCardState.Checking) return
+
+    EchoCard(modifier = Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3)) {
+            Text(
+                text = when (state) {
+                    AiCardState.NanoReady -> "Using your phone's built-in AI"
+                    is AiCardState.NeedsDownload ->
+                        "Pull tasks and reminders out of your recordings. " +
+                            "~${state.bytes / 1_000_000}MB, Wi-Fi recommended."
+
+                    is AiCardState.Downloading -> "Downloading…"
+                    AiCardState.LiteRtReady -> "Ready · on this device"
+                    is AiCardState.Unsupported -> "This phone can't run on-device AI."
+                    AiCardState.Checking -> ""
+                },
+                style = EchoTheme.typography.bodySm,
+                color = EchoTheme.colors.textPrimary,
+            )
+
+            if (state is AiCardState.Downloading) {
+                LinearProgressIndicator(
+                    progress = { state.fraction },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = EchoTheme.colors.textAccent,
+                    trackColor = EchoTheme.colors.surfaceAccentSoft,
+                )
+            }
+
+            when (state) {
+                is AiCardState.NeedsDownload ->
+                    EchoButton(
+                        text = "Download",
+                        onClick = onDownload,
+                        variant = ButtonVariant.Secondary,
+                        fullWidth = true,
+                    )
+
+                is AiCardState.Downloading ->
+                    EchoButton(
+                        text = "Cancel",
+                        onClick = onCancel,
+                        variant = ButtonVariant.Secondary,
+                        fullWidth = true,
+                    )
+
+                AiCardState.LiteRtReady ->
+                    EchoButton(
+                        text = "Remove",
+                        onClick = onDelete,
+                        variant = ButtonVariant.Secondary,
+                        fullWidth = true,
+                    )
+
+                else -> Unit
+            }
         }
     }
 }

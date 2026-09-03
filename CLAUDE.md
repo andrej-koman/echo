@@ -33,11 +33,13 @@ data/         Transcript, TranscriptRepository (JSON file), Task/Reminder + Deri
 auth/         AuthRepository interface + GoogleAuthRepository (Credential Manager)
 ui/theme/     OutLoud design tokens (Color, Type, Shape, Spacing, Elevation, Motion, Theme)
 ui/components/ the ported design system kit
-ui/home/      HomeScreen — greeting, capture actions, recent notes
+ui/home/      HomeScreen + HomeViewModel — up next, recent notes
+ui/tasks/     TasksScreen + TasksViewModel — grouped by source transcript, done checkbox
+ui/reminders/ RemindersScreen + RemindersViewModel — grouped by source transcript
 ui/capture/   CaptureScreen — Listening and Processing
 ui/record/    RecordViewModel (still named for its old screen)
-ui/auth/      SignInScreen, AccountScreen, AuthViewModel
-ui/transcripts/, ui/detail/
+ui/auth/      SignInScreen, AccountScreen, AuthViewModel, AiViewModel
+ui/transcripts/, ui/detail/    also NotesScreen — reuses the transcript row rendering
 AppContainer manual DI, no Hilt
 ```
 
@@ -65,8 +67,22 @@ NavHost, so signing out drops the whole graph rather than unwinding a back stack
   repo: `GoogleAuthRepository` then reports itself unconfigured instead of failing opaquely.
 - No server verifies the Google ID token; the account is a local label. `GoogleIdTokenCredential`
   has no email field of its own — `id` is the email address for Google accounts.
-- Transcripts have no stored title. `TranscriptsViewModel.title()` derives one from the opening
-  of the text (first sentence, or six words). Delete it once recordings carry real titles.
+- `TranscriptsViewModel.title()` derives a title from the opening of the text (first sentence, or
+  six words) — the fallback for a transcript analysis has not named yet, not a permanent scheme.
+  `Transcript.asRow()` prefers `title`/`summary` when present.
+- Tasks and Reminders are grouped by `sourceTranscriptId` in their screens; the group header
+  shows the source transcript's title and taps through to its detail. `TasksScreen`'s empty
+  state routes to `AccountScreen` when nothing has ever been analyzed and no backend is usable
+  (`TasksUiState.aiOff`) — otherwise it reads as a dead end.
+  Reminders has no tab slot (the record button took it) and is reachable only by navigating the
+  route directly; nothing does yet, so it is unreached in the running app until something links
+  to it.
+- Home's "Up next" mixes undone tasks and reminders, dated ones sorted soonest-first ahead of
+  undated ones by recency, capped at three (`HomeViewModel.buildUpNext`). The section disappears
+  rather than rendering an empty card when there is nothing due.
+- `TranscriptDetailScreen`'s Analyze button re-runs `TranscriptAnalyzer` through
+  `TranscriptsViewModel.analyze()`, for transcripts recorded before analysis existed or a failed
+  run. One in flight at a time (`analyzingId`), disabling the button under it.
 
 ## Design system
 

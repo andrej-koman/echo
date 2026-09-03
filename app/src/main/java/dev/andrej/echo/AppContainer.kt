@@ -5,7 +5,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import dev.andrej.echo.auth.AuthRepository
 import dev.andrej.echo.auth.GoogleAuthRepository
+import dev.andrej.echo.ai.LlmRunnerProvider
+import dev.andrej.echo.ai.MlKitLlmRunner
+import dev.andrej.echo.ai.TranscriptAnalyzer
 import dev.andrej.echo.data.AuthStore
+import dev.andrej.echo.data.DerivedRepository
+import dev.andrej.echo.data.JsonDerivedRepository
 import dev.andrej.echo.data.JsonTranscriptRepository
 import dev.andrej.echo.data.SettingsStore
 import dev.andrej.echo.data.SharedPreferencesAuthStore
@@ -35,6 +40,14 @@ class AppContainer(context: Context) {
 
     val engine: TranscriptionEngine =
         AndroidSpeechEngine(applicationContext)
+
+    val derived: DerivedRepository =
+        JsonDerivedRepository(applicationContext.filesDir)
+
+    // Ordered by preference: Nano costs nothing to use where the device has it.
+    private val llmRunners = LlmRunnerProvider(listOf(MlKitLlmRunner()))
+
+    val analyzer = TranscriptAnalyzer(llmRunners::runner)
 
     val viewModelFactory: ViewModelProvider.Factory = object : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")

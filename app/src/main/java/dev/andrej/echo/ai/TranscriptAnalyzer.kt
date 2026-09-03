@@ -9,22 +9,28 @@ import java.time.ZoneId
  * no prompt tuning. Never throws: a failed analysis leaves the transcript as it was.
  */
 class TranscriptAnalyzer(
-    private val runner: LlmRunner,
+    private val runners: suspend () -> LlmRunner,
     private val zone: ZoneId = ZoneId.systemDefault(),
 ) {
 
     suspend fun analyze(transcript: Transcript): Analysis? {
         if (transcript.text.isBlank()) return null
+
+        val runner = runners()
         if (runner.availability() != LlmAvailability.Ready) return null
 
         val today = Instant.ofEpochMilli(transcript.createdAt).atZone(zone).toLocalDate()
         val prompt = buildAnalysisPrompt(transcript.text, today)
 
-        return attempt(prompt, LlmRunner.DEFAULT_TEMPERATURE)
-            ?: attempt(prompt, temperature = 0f)
+        return attempt(runner, prompt, LlmRunner.DEFAULT_TEMPERATURE)
+            ?: attempt(runner, prompt, temperature = 0f)
     }
 
-    private suspend fun attempt(prompt: String, temperature: Float): Analysis? {
+    private suspend fun attempt(
+        runner: LlmRunner,
+        prompt: String,
+        temperature: Float,
+    ): Analysis? {
         val raw = try {
             runner.generate(prompt, temperature)
         } catch (e: Exception) {

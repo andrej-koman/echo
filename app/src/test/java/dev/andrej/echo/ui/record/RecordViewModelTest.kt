@@ -60,7 +60,7 @@ class RecordViewModelTest {
         engine = engine,
         repository = repository,
         derived = derived,
-        analyzer = TranscriptAnalyzer({ runner }, ZoneId.of("UTC")),
+        analyzer = TranscriptAnalyzer({ runner }, ZoneId.of("UTC"), logDebug = {}, logWarn = {}),
         settings = settings,
         warmup = warmup,
         clock = { 42L },

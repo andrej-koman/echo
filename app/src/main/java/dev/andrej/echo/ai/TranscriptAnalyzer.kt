@@ -1,5 +1,6 @@
 package dev.andrej.echo.ai
 
+import android.util.Log
 import dev.andrej.echo.data.Transcript
 import java.time.Instant
 import java.time.ZoneId
@@ -11,6 +12,8 @@ import java.time.ZoneId
 class TranscriptAnalyzer(
     private val runners: suspend () -> LlmRunner,
     private val zone: ZoneId = ZoneId.systemDefault(),
+    private val logDebug: (String) -> Unit = { Log.d(TAG, it) },
+    private val logWarn: (String) -> Unit = { Log.w(TAG, it) },
 ) {
 
     /**
@@ -47,9 +50,27 @@ class TranscriptAnalyzer(
         val raw = try {
             runner.generate(prompt, temperature)
         } catch (e: Exception) {
+            logWarn("generate() failed at temperature=$temperature: ${e.message}")
             return null
         }
-        return parseAnalysis(raw, zone)?.takeIf { it.hasContent }
+        logDebug("raw output (temperature=$temperature): $raw")
+
+        val analysis = parseAnalysis(raw, zone)
+        if (analysis == null) {
+            logWarn("could not parse a JSON object out of the raw output above")
+            return null
+        }
+
+        logDebug("parsed: $analysis")
+        if (!analysis.hasContent) {
+            logWarn("parsed but empty (no title/summary/tasks/reminders) — discarded")
+            return null
+        }
+        return analysis
+    }
+
+    private companion object {
+        const val TAG = "TranscriptAnalyzer"
     }
 }
 

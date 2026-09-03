@@ -30,12 +30,19 @@ fun buildAnalysisPrompt(text: String, today: LocalDate): String {
 
     return """
         Today is ${promptDate.format(today)}. Extract structured data from this voice note.
-        Reply with JSON only.
+        Reply with JSON only. Always include all four keys below, using an empty array when
+        there is nothing for it — never drop a key.
 
         {"title":"...","summary":"...","tasks":["..."],"reminders":[{"text":"...","due":"ISO8601 or null"}]}
 
         title: max 6 words. summary: max 2 sentences. tasks: things the speaker intends to do,
-        imperative. reminders: tasks with a stated time. Empty arrays if none. No commentary.
+        imperative, no time attached. reminders: things with a stated or implied time — "remind
+        me to X", "call Y tomorrow at Z" — text plus due resolved to a real ISO8601 timestamp
+        using today's date above, or null if no usable time was given. No commentary.
+
+        Example. Today is 2026-01-01.
+        Voice note: "Remind me to call the dentist tomorrow at 9am. Also need to buy milk."
+        {"title":"Call dentist, buy milk","summary":"Reminder to call the dentist tomorrow morning; also need milk.","tasks":["Buy milk"],"reminders":[{"text":"Call the dentist","due":"2026-01-02T09:00:00"}]}
 
         Voice note:
         ""${'"'}

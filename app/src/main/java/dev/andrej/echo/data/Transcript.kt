@@ -9,4 +9,7 @@ data class Transcript(
     val language: String,
     val createdAt: Long,
     val durationMs: Long,
+    val title: String? = null,
+    val summary: String? = null,
+    val analyzedAt: Long? = null,
 )

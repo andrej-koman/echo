@@ -14,5 +14,13 @@ interface TranscriptRepository {
         createdAt: Long = System.currentTimeMillis(),
     ): Transcript
 
+    /** No-op when the id is unknown. */
+    suspend fun attachAnalysis(
+        id: String,
+        title: String?,
+        summary: String?,
+        analyzedAt: Long = System.currentTimeMillis(),
+    )
+
     suspend fun delete(id: String)
 }

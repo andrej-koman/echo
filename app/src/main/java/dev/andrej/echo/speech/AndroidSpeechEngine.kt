@@ -108,7 +108,6 @@ class AndroidSpeechEngine(private val context: Context) : TranscriptionEngine {
             override fun onResults(results: Bundle) {
                 consecutiveFailures = 0
                 results.firstTranscript()?.let { trySend(TranscriptionEvent.Final(it)) }
-                // SpeechRecognizer is one-shot; a result ends the session, so open the next one.
                 restart()
             }
 

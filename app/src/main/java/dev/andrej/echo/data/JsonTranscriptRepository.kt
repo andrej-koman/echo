@@ -43,6 +43,23 @@ class JsonTranscriptRepository(
         return transcript
     }
 
+    override suspend fun attachAnalysis(
+        id: String,
+        title: String?,
+        summary: String?,
+        analyzedAt: Long,
+    ) {
+        update { current ->
+            current.map { transcript ->
+                if (transcript.id == id) {
+                    transcript.copy(title = title, summary = summary, analyzedAt = analyzedAt)
+                } else {
+                    transcript
+                }
+            }
+        }
+    }
+
     override suspend fun delete(id: String) {
         update { current -> current.filterNot { it.id == id } }
     }

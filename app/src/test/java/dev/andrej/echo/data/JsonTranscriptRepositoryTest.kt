@@ -3,6 +3,7 @@ package dev.andrej.echo.data
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -67,6 +68,44 @@ class JsonTranscriptRepositoryTest {
         val repository = JsonTranscriptRepository(directory)
 
         assertTrue(repository.transcripts.first().isEmpty())
+    }
+
+    @Test
+    fun `attachAnalysis writes the title, summary and stamp`() = runTest {
+        val repository = repository()
+        val saved = repository.save(text = "the tap drips", language = "en-GB", durationMs = 0)
+
+        repository.attachAnalysis(saved.id, "Fix the tap", "It drips.", analyzedAt = 9_000)
+
+        val stored = repository.transcripts.first().single()
+        assertEquals("Fix the tap", stored.title)
+        assertEquals("It drips.", stored.summary)
+        assertEquals(9_000L, stored.analyzedAt)
+    }
+
+    @Test
+    fun `attachAnalysis on an unknown id changes nothing`() = runTest {
+        val repository = repository()
+        repository.save(text = "untouched", language = "en-GB", durationMs = 0)
+
+        repository.attachAnalysis("nope", "Title", "Summary")
+
+        assertNull(repository.transcripts.first().single().title)
+    }
+
+    @Test
+    fun `transcripts written before analysis existed still load`() = runTest {
+        val directory = tempFolder.newFolder()
+        directory.resolve("transcripts.json").writeText(
+            """[{"id":"old","text":"legacy","language":"en-GB","createdAt":1,"durationMs":2}]""",
+        )
+
+        val stored = JsonTranscriptRepository(directory).transcripts.first().single()
+
+        assertEquals("legacy", stored.text)
+        assertNull(stored.title)
+        assertNull(stored.summary)
+        assertNull(stored.analyzedAt)
     }
 
     @Test

@@ -1,5 +1,6 @@
 package dev.andrej.echo.ui.components
 
+import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -25,11 +26,19 @@ import kotlin.math.sin
 
 enum class MascotMood { Still, Breathing, Nodding }
 
+enum class MascotVariant(@DrawableRes val drawable: Int) {
+    Plain(R.drawable.mascot_echo),
+    Tasks(R.drawable.mascot_tasks),
+    Notes(R.drawable.mascot_notes),
+    Transcripts(R.drawable.mascot_transcripts),
+}
+
 @Composable
 fun Mascot(
     modifier: Modifier = Modifier,
     size: Dp = 104.dp,
     mood: MascotMood = MascotMood.Still,
+    variant: MascotVariant = MascotVariant.Plain,
     contentDescription: String? = null,
 ) {
     val reduced = LocalReducedMotion.current
@@ -63,7 +72,7 @@ fun Mascot(
     }
 
     Image(
-        painter = painterResource(R.drawable.mascot_echo),
+        painter = painterResource(variant.drawable),
         contentDescription = contentDescription,
         modifier = modifier
             .size(size)

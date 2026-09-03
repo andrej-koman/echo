@@ -33,6 +33,7 @@ import dev.andrej.echo.ui.components.EchoTopBar
 import dev.andrej.echo.ui.components.EmptyState
 import dev.andrej.echo.ui.components.ThinkingDots
 import dev.andrej.echo.ui.components.Mascot
+import dev.andrej.echo.ui.components.MascotVariant
 import dev.andrej.echo.ui.theme.EchoTheme
 
 @Composable
@@ -54,7 +55,7 @@ fun TranscriptsScreen(
             } else {
                 "${state.total} recordings · ${state.totalDuration} of speech"
             },
-            leading = { Mascot(size = 30.dp) },
+            leading = { Mascot(size = 30.dp, variant = MascotVariant.Transcripts) },
             trailing = {
                 EchoIconButton(
                     iconRes = R.drawable.ic_user,
@@ -78,6 +79,7 @@ fun TranscriptsScreen(
             EmptyState(
                 title = "No transcripts yet",
                 body = "Tap the button below and say something. Everything you record lands here.",
+                variant = MascotVariant.Transcripts,
                 modifier = Modifier.padding(bottom = 150.dp),
             )
             return@Column

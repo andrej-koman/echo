@@ -17,6 +17,7 @@ fun EmptyState(
     title: String,
     body: String,
     modifier: Modifier = Modifier,
+    variant: MascotVariant = MascotVariant.Plain,
     actions: (@Composable () -> Unit)? = null,
 ) {
     Column(
@@ -26,7 +27,7 @@ fun EmptyState(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
     ) {
-        Mascot(size = 76.dp, mood = MascotMood.Breathing)
+        Mascot(size = 76.dp, mood = MascotMood.Breathing, variant = variant)
         Text(
             text = title,
             style = EchoTheme.typography.heading,

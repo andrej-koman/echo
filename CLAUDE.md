@@ -85,8 +85,12 @@ tokens and kit, not ported from a design.
 - DM Sans (UI and display) and Space Mono (durations, timers, counts only) are bundled as static
   TTFs in `res/font`. The mascot is a raster `drawable-xxxhdpi/mascot_echo.png` (the polished
   artwork) on a square 1024px canvas with the ghost centred in it — `Mascot` renders it with
-  `ContentScale.Fit` into a square, so a non-square canvas both shrinks and offsets him. It is
-  reused as the adaptive launcher foreground inside a 52dp layer-list box, which puts ~42dp of
+  `ContentScale.Fit` into a square, so a non-square canvas both shrinks and offsets him. Three
+  prop variants sit beside it (`mascot_tasks`, `mascot_notes`, `mascot_transcripts`) and are
+  selected with `Mascot(variant = ...)` / `EmptyState(variant = ...)`: each per-tab screen uses its
+  own variant in both the top bar's leading slot and its empty state. `MascotVariant.Plain` is the
+  default everywhere else. `mascot_echo` is
+  also the adaptive launcher foreground inside a 52dp layer-list box, which puts ~42dp of
   ghost inside the 72dp launcher mask; at the old 66dp his tail clipped. The monochrome launcher
   layer stays a vector, and its `<group>` scale/translate is tuned so its bounds match the
   raster foreground's to within a fraction of a dp — change one and re-measure the other. The

@@ -36,6 +36,7 @@ import dev.andrej.echo.ui.components.EchoIconButton
 import dev.andrej.echo.ui.components.EchoTopBar
 import dev.andrej.echo.ui.components.EmptyState
 import dev.andrej.echo.ui.components.Mascot
+import dev.andrej.echo.ui.components.MascotVariant
 import dev.andrej.echo.ui.components.RecordButton
 import dev.andrej.echo.ui.components.RecordButtonSize
 import dev.andrej.echo.ui.components.RecordButtonState
@@ -257,10 +258,15 @@ private fun BottomBar(
 
 @Composable
 private fun StubTab(tab: TabItem, onOpenAccount: () -> Unit) {
+    val variant = when (tab.route) {
+        Routes.TASKS -> MascotVariant.Tasks
+        Routes.NOTES -> MascotVariant.Notes
+        else -> MascotVariant.Plain
+    }
     Column(modifier = Modifier.fillMaxSize()) {
         EchoTopBar(
             title = tab.label,
-            leading = { Mascot(size = 30.dp) },
+            leading = { Mascot(size = 30.dp, variant = variant) },
             trailing = {
                 EchoIconButton(
                     iconRes = R.drawable.ic_user,
@@ -274,6 +280,7 @@ private fun StubTab(tab: TabItem, onOpenAccount: () -> Unit) {
                 title = "Nothing here yet",
                 body = "Tap the button below and say something. " +
                     "Echo files it into ${tab.label.lowercase()} for you.",
+                variant = variant,
             )
         }
     }

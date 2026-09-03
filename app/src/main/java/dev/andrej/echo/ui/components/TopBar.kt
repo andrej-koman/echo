@@ -5,7 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -18,6 +18,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.andrej.echo.ui.theme.EchoTheme
+
+private val TOP_BAR_CONTENT_HEIGHT = 42.dp
 
 @Composable
 fun EchoTopBar(
@@ -74,7 +76,7 @@ fun EchoTopBar(
                 )
             }
             .statusBarsPadding()
-            .defaultMinSize(minHeight = 52.dp)
+            .height(TOP_BAR_CONTENT_HEIGHT + 12.dp)
             .padding(vertical = 6.dp, horizontal = EchoTheme.spacing.gutterScreen),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically,

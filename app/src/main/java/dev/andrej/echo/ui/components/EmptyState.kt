@@ -17,6 +17,7 @@ fun EmptyState(
     title: String,
     body: String,
     modifier: Modifier = Modifier,
+    actions: (@Composable () -> Unit)? = null,
 ) {
     Column(
         modifier = modifier
@@ -38,5 +39,6 @@ fun EmptyState(
             color = EchoTheme.colors.textTertiary,
             textAlign = TextAlign.Center,
         )
+        actions?.invoke()
     }
 }

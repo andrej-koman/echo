@@ -7,6 +7,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import dev.andrej.echo.ui.theme.EchoTheme
 
 @Composable
@@ -22,14 +23,14 @@ fun SectionHeader(
     ) {
         Text(
             text = title,
-            style = EchoTheme.typography.heading,
+            style = EchoTheme.typography.titleSm,
             color = EchoTheme.colors.textPrimary,
         )
         if (hint != null) {
             Text(
                 text = hint,
-                style = EchoTheme.typography.monoMicro,
-                color = EchoTheme.colors.textTertiary,
+                style = EchoTheme.typography.caption.copy(fontWeight = FontWeight.Medium),
+                color = EchoTheme.colors.textAccent,
             )
         }
     }

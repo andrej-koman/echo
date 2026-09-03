@@ -45,7 +45,10 @@ button sits in the bar's middle slot (`TabBar(centerGap = true)` leaves the gap,
 button on a bar-coloured cradle so it pokes above the hairline); Reminders lost its tab to make room and
 keeps only its route until it holds anything. The tab bar is icon-only — no labels, no
 selection crossfade — and the NavHost runs with every transition set to `None`: the design's
-screen changes read as jank on device, so switching is a hard cut. `EchoApp` gates on `AuthState` outside the
+screen changes read as jank on device, so switching is a hard cut. Tab switches go through `NavHostController.selectTab`: Home pops back to Home, other tabs
+`popUpTo(HOME)` + `launchSingleTop`. Never `saveState`/`restoreState` — the saved tab stack keys to
+Home, so tapping Home restored it and landed on the last tab. Cost: tab scroll position is not kept.
+`EchoApp` gates on `AuthState` outside the
 NavHost, so signing out drops the whole graph rather than unwinding a back stack.
 
 ## Notes
@@ -105,8 +108,11 @@ tokens and kit, not ported from a design.
 - `EchoTopBar` has two forms: a `title`/`subtitle` one and a slot one taking arbitrary centre content
   (Home puts the search field there instead of a title). Both draw the same bar chrome, so every screen
   header keeps one surface, hairline and height.
-- Home reads its recent notes from `TranscriptsViewModel`; it has no view model of its own. Its
-  "Upload audio" and "Type a note" cards are inert — nothing implements either yet.
+- Home reads its recent notes from `TranscriptsViewModel`; it has no view model of its own. With no
+  transcripts it shows only the mascot empty state (its "Upload audio" / "Type a note" buttons are
+  inert); with data it is two sections, "Up next" then "Recent notes" — no greeting, no action cards.
+  "Up next" is `StubUpNext`, three hardcoded items, until transcripts are routed into todos and
+  reminders. Recent note cards carry no tag pill: `Transcript` has no tag field.
 - The three content tabs (Tasks / Notes / Reminders) are stubs: the design's routing of a
   transcript into notes, todos and reminders does not exist yet. `STUB_PROCESSING_DELAY_MS` in
   `RecordViewModel` is a placeholder hold so the Processing screen is visible; delete it once

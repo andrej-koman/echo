@@ -31,6 +31,7 @@ import dev.andrej.echo.ui.components.EchoIconButton
 import dev.andrej.echo.ui.components.EchoSearchField
 import dev.andrej.echo.ui.components.EchoTopBar
 import dev.andrej.echo.ui.components.EmptyState
+import dev.andrej.echo.ui.components.ThinkingDots
 import dev.andrej.echo.ui.components.Mascot
 import dev.andrej.echo.ui.theme.EchoTheme
 
@@ -46,7 +47,9 @@ fun TranscriptsScreen(
     Column(modifier = modifier.fillMaxSize()) {
         EchoTopBar(
             title = "Transcripts",
-            subtitle = if (state.total == 0) {
+            subtitle = if (!state.loaded) {
+                ""
+            } else if (state.total == 0) {
                 "Nothing recorded yet"
             } else {
                 "${state.total} recordings · ${state.totalDuration} of speech"
@@ -60,6 +63,16 @@ fun TranscriptsScreen(
                 )
             },
         )
+
+        if (!state.loaded) {
+            Box(
+                modifier = Modifier.fillMaxSize().padding(bottom = 150.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                ThinkingDots()
+            }
+            return@Column
+        }
 
         if (state.total == 0) {
             EmptyState(

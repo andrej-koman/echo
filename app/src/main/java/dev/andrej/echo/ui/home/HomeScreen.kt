@@ -1,67 +1,71 @@
 package dev.andrej.echo.ui.home
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.andrej.echo.R
 import dev.andrej.echo.ui.components.ButtonSize
+import dev.andrej.echo.ui.components.ButtonVariant
 import dev.andrej.echo.ui.components.CardPadding
-import dev.andrej.echo.ui.components.CardTone
 import dev.andrej.echo.ui.components.EchoButton
 import dev.andrej.echo.ui.components.EchoCard
 import dev.andrej.echo.ui.components.EchoIconButton
 import dev.andrej.echo.ui.components.EchoSearchField
 import dev.andrej.echo.ui.components.EchoTopBar
+import dev.andrej.echo.ui.components.EmptyState
 import dev.andrej.echo.ui.components.Mascot
 import dev.andrej.echo.ui.components.SectionHeader
+import dev.andrej.echo.ui.components.ThinkingDots
 import dev.andrej.echo.ui.components.Waveform
 import dev.andrej.echo.ui.theme.EchoTheme
 import dev.andrej.echo.ui.transcripts.TranscriptRow
 import dev.andrej.echo.ui.transcripts.TranscriptsViewModel
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 private const val RECENT_COUNT = 3
+
+/** Placeholder until transcripts are routed into todos and reminders. */
+private data class UpNextItem(val title: String, val detail: String, val isEvent: Boolean)
+
+private val StubUpNext = listOf(
+    UpNextItem("Send Amanda the cut deck", "9:00 AM today", isEvent = false),
+    UpNextItem("Studio walkthrough", "11:00 AM tomorrow", isEvent = true),
+    UpNextItem("Measure the radiator gap", "From Kitchen dimensions", isEvent = false),
+)
 
 @Composable
 fun HomeScreen(
     viewModel: TranscriptsViewModel,
-    userName: String?,
-    onStartRecording: () -> Unit,
     onOpenAccount: () -> Unit,
+    onSeeTasks: () -> Unit,
     onSeeAll: () -> Unit,
     onOpen: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val today = state.groups.firstOrNull { it.label == "Today" }?.items.orEmpty()
     val recent = state.groups.flatMap { it.items }.take(RECENT_COUNT)
-    val date = remember { dateFormat.format(Date()) }
 
     Column(modifier = modifier.fillMaxSize()) {
         EchoTopBar(
@@ -82,129 +86,127 @@ fun HomeScreen(
             )
         }
 
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = EchoTheme.spacing.gutterScreen,
-                end = EchoTheme.spacing.gutterScreen,
-                top = 14.dp,
-                bottom = 150.dp,
-            ),
-            verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5),
-        ) {
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3)) {
-                    Text(
-                        text = "Hi ${userName ?: "there"}, how may I help you?",
-                        style = EchoTheme.typography.display,
-                        color = EchoTheme.colors.textPrimary,
-                    )
-                    Text(
-                        text = "$date · ${today.size} ${if (today.size == 1) "note" else "notes"} today",
-                        style = EchoTheme.typography.caption,
-                        color = EchoTheme.colors.textTertiary,
-                    )
-                }
+        if (!state.loaded) {
+            Box(
+                modifier = Modifier.weight(1f).padding(bottom = 120.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                ThinkingDots()
             }
-
-            item {
-                Actions(
-                    onStartRecording = onStartRecording,
+        } else if (state.total == 0) {
+            EmptyState(
+                title = "Nothing recorded yet",
+                body = "Hold the record button and talk. OutLoud writes it down and sorts the " +
+                    "rest into notes, todos and reminders.",
+                modifier = Modifier.weight(1f).padding(bottom = 120.dp),
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
+                    verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(top = EchoTheme.spacing.s4),
-                )
-            }
-
-            item {
-                SectionHeader(
-                    title = "Recent Notes",
-                    hint = "See all",
-                    modifier = Modifier
-                        .padding(top = EchoTheme.spacing.s5)
-                        .clickable(onClick = onSeeAll),
-                )
-            }
-
-            if (recent.isEmpty()) {
-                item {
-                    Text(
-                        text = "Nothing recorded yet. Tap the button below and say something.",
-                        style = EchoTheme.typography.bodySm,
-                        color = EchoTheme.colors.textTertiary,
+                ) {
+                    EchoButton(
+                        text = "Upload audio",
+                        onClick = {},
+                        variant = ButtonVariant.Secondary,
+                        size = ButtonSize.Sm,
+                    )
+                    EchoButton(
+                        text = "Type a note",
+                        onClick = {},
+                        variant = ButtonVariant.Ghost,
+                        size = ButtonSize.Sm,
                     )
                 }
             }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = EchoTheme.spacing.gutterScreen,
+                    end = EchoTheme.spacing.gutterScreen,
+                    top = EchoTheme.spacing.s6,
+                    bottom = 150.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5),
+            ) {
+                item {
+                    SectionHeader(
+                        title = "Up next",
+                        hint = "See all",
+                        modifier = Modifier.clickable(onClick = onSeeTasks),
+                    )
+                }
 
-            items(recent, key = { it.id }) { row ->
-                RecentNote(row = row, onOpen = { onOpen(row.id) })
+                item { UpNextCard(items = StubUpNext) }
+
+                item {
+                    SectionHeader(
+                        title = "Recent notes",
+                        hint = "See all",
+                        modifier = Modifier
+                            .padding(top = EchoTheme.spacing.s5)
+                            .clickable(onClick = onSeeAll),
+                    )
+                }
+
+                items(recent, key = { it.id }) { row ->
+                    RecentNote(row = row, onOpen = { onOpen(row.id) })
+                }
             }
         }
     }
 }
 
 @Composable
-private fun Actions(
-    onStartRecording: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier.fillMaxWidth().height(IntrinsicSize.Min),
-        horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5),
-    ) {
-        EchoCard(
-            modifier = Modifier.weight(1f).fillMaxHeight(),
-            tone = CardTone.Bronze,
-            padding = CardPadding.Md,
-        ) {
-            Text(
-                text = "Start audio recording",
-                style = EchoTheme.typography.heading,
-                color = EchoTheme.colors.textPrimary,
-            )
-            Spacer(modifier = Modifier.weight(1f).height(EchoTheme.spacing.s6))
-            EchoButton(
-                text = "Start recording",
-                onClick = onStartRecording,
-                size = ButtonSize.Sm,
-            )
-        }
-
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5),
-        ) {
-            SecondaryAction(iconRes = R.drawable.ic_upload, label = "Upload audio")
-            SecondaryAction(iconRes = R.drawable.ic_pen_line, label = "Type a note")
-        }
-    }
-}
-
-@Composable
-private fun SecondaryAction(iconRes: Int, label: String) {
+private fun UpNextCard(items: List<UpNextItem>) {
     EchoCard(modifier = Modifier.fillMaxWidth(), padding = CardPadding.Md) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top,
-        ) {
-            Icon(
-                painter = painterResource(iconRes),
-                contentDescription = null,
-                tint = EchoTheme.colors.textPrimary,
-                modifier = Modifier.size(20.dp),
-            )
-            Icon(
-                painter = painterResource(R.drawable.ic_arrow_right),
-                contentDescription = null,
-                tint = EchoTheme.colors.textTertiary,
-                modifier = Modifier.size(16.dp),
-            )
+        Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s6)) {
+            items.forEach { item ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (item.isEvent) {
+                        Box(
+                            modifier = Modifier
+                                .size(26.dp)
+                                .clip(EchoTheme.radii.sm)
+                                .background(EchoTheme.colors.surfaceAccentSoft),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_calendar),
+                                contentDescription = null,
+                                tint = EchoTheme.colors.textAccent,
+                                modifier = Modifier.size(15.dp),
+                            )
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(26.dp)
+                                .border(1.5.dp, EchoTheme.colors.borderStrong, CircleShape),
+                        )
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s1)) {
+                        Text(
+                            text = item.title,
+                            style = EchoTheme.typography.heading,
+                            color = EchoTheme.colors.textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = item.detail,
+                            style = EchoTheme.typography.caption,
+                            color = EchoTheme.colors.textTertiary,
+                        )
+                    }
+                }
+            }
         }
-        Text(
-            text = label,
-            style = EchoTheme.typography.bodySm.copy(fontWeight = FontWeight.Medium),
-            color = EchoTheme.colors.textPrimary,
-            modifier = Modifier.padding(top = EchoTheme.spacing.s5),
-        )
     }
 }
 
@@ -246,5 +248,3 @@ private fun RecentNote(row: TranscriptRow, onOpen: () -> Unit) {
         )
     }
 }
-
-private val dateFormat = SimpleDateFormat("EEEE, d MMM", Locale.getDefault())

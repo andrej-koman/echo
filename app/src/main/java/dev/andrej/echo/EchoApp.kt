@@ -27,7 +27,6 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import dev.andrej.echo.auth.Account
 import dev.andrej.echo.auth.AuthState
 import dev.andrej.echo.ui.auth.AccountScreen
 import dev.andrej.echo.ui.auth.AuthViewModel
@@ -136,10 +135,9 @@ private fun SignedInApp(
                 val transcriptsViewModel: TranscriptsViewModel = viewModel(factory = viewModelFactory)
                 HomeScreen(
                     viewModel = transcriptsViewModel,
-                    userName = (authState as? AuthState.SignedIn)?.account?.firstName(),
-                    onStartRecording = { navController.navigate(Routes.CAPTURE) },
+                    onSeeTasks = { navController.selectTab(Routes.TASKS) },
                     onOpenAccount = { navController.navigate(Routes.ACCOUNT) },
-                    onSeeAll = { navController.navigate(Routes.TRANSCRIPTS) },
+                    onSeeAll = { navController.selectTab(Routes.TRANSCRIPTS) },
                     onOpen = { navController.navigate(Routes.detail(it)) },
                 )
             }
@@ -196,6 +194,21 @@ private fun SignedInApp(
     }
 }
 
+/**
+ * Tabs live directly above Home, never stacked on each other. Saving and restoring tab state
+ * keys the saved stack to Home, so navigating home would land on the last tab instead.
+ */
+private fun NavHostController.selectTab(route: String) {
+    if (route == Routes.HOME) {
+        popBackStack(Routes.HOME, inclusive = false)
+    } else {
+        navigate(route) {
+            popUpTo(Routes.HOME)
+            launchSingleTop = true
+        }
+    }
+}
+
 @Composable
 private fun BottomBar(
     selected: String,
@@ -209,13 +222,7 @@ private fun BottomBar(
                 selected = selected,
                 centerGap = true,
                 onSelect = { route ->
-                    if (route != selected) {
-                        navController.navigate(route) {
-                            popUpTo(Routes.HOME) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    }
+                    if (route != selected) navController.selectTab(route)
                 },
             )
             Box(
@@ -272,5 +279,3 @@ private fun StubTab(tab: TabItem, onOpenAccount: () -> Unit) {
     }
 }
 
-private fun Account.firstName(): String? =
-    displayName?.trim()?.substringBefore(' ')?.takeIf { it.isNotEmpty() }

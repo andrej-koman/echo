@@ -41,6 +41,7 @@ import dev.andrej.echo.ui.components.SectionHeader
 import dev.andrej.echo.ui.components.ThinkingDots
 import dev.andrej.echo.ui.components.Waveform
 import dev.andrej.echo.ui.theme.EchoTheme
+import dev.andrej.echo.ui.transcripts.PendingBadge
 import dev.andrej.echo.ui.transcripts.TranscriptRow
 
 private const val RECENT_COUNT = 3
@@ -241,5 +242,8 @@ private fun RecentNote(row: TranscriptRow, onOpen: () -> Unit) {
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = EchoTheme.spacing.s5),
         )
+        row.pending?.let {
+            PendingBadge(it, modifier = Modifier.padding(top = EchoTheme.spacing.s5))
+        }
     }
 }

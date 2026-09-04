@@ -26,6 +26,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.andrej.echo.R
+import dev.andrej.echo.ui.components.BadgeTone
+import dev.andrej.echo.ui.components.EchoBadge
 import dev.andrej.echo.ui.components.EchoCard
 import dev.andrej.echo.ui.components.EchoIconButton
 import dev.andrej.echo.ui.components.EchoSearchField
@@ -199,9 +201,22 @@ internal fun TranscriptRow(
                     style = EchoTheme.typography.micro,
                     color = EchoTheme.colors.textTertiary,
                 )
+
+                row.pending?.let {
+                    PendingBadge(it, modifier = Modifier.padding(top = 2.dp))
+                }
             }
         }
     }
+}
+
+@Composable
+internal fun PendingBadge(pending: PendingCopy, modifier: Modifier = Modifier) {
+    EchoBadge(
+        text = pending.text,
+        tone = if (pending.severity == PendingSeverity.Failed) BadgeTone.Warning else BadgeTone.Neutral,
+        modifier = modifier,
+    )
 }
 
 const val TAG_TRANSCRIPTS_LIST = "transcripts_list"

@@ -2,11 +2,9 @@ package dev.andrej.echo.ui.record
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import dev.andrej.echo.ai.AnalysisOutcome
-import dev.andrej.echo.ai.TranscriptAnalyzer
-import dev.andrej.echo.data.DerivedRepository
+import dev.andrej.echo.ai.PendingAnalysisWorker
+import dev.andrej.echo.data.AnalysisQueueRepository
 import dev.andrej.echo.data.SettingsStore
-import dev.andrej.echo.data.Transcript
 import dev.andrej.echo.data.TranscriptRepository
 import dev.andrej.echo.speech.Availability
 import dev.andrej.echo.speech.FailureReason
@@ -51,8 +49,8 @@ data class RecordUiState(
 class RecordViewModel(
     private val engine: TranscriptionEngine,
     private val repository: TranscriptRepository,
-    private val derived: DerivedRepository,
-    private val analyzer: TranscriptAnalyzer,
+    private val queue: AnalysisQueueRepository,
+    private val worker: PendingAnalysisWorker,
     private val settings: SettingsStore,
     private val warmup: () -> Unit = {},
     private val clock: () -> Long = System::currentTimeMillis,
@@ -158,34 +156,19 @@ class RecordViewModel(
         viewModelScope.launch {
             if (text.isNotBlank()) {
                 // Saved before analysis so a missing, failing or unsupported model can only cost
-                // the extras, never the recording itself.
+                // the extras, never the recording itself. A failure past this point lands in the
+                // queue instead of vanishing — worker.requestDrainAndAwait keeps today's
+                // perceived flow (Processing screen holds for one attempt) while it does.
                 val transcript = repository.save(
                     text = text,
                     language = state.language?.tag.orEmpty(),
                     durationMs = clock() - startedAt,
                 )
-                analyze(transcript)
+                queue.enqueue(transcript.id)
+                worker.requestDrainAndAwait()
             }
             _uiState.value = _uiState.value.copy(isProcessing = false)
         }
-    }
-
-    private suspend fun analyze(transcript: Transcript) {
-        val outcome = analyzer.analyze(transcript)
-        val analysis = (outcome as? AnalysisOutcome.Success)?.analysis ?: return
-
-        derived.replaceFor(
-            transcriptId = transcript.id,
-            tasks = analysis.tasks,
-            reminders = analysis.reminders,
-            createdAt = clock(),
-        )
-        repository.attachAnalysis(
-            id = transcript.id,
-            title = analysis.title,
-            summary = analysis.summary,
-            analyzedAt = clock(),
-        )
     }
 
     /** Stops without filing anything away. */

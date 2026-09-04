@@ -2,6 +2,7 @@ package dev.andrej.echo.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import dev.andrej.echo.data.AnalysisQueueRepository
 import dev.andrej.echo.data.DerivedRepository
 import dev.andrej.echo.data.Reminder
 import dev.andrej.echo.data.Task
@@ -9,6 +10,7 @@ import dev.andrej.echo.data.Transcript
 import dev.andrej.echo.data.TranscriptRepository
 import dev.andrej.echo.ui.transcripts.TranscriptsUiState
 import dev.andrej.echo.ui.transcripts.group
+import dev.andrej.echo.ui.transcripts.pendingCopyByTranscript
 import dev.andrej.echo.ui.transcripts.spokenTotal
 import dev.andrej.echo.ui.transcripts.title
 import java.text.SimpleDateFormat
@@ -34,17 +36,18 @@ private const val UP_NEXT_COUNT = 3
 class HomeViewModel(
     private val repository: TranscriptRepository,
     private val derived: DerivedRepository,
+    private val queue: AnalysisQueueRepository,
     private val now: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
 
     private val query = MutableStateFlow("")
 
     val notes: StateFlow<TranscriptsUiState> =
-        combine(repository.transcripts, query) { transcripts, text ->
+        combine(repository.transcripts, query, queue.pending) { transcripts, text, pending ->
             val matches = transcripts.filter { it.text.contains(text.trim(), ignoreCase = true) }
             TranscriptsUiState(
                 query = text,
-                groups = group(matches, now()),
+                groups = group(matches, now(), pendingCopyByTranscript(pending)),
                 total = transcripts.size,
                 totalDuration = spokenTotal(transcripts.sumOf { it.durationMs }),
                 loaded = true,

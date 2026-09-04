@@ -31,6 +31,7 @@ import dev.andrej.echo.ui.components.EchoCard
 import dev.andrej.echo.ui.components.EchoIconButton
 import dev.andrej.echo.ui.components.EchoTopBar
 import dev.andrej.echo.ui.theme.EchoTheme
+import dev.andrej.echo.ui.transcripts.PendingBadge
 import dev.andrej.echo.ui.transcripts.TranscriptsViewModel
 import dev.andrej.echo.ui.transcripts.clock
 import dev.andrej.echo.ui.transcripts.title
@@ -48,6 +49,7 @@ fun TranscriptDetailScreen(
 ) {
     val transcripts by viewModel.transcripts.collectAsStateWithLifecycle()
     val analyzingId by viewModel.analyzingId.collectAsStateWithLifecycle()
+    val pending by viewModel.pending.collectAsStateWithLifecycle()
     val transcript = transcripts.firstOrNull { it.id == transcriptId }
     val context = LocalContext.current
 
@@ -84,6 +86,8 @@ fun TranscriptDetailScreen(
                 .navigationBarsPadding(),
             verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5),
         ) {
+            pending[transcript.id]?.let { PendingBadge(it) }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),

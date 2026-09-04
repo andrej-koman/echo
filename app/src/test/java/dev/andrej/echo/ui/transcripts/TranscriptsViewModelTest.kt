@@ -1,7 +1,10 @@
 package dev.andrej.echo.ui.transcripts
 
+import dev.andrej.echo.ai.AnalysisBlock
+import dev.andrej.echo.data.PendingAnalysis
 import dev.andrej.echo.data.Transcript
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
@@ -55,6 +58,70 @@ class TranscriptsViewModelTest {
         assertEquals(listOf("Today", "Yesterday"), groups.take(2).map { it.label })
         assertEquals(3, groups.size)
         assertEquals("today", groups[0].items.single().id)
+    }
+
+    @Test
+    fun `a row picks up its pending copy from the map`() {
+        val now = 1_000L
+        val pending = mapOf("a" to PendingCopy("Analysis failed — tap retry", PendingSeverity.Failed))
+
+        val groups = group(listOf(transcript("a", now)), now, pending)
+
+        assertEquals(pending["a"], groups.single().items.single().pending)
+    }
+
+    @Test
+    fun `a row with no queue entry has no pending copy`() {
+        val now = 1_000L
+
+        val groups = group(listOf(transcript("a", now)), now)
+
+        assertNull(groups.single().items.single().pending)
+    }
+
+    @Test
+    fun `waiting for a model names its size`() {
+        val copy = AnalysisBlock.WaitingForModel(977_000_000).toPendingCopy()
+
+        assertEquals("Needs ~977MB to analyze", copy?.text)
+        assertEquals(PendingSeverity.Parked, copy?.severity)
+    }
+
+    @Test
+    fun `a download in progress has no size to report`() {
+        val copy = AnalysisBlock.WaitingForModel(0).toPendingCopy()
+
+        assertEquals("Downloading the model…", copy?.text)
+    }
+
+    @Test
+    fun `no backend is parked, not failed`() {
+        val copy = AnalysisBlock.NoBackend("no AICore").toPendingCopy()
+
+        assertEquals(PendingSeverity.Parked, copy?.severity)
+    }
+
+    @Test
+    fun `generation failures and empty results both read as failed`() {
+        assertEquals(PendingSeverity.Failed, AnalysisBlock.GenerationFailed("boom").toPendingCopy()?.severity)
+        assertEquals(PendingSeverity.Failed, AnalysisBlock.EmptyResult.toPendingCopy()?.severity)
+    }
+
+    @Test
+    fun `an empty transcript never shows a pending badge`() {
+        assertNull(AnalysisBlock.EmptyTranscript.toPendingCopy())
+    }
+
+    @Test
+    fun `only entries with an attempted block show up in the pending map`() {
+        val entries = listOf(
+            PendingAnalysis(transcriptId = "a", enqueuedAt = 0, lastBlock = AnalysisBlock.EmptyResult),
+            PendingAnalysis(transcriptId = "b", enqueuedAt = 0, lastBlock = null),
+        )
+
+        val byTranscript = pendingCopyByTranscript(entries)
+
+        assertEquals(setOf("a"), byTranscript.keys)
     }
 
     private fun transcript(id: String, createdAt: Long) = Transcript(

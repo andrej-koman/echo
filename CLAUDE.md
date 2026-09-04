@@ -27,9 +27,10 @@ Wireless debugging drops often: `adb connect <ip:port>` from Settings → Develo
 speech/       TranscriptionEngine interface + AndroidSpeechEngine (SpeechRecognizer)
 ai/           LlmRunner interface + MlKitLlmRunner (Gemini Nano) and LiteRtLlmRunner (bundled
               Qwen3), ModelStore/HttpModelDownloader for the weights, AnalysisPrompt,
-              TranscriptAnalyzer
+              TranscriptAnalyzer, AnalysisOutcome/AnalysisBlock, PendingAnalysisWorker
 data/         Transcript, TranscriptRepository (JSON file), Task/Reminder + DerivedRepository
-              (derived.json), SettingsStore, AuthStore
+              (derived.json), PendingAnalysis + AnalysisQueueRepository (pending_analysis.json),
+              SettingsStore, AuthStore
 auth/         AuthRepository interface + GoogleAuthRepository (Credential Manager)
 ui/theme/     OutLoud design tokens (Color, Type, Shape, Spacing, Elevation, Motion, Theme)
 ui/components/ the ported design system kit
@@ -90,7 +91,44 @@ NavHost, so signing out drops the whole graph rather than unwinding a back stack
   to one (`distinctBy`) — a repeated task from a single note is noise.
 - `TranscriptDetailScreen`'s Analyze button re-runs `TranscriptAnalyzer` through
   `TranscriptsViewModel.analyze()`, for transcripts recorded before analysis existed or a failed
-  run. One in flight at a time (`analyzingId`), disabling the button under it.
+  run. One in flight at a time (`analyzingId`, sourced from `PendingAnalysisWorker.activeId`),
+  disabling the button under it.
+- **Pending analysis queue.** `TranscriptAnalyzer.analyze()` returns `AnalysisOutcome`
+  (`Success` or `Blocked(AnalysisBlock)`) instead of a nullable `Analysis`, so a failed analysis
+  carries a reason instead of vanishing: `EmptyTranscript`, `WaitingForModel(bytes)`,
+  `NoBackend(reason)`, `GenerationFailed(message)`, `EmptyResult`. `WaitingForModel` and
+  `NoBackend` are preconditions, not failures — a transcript parked on either never exhausts its
+  retries. `PendingAnalysisWorker` owns the drain: it reads `AnalysisQueueRepository`
+  (`pending_analysis.json`, mirrors `JsonTranscriptRepository`'s disk safety), runs
+  `TranscriptAnalyzer` against each entry, and either attaches the analysis or records the block.
+  `GenerationFailed`/`EmptyResult` consume one of 3 attempts; past that an entry sits unretried
+  until a manual Analyze. The worker runs on `AppContainer`'s `appScope`, not a ViewModel scope —
+  navigating away no longer cancels an in-flight analysis, which used to happen with
+  `TranscriptsViewModel`'s old `_analyzingId` on `viewModelScope`. Three triggers call
+  `worker.requestDrain()`: `RecordViewModel.stopRecording()` after saving (awaited inline, so the
+  Processing screen's perceived flow is unchanged), `AppContainer`'s collector on
+  `modelStore.state` (collapsed to the state's kind, not raw equality, so download progress ticks
+  don't retrigger it), and `MainActivity.onStart()` via `container.onAppForegrounded()`. Both of
+  the latter two also call `LlmRunnerProvider.invalidate()` first — without it a resolved
+  `NoLlmRunner` answer stays cached for the process's life even after a model finishes
+  downloading. `TranscriptsViewModel.analyze()` (the manual button) calls
+  `worker.analyzeNowAsync()`, which bypasses both the attempt cap and the "already analyzed"
+  drop that the automatic drain applies — an explicit tap always gets a fresh run. **No
+  WorkManager**: it would need a custom `WorkerFactory` (no Hilt here), and Nano's
+  foreground-only restriction already rules out a background retry loop — the triggers above are
+  the only times a retry can usefully happen. **No timed backoff**: drains are event-triggered,
+  not a polling loop, so there is nothing to back off *from*; the attempt cap alone prevents
+  churn. `TranscriptsViewModel.pending`/`HomeViewModel` and `TranscriptsViewModel.group()` turn
+  each queue entry's `lastBlock` into a `PendingCopy` (`ui/transcripts/TranscriptsViewModel.kt`)
+  — a plain `{text, severity}` pair, no Compose types, so it stays testable without a device. An
+  entry only gets copy once the drain has actually attempted it (`lastBlock != null`); a
+  freshly-enqueued row shows nothing for the moment before that. `PendingBadge` (in
+  `ui/transcripts/TranscriptsScreen.kt`, reused by Home and the detail screen) renders it as an
+  `EchoBadge`: `Parked` (waiting on a model or backend) in `BadgeTone.Neutral`, `Failed`
+  (`GenerationFailed`/`EmptyResult`, exhausted or not — the badge doesn't distinguish) in
+  `BadgeTone.Warning`. `EmptyTranscript` never renders — it's never enqueued. No dedicated
+  first-run modal; the badge is the only affordance, on transcript rows (Home and Transcripts),
+  recent-note cards, and the detail screen, which already has the Analyze button to retry with.
 
 ## Design system
 

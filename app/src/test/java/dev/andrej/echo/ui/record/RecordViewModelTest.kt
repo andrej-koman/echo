@@ -3,8 +3,10 @@ package dev.andrej.echo.ui.record
 import dev.andrej.echo.ai.FakeLlmRunner
 import dev.andrej.echo.ai.LlmAvailability
 import dev.andrej.echo.ai.LlmRunner
+import dev.andrej.echo.ai.PendingAnalysisWorker
 import dev.andrej.echo.ai.TranscriptAnalyzer
 import dev.andrej.echo.data.FakeSettingsStore
+import dev.andrej.echo.data.JsonAnalysisQueueRepository
 import dev.andrej.echo.data.JsonDerivedRepository
 import dev.andrej.echo.data.JsonTranscriptRepository
 import dev.andrej.echo.speech.Availability
@@ -13,6 +15,7 @@ import dev.andrej.echo.speech.FakeTranscriptionEngine
 import dev.andrej.echo.speech.LanguageSupport
 import dev.andrej.echo.speech.TranscriptionEvent
 import java.time.ZoneId
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -56,15 +59,26 @@ class RecordViewModelTest {
         derived: JsonDerivedRepository = derivedRepository(),
         runner: LlmRunner = FakeLlmRunner(availability = LlmAvailability.Unsupported("no model")),
         warmup: () -> Unit = {},
-    ) = RecordViewModel(
-        engine = engine,
-        repository = repository,
-        derived = derived,
-        analyzer = TranscriptAnalyzer({ runner }, ZoneId.of("UTC"), logDebug = {}, logWarn = {}),
-        settings = settings,
-        warmup = warmup,
-        clock = { 42L },
-    )
+    ): RecordViewModel {
+        val queue = JsonAnalysisQueueRepository(tempFolder.newFolder(), dispatcher)
+        val worker = PendingAnalysisWorker(
+            queue = queue,
+            transcripts = repository,
+            derived = derived,
+            analyzer = TranscriptAnalyzer({ runner }, ZoneId.of("UTC"), logDebug = {}, logWarn = {}),
+            scope = CoroutineScope(dispatcher),
+            now = { 42L },
+        )
+        return RecordViewModel(
+            engine = engine,
+            repository = repository,
+            queue = queue,
+            worker = worker,
+            settings = settings,
+            warmup = warmup,
+            clock = { 42L },
+        )
+    }
 
     private fun analyzingRunner(json: String) = FakeLlmRunner(responses = listOf(json))
 

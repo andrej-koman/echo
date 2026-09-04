@@ -13,11 +13,14 @@ import dev.andrej.echo.ai.LlmAvailability
 import dev.andrej.echo.ai.LlmRunnerProvider
 import dev.andrej.echo.ai.MlKitLlmRunner
 import dev.andrej.echo.ai.ModelStore
+import dev.andrej.echo.ai.PendingAnalysisWorker
 import dev.andrej.echo.ai.QWEN3_1_7B_INT4
 import dev.andrej.echo.ai.TranscriptAnalyzer
 import dev.andrej.echo.ai.toCardState
+import dev.andrej.echo.data.AnalysisQueueRepository
 import dev.andrej.echo.data.AuthStore
 import dev.andrej.echo.data.DerivedRepository
+import dev.andrej.echo.data.JsonAnalysisQueueRepository
 import dev.andrej.echo.data.JsonDerivedRepository
 import dev.andrej.echo.data.JsonTranscriptRepository
 import dev.andrej.echo.data.SettingsStore
@@ -39,6 +42,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.map
@@ -65,6 +70,9 @@ class AppContainer(context: Context) {
 
     val derived: DerivedRepository =
         JsonDerivedRepository(applicationContext.filesDir)
+
+    val analysisQueue: AnalysisQueueRepository =
+        JsonAnalysisQueueRepository(applicationContext.filesDir)
 
     val modelStore = ModelStore(
         directory = File(applicationContext.filesDir, "models"),
@@ -103,6 +111,38 @@ class AppContainer(context: Context) {
         appScope.launch { analyzer.warmup() }
     }
 
+    val pendingAnalysisWorker = PendingAnalysisWorker(
+        queue = analysisQueue,
+        transcripts = repository,
+        derived = derived,
+        analyzer = analyzer,
+        scope = appScope,
+    )
+
+    init {
+        // Collapsed to the state's kind, not raw equality — Downloading ticks progress on every
+        // chunk and neither invalidating the runner cache nor scanning the queue needs to happen
+        // that often. The payoff case is Absent/Failed -> Ready: a finished download used to sit
+        // there unnoticed until the app was killed and relaunched (LlmRunnerProvider cached its
+        // "no backend" answer for the process's life).
+        appScope.launch {
+            modelStore.state
+                .map { it.javaClass.simpleName }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect {
+                    llmRunners.invalidate()
+                    pendingAnalysisWorker.requestDrain()
+                }
+        }
+    }
+
+    /** Called from Activity.onStart — a capable backend may have appeared while backgrounded. */
+    fun onAppForegrounded() {
+        llmRunners.invalidate()
+        pendingAnalysisWorker.requestDrain()
+    }
+
     private var downloadJob: Job? = null
 
     fun downloadModel() {
@@ -125,14 +165,14 @@ class AppContainer(context: Context) {
                 RecordViewModel(
                     engine = engine,
                     repository = repository,
-                    derived = derived,
-                    analyzer = analyzer,
+                    queue = analysisQueue,
+                    worker = pendingAnalysisWorker,
                     settings = settings,
                     warmup = ::warmUpLlm,
                 ) as T
 
             modelClass.isAssignableFrom(TranscriptsViewModel::class.java) ->
-                TranscriptsViewModel(repository, derived, analyzer) as T
+                TranscriptsViewModel(repository, analysisQueue, pendingAnalysisWorker) as T
 
             modelClass.isAssignableFrom(AuthViewModel::class.java) ->
                 AuthViewModel(auth) as T
@@ -146,7 +186,7 @@ class AppContainer(context: Context) {
                 ) as T
 
             modelClass.isAssignableFrom(HomeViewModel::class.java) ->
-                HomeViewModel(repository, derived) as T
+                HomeViewModel(repository, derived, analysisQueue) as T
 
             modelClass.isAssignableFrom(TasksViewModel::class.java) ->
                 TasksViewModel(derived, repository, aiCardState) as T

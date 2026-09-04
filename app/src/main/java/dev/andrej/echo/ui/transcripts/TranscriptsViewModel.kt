@@ -2,15 +2,17 @@ package dev.andrej.echo.ui.transcripts
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import dev.andrej.echo.ai.AnalysisOutcome
-import dev.andrej.echo.ai.TranscriptAnalyzer
-import dev.andrej.echo.data.DerivedRepository
+import dev.andrej.echo.ai.AnalysisBlock
+import dev.andrej.echo.ai.PendingAnalysisWorker
+import dev.andrej.echo.data.AnalysisQueueRepository
+import dev.andrej.echo.data.PendingAnalysis
 import dev.andrej.echo.data.Transcript
 import dev.andrej.echo.data.TranscriptRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -19,12 +21,17 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
+enum class PendingSeverity { Parked, Failed }
+
+data class PendingCopy(val text: String, val severity: PendingSeverity)
+
 data class TranscriptRow(
     val id: String,
     val title: String,
     val excerpt: String,
     val duration: String,
     val time: String,
+    val pending: PendingCopy? = null,
 )
 
 data class TranscriptGroup(
@@ -42,24 +49,30 @@ data class TranscriptsUiState(
 
 class TranscriptsViewModel(
     private val repository: TranscriptRepository,
-    private val derived: DerivedRepository,
-    private val analyzer: TranscriptAnalyzer,
+    private val queue: AnalysisQueueRepository,
+    private val worker: PendingAnalysisWorker,
     private val now: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
 
     private val query = MutableStateFlow("")
-    private val _analyzingId = MutableStateFlow<String?>(null)
-    val analyzingId: StateFlow<String?> = _analyzingId
+
+    /** Runs on an application scope, so navigating away no longer cancels it silently. */
+    val analyzingId: StateFlow<String?> = worker.activeId
 
     val transcripts: StateFlow<List<Transcript>> = repository.transcripts
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** Keyed by transcript id. Only entries the drain has actually attempted show up here. */
+    val pending: StateFlow<Map<String, PendingCopy>> = queue.pending
+        .map(::pendingCopyByTranscript)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
     val state: StateFlow<TranscriptsUiState> =
-        combine(repository.transcripts, query) { transcripts, text ->
+        combine(repository.transcripts, query, pending) { transcripts, text, pendingByTranscript ->
             val matches = transcripts.filter { it.text.contains(text.trim(), ignoreCase = true) }
             TranscriptsUiState(
                 query = text,
-                groups = group(matches, now()),
+                groups = group(matches, now(), pendingByTranscript),
                 total = transcripts.size,
                 totalDuration = spokenTotal(transcripts.sumOf { it.durationMs }),
                 loaded = true,
@@ -75,50 +88,56 @@ class TranscriptsViewModel(
     }
 
     fun analyze(transcriptId: String) {
-        if (_analyzingId.value != null) return
+        if (worker.activeId.value != null) return
 
-        viewModelScope.launch {
-            _analyzingId.value = transcriptId
-            try {
-                val transcript = transcripts.value.firstOrNull { it.id == transcriptId } ?: return@launch
-                val outcome = analyzer.analyze(transcript)
-                val analysis = (outcome as? AnalysisOutcome.Success)?.analysis ?: return@launch
-
-                derived.replaceFor(
-                    transcriptId = transcript.id,
-                    tasks = analysis.tasks,
-                    reminders = analysis.reminders,
-                    createdAt = now(),
-                )
-                repository.attachAnalysis(
-                    id = transcript.id,
-                    title = analysis.title,
-                    summary = analysis.summary,
-                    analyzedAt = now(),
-                )
-            } finally {
-                _analyzingId.value = null
-            }
-        }
+        worker.analyzeNowAsync(transcriptId)
     }
 }
 
 private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
 private val dayFormat = SimpleDateFormat("d MMM yyyy", Locale.getDefault())
 
-internal fun group(transcripts: List<Transcript>, now: Long): List<TranscriptGroup> =
+internal fun group(
+    transcripts: List<Transcript>,
+    now: Long,
+    pending: Map<String, PendingCopy> = emptyMap(),
+): List<TranscriptGroup> =
     transcripts
         .sortedByDescending { it.createdAt }
         .groupBy { dayLabel(it.createdAt, now) }
-        .map { (label, items) -> TranscriptGroup(label, items.map(Transcript::asRow)) }
+        .map { (label, items) -> TranscriptGroup(label, items.map { it.asRow(pending[it.id]) }) }
 
-private fun Transcript.asRow() = TranscriptRow(
+private fun Transcript.asRow(pending: PendingCopy?) = TranscriptRow(
     id = id,
     title = title ?: title(text),
     excerpt = summary ?: text.trim(),
     duration = clock(durationMs),
     time = timeFormat.format(Date(createdAt)),
+    pending = pending,
 )
+
+/** Only entries the drain has actually attempted carry a [PendingAnalysis.lastBlock]. */
+internal fun pendingCopyByTranscript(entries: List<PendingAnalysis>): Map<String, PendingCopy> =
+    entries.mapNotNull { entry -> entry.lastBlock?.toPendingCopy()?.let { entry.transcriptId to it } }.toMap()
+
+internal fun AnalysisBlock.toPendingCopy(): PendingCopy? = when (this) {
+    AnalysisBlock.EmptyTranscript -> null
+
+    is AnalysisBlock.WaitingForModel -> PendingCopy(
+        text = if (bytes > 0) "Needs ~${bytes / 1_000_000}MB to analyze" else "Downloading the model…",
+        severity = PendingSeverity.Parked,
+    )
+
+    is AnalysisBlock.NoBackend -> PendingCopy(
+        text = "This phone can't analyze offline",
+        severity = PendingSeverity.Parked,
+    )
+
+    is AnalysisBlock.GenerationFailed, AnalysisBlock.EmptyResult -> PendingCopy(
+        text = "Analysis failed — tap retry",
+        severity = PendingSeverity.Failed,
+    )
+}
 
 /**
  * Fallback for a transcript analysis has not named yet — the opening of what was said, cut at

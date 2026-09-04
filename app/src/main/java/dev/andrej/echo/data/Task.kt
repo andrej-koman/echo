@@ -9,4 +9,5 @@ data class Task(
     val text: String,
     val done: Boolean = false,
     val createdAt: Long,
+    val updatedAt: Long = createdAt,
 )

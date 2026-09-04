@@ -62,6 +62,50 @@ class JsonDerivedRepositoryTest {
     }
 
     @Test
+    fun `re-analysis keeps a task ticked when its text survives`() = runTest {
+        val repository = repository()
+        repository.replaceFor("t1", listOf("buy milk", "call mum"), emptyList())
+        val ticked = repository.tasks.first().first { it.text == "buy milk" }
+        repository.setDone(ticked.id, done = true)
+
+        repository.replaceFor("t1", listOf("buy milk", "call mum", "book flights"), emptyList())
+
+        assertEquals(
+            mapOf("buy milk" to true, "call mum" to false, "book flights" to false),
+            repository.tasks.first().associate { it.text to it.done },
+        )
+    }
+
+    @Test
+    fun `the same task from the same transcript keeps one stable id`() = runTest {
+        val repository = repository()
+        repository.replaceFor("t1", listOf("buy milk"), emptyList())
+        val before = repository.tasks.first().single().id
+
+        repository.replaceFor("t1", listOf("Buy Milk "), emptyList())
+
+        assertEquals(before, repository.tasks.first().single().id)
+    }
+
+    @Test
+    fun `the same text under two transcripts gets two ids`() = runTest {
+        val repository = repository()
+        repository.replaceFor("t1", listOf("buy milk"), emptyList())
+        repository.replaceFor("t2", listOf("buy milk"), emptyList())
+
+        assertEquals(2, repository.tasks.first().map { it.id }.toSet().size)
+    }
+
+    @Test
+    fun `a task repeated in one analysis collapses to a single row`() = runTest {
+        val repository = repository()
+
+        repository.replaceFor("t1", listOf("buy milk", "buy milk"), emptyList())
+
+        assertEquals(listOf("buy milk"), repository.tasks.first().map { it.text })
+    }
+
+    @Test
     fun `replacing one transcript leaves the others alone`() = runTest {
         val repository = repository()
         repository.replaceFor("t1", listOf("keep me"), emptyList())

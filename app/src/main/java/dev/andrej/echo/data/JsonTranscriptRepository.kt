@@ -6,7 +6,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -23,7 +23,8 @@ class JsonTranscriptRepository(
 
     private val state = MutableStateFlow(readFromDisk())
 
-    override val transcripts: Flow<List<Transcript>> = state.asStateFlow()
+    override val transcripts: Flow<List<Transcript>> =
+        state.map { all -> all.filter { it.deletedAt == null } }
 
     override suspend fun save(
         text: String,
@@ -52,7 +53,12 @@ class JsonTranscriptRepository(
         update { current ->
             current.map { transcript ->
                 if (transcript.id == id) {
-                    transcript.copy(title = title, summary = summary, analyzedAt = analyzedAt)
+                    transcript.copy(
+                        title = title,
+                        summary = summary,
+                        analyzedAt = analyzedAt,
+                        updatedAt = analyzedAt,
+                    )
                 } else {
                     transcript
                 }
@@ -61,7 +67,16 @@ class JsonTranscriptRepository(
     }
 
     override suspend fun delete(id: String) {
-        update { current -> current.filterNot { it.id == id } }
+        val now = System.currentTimeMillis()
+        update { current ->
+            current.map { transcript ->
+                if (transcript.id == id) {
+                    transcript.copy(deletedAt = now, updatedAt = now)
+                } else {
+                    transcript
+                }
+            }
+        }
     }
 
     private suspend fun update(transform: (List<Transcript>) -> List<Transcript>) {

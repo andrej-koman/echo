@@ -12,4 +12,7 @@ data class Transcript(
     val title: String? = null,
     val summary: String? = null,
     val analyzedAt: Long? = null,
+    val updatedAt: Long = createdAt,
+    /** Tombstone. Set instead of dropping the row, so a delete can outlive one device. */
+    val deletedAt: Long? = null,
 )

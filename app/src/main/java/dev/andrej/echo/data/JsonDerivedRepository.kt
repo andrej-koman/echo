@@ -43,34 +43,49 @@ class JsonDerivedRepository(
         createdAt: Long,
     ) {
         update { current ->
+            val doneBefore = current.tasks
+                .filter { it.sourceTranscriptId == transcriptId }
+                .associate { it.id to it.done }
+
             Derived(
                 tasks = current.tasks.filterNot { it.sourceTranscriptId == transcriptId } +
                     tasks.map { text ->
+                        val id = derivedId(transcriptId, "task", text)
                         Task(
-                            id = UUID.randomUUID().toString(),
+                            id = id,
                             sourceTranscriptId = transcriptId,
                             text = text,
+                            done = doneBefore[id] ?: false,
                             createdAt = createdAt,
                         )
-                    },
+                    }.distinctBy { it.id },
                 reminders = current.reminders.filterNot { it.sourceTranscriptId == transcriptId } +
                     reminders.map { (text, dueAt) ->
                         Reminder(
-                            id = UUID.randomUUID().toString(),
+                            id = derivedId(transcriptId, "reminder", text),
                             sourceTranscriptId = transcriptId,
                             text = text,
                             dueAt = dueAt,
                             createdAt = createdAt,
                         )
-                    },
+                    }.distinctBy { it.id },
             )
         }
     }
 
+    /** Keyed by what produced the row, not minted, so re-analysis keeps ids and [Task.done]. */
+    private fun derivedId(transcriptId: String, kind: String, text: String): String =
+        UUID.nameUUIDFromBytes(
+            "$transcriptId\u0000$kind\u0000${text.trim().lowercase()}".toByteArray(),
+        ).toString()
+
     override suspend fun setDone(taskId: String, done: Boolean) {
+        val now = System.currentTimeMillis()
         update { current ->
             current.copy(
-                tasks = current.tasks.map { if (it.id == taskId) it.copy(done = done) else it },
+                tasks = current.tasks.map { task ->
+                    if (task.id == taskId) task.copy(done = done, updatedAt = now) else task
+                },
             )
         }
     }

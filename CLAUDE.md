@@ -80,6 +80,14 @@ NavHost, so signing out drops the whole graph rather than unwinding a back stack
 - Home's "Up next" mixes undone tasks and reminders, dated ones sorted soonest-first ahead of
   undated ones by recency, capped at three (`HomeViewModel.buildUpNext`). The section disappears
   rather than rendering an empty card when there is nothing due.
+- Rows carry `updatedAt` and transcripts carry a `deletedAt` tombstone — `delete()` marks, the
+  `transcripts` flow filters. Both default off `createdAt`/null, so files written before them still
+  parse. Sync is not built and is not planned yet; these exist so a delete and a last-write-wins
+  merge stay possible later, when a hard delete would already have resurrected rows.
+- Derived rows are keyed by `UUID.nameUUIDFromBytes(transcriptId + kind + normalized text)`, not
+  minted fresh, so re-analysis lands on the same ids and `Task.done` survives it. Before this,
+  Analyze silently un-ticked every task. Two rows with the same text under one transcript collapse
+  to one (`distinctBy`) — a repeated task from a single note is noise.
 - `TranscriptDetailScreen`'s Analyze button re-runs `TranscriptAnalyzer` through
   `TranscriptsViewModel.analyze()`, for transcripts recorded before analysis existed or a failed
   run. One in flight at a time (`analyzingId`), disabling the button under it.

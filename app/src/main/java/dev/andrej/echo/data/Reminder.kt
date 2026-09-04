@@ -10,4 +10,5 @@ data class Reminder(
     val text: String,
     val dueAt: Long?,
     val createdAt: Long,
+    val updatedAt: Long = createdAt,
 )

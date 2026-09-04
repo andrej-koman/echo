@@ -106,6 +106,23 @@ class JsonTranscriptRepositoryTest {
         assertNull(stored.title)
         assertNull(stored.summary)
         assertNull(stored.analyzedAt)
+        assertEquals(stored.createdAt, stored.updatedAt)
+        assertNull(stored.deletedAt)
+    }
+
+    @Test
+    fun `a deleted transcript stays deleted across instances`() = runTest {
+        val directory = tempFolder.newFolder()
+        val repository = JsonTranscriptRepository(directory)
+        repository.save(text = "keep", language = "en-GB", durationMs = 0)
+        val doomed = repository.save(text = "remove", language = "en-GB", durationMs = 0)
+
+        repository.delete(doomed.id)
+
+        assertEquals(
+            listOf("keep"),
+            JsonTranscriptRepository(directory).transcripts.first().map { it.text },
+        )
     }
 
     @Test

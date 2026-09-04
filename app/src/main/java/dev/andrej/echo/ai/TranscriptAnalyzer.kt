@@ -29,44 +29,55 @@ class TranscriptAnalyzer(
         }
     }
 
-    suspend fun analyze(transcript: Transcript): Analysis? {
-        if (transcript.text.isBlank()) return null
+    suspend fun analyze(transcript: Transcript): AnalysisOutcome {
+        if (transcript.text.isBlank()) return AnalysisOutcome.Blocked(AnalysisBlock.EmptyTranscript)
 
         val runner = runners()
-        if (runner.availability() != LlmAvailability.Ready) return null
+        when (val availability = runner.availability()) {
+            LlmAvailability.Ready -> Unit
+            is LlmAvailability.NeedsDownload ->
+                return AnalysisOutcome.Blocked(AnalysisBlock.WaitingForModel(availability.bytes))
+            is LlmAvailability.Downloading ->
+                // No total size on this branch — the live fraction lives in ModelStore.state,
+                // not in this outcome, which nothing persists yet in Phase 1.
+                return AnalysisOutcome.Blocked(AnalysisBlock.WaitingForModel(0))
+            is LlmAvailability.Unsupported ->
+                return AnalysisOutcome.Blocked(AnalysisBlock.NoBackend(availability.reason))
+        }
 
         val today = Instant.ofEpochMilli(transcript.createdAt).atZone(zone).toLocalDate()
         val prompt = buildAnalysisPrompt(transcript.text, today)
 
-        return attempt(runner, prompt, LlmRunner.DEFAULT_TEMPERATURE)
-            ?: attempt(runner, prompt, temperature = 0f)
+        val first = attempt(runner, prompt, LlmRunner.DEFAULT_TEMPERATURE)
+        if (first is AnalysisOutcome.Success) return first
+        return attempt(runner, prompt, temperature = 0f)
     }
 
     private suspend fun attempt(
         runner: LlmRunner,
         prompt: String,
         temperature: Float,
-    ): Analysis? {
+    ): AnalysisOutcome {
         val raw = try {
             runner.generate(prompt, temperature)
         } catch (e: Exception) {
             logWarn("generate() failed at temperature=$temperature: ${e.message}")
-            return null
+            return AnalysisOutcome.Blocked(AnalysisBlock.GenerationFailed(e.message))
         }
         logDebug("raw output (temperature=$temperature): $raw")
 
         val analysis = parseAnalysis(raw, zone)
         if (analysis == null) {
             logWarn("could not parse a JSON object out of the raw output above")
-            return null
+            return AnalysisOutcome.Blocked(AnalysisBlock.EmptyResult)
         }
 
         logDebug("parsed: $analysis")
         if (!analysis.hasContent) {
             logWarn("parsed but empty (no title/summary/tasks/reminders) — discarded")
-            return null
+            return AnalysisOutcome.Blocked(AnalysisBlock.EmptyResult)
         }
-        return analysis
+        return AnalysisOutcome.Success(analysis)
     }
 
     private companion object {

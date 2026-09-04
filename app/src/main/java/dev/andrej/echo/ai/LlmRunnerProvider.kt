@@ -1,6 +1,7 @@
 package dev.andrej.echo.ai
 
 import android.util.Log
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -27,9 +28,26 @@ class LlmRunnerProvider(
 
     private val lock = Mutex()
     private var resolved: LlmRunner? = null
+    private var resolvedGeneration = -1
+    private val generation = AtomicInteger(0)
 
-    suspend fun runner(): LlmRunner = resolved ?: lock.withLock {
-        resolved ?: resolve().also { resolved = it }
+    /** Forces the next [runner] call to re-probe instead of returning the cached choice. */
+    fun invalidate() {
+        generation.incrementAndGet()
+    }
+
+    suspend fun runner(): LlmRunner {
+        val current = generation.get()
+        resolved?.let { if (resolvedGeneration == current) return it }
+
+        return lock.withLock {
+            val target = generation.get()
+            resolved?.let { if (resolvedGeneration == target) return@withLock it }
+            resolve().also {
+                resolved = it
+                resolvedGeneration = target
+            }
+        }
     }
 
     private suspend fun resolve(): LlmRunner {

@@ -2,6 +2,7 @@ package dev.andrej.echo.ui.record
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import dev.andrej.echo.ai.AnalysisOutcome
 import dev.andrej.echo.ai.TranscriptAnalyzer
 import dev.andrej.echo.data.DerivedRepository
 import dev.andrej.echo.data.SettingsStore
@@ -170,7 +171,8 @@ class RecordViewModel(
     }
 
     private suspend fun analyze(transcript: Transcript) {
-        val analysis = analyzer.analyze(transcript) ?: return
+        val outcome = analyzer.analyze(transcript)
+        val analysis = (outcome as? AnalysisOutcome.Success)?.analysis ?: return
 
         derived.replaceFor(
             transcriptId = transcript.id,

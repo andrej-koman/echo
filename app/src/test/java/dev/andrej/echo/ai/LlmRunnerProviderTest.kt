@@ -81,4 +81,38 @@ class LlmRunnerProviderTest {
 
         assertEquals(1, nano.probes)
     }
+
+    @Test
+    fun `invalidate forces a re-probe on the next call`() = runTest {
+        val nano = CountingRunner(LlmAvailability.Unsupported("no AICore"))
+        val fallback = CountingRunner(LlmAvailability.Ready)
+        val provider = LlmRunnerProvider(listOf(nano, fallback), log = {})
+
+        assertSame(fallback, provider.runner())
+        provider.invalidate()
+        assertSame(fallback, provider.runner())
+
+        assertEquals(2, nano.probes)
+    }
+
+    @Test
+    fun `a changed availability is picked up only after invalidate`() = runTest {
+        var available = false
+        val flexible = object : LlmRunner {
+            override suspend fun availability(): LlmAvailability =
+                if (available) LlmAvailability.Ready else LlmAvailability.Unsupported("not yet")
+
+            override suspend fun warmup() = Unit
+            override suspend fun generate(prompt: String, temperature: Float) = "unused"
+        }
+        val provider = LlmRunnerProvider(listOf(flexible), log = {})
+
+        assertTrue(provider.runner().availability() is LlmAvailability.Unsupported)
+
+        available = true
+        assertTrue(provider.runner().availability() is LlmAvailability.Unsupported)
+
+        provider.invalidate()
+        assertEquals(LlmAvailability.Ready, provider.runner().availability())
+    }
 }

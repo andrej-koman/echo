@@ -2,6 +2,7 @@ package dev.andrej.echo.ui.transcripts
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import dev.andrej.echo.ai.AnalysisOutcome
 import dev.andrej.echo.ai.TranscriptAnalyzer
 import dev.andrej.echo.data.DerivedRepository
 import dev.andrej.echo.data.Transcript
@@ -80,7 +81,8 @@ class TranscriptsViewModel(
             _analyzingId.value = transcriptId
             try {
                 val transcript = transcripts.value.firstOrNull { it.id == transcriptId } ?: return@launch
-                val analysis = analyzer.analyze(transcript) ?: return@launch
+                val outcome = analyzer.analyze(transcript)
+                val analysis = (outcome as? AnalysisOutcome.Success)?.analysis ?: return@launch
 
                 derived.replaceFor(
                     transcriptId = transcript.id,

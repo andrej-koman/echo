@@ -5,7 +5,6 @@ import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -25,7 +24,8 @@ class TranscriptAnalyzerTest {
 
     @Test
     fun `usable output is returned`() = runTest {
-        val analysis = TranscriptAnalyzer({ FakeLlmRunner(listOf(good)) }, UTC, logDebug = {}, logWarn = {}).analyze(transcript())!!
+        val outcome = TranscriptAnalyzer({ FakeLlmRunner(listOf(good)) }, UTC, logDebug = {}, logWarn = {}).analyze(transcript())
+        val analysis = (outcome as AnalysisOutcome.Success).analysis
 
         assertEquals("Fix the tap", analysis.title)
         assertEquals(listOf("Buy a washer"), analysis.tasks)
@@ -44,9 +44,9 @@ class TranscriptAnalyzerTest {
     fun `unparseable output retries once at zero temperature`() = runTest {
         val runner = FakeLlmRunner(listOf("no json here", good))
 
-        val analysis = TranscriptAnalyzer({ runner }, UTC, logDebug = {}, logWarn = {}).analyze(transcript())
+        val outcome = TranscriptAnalyzer({ runner }, UTC, logDebug = {}, logWarn = {}).analyze(transcript())
 
-        assertEquals("Fix the tap", analysis?.title)
+        assertEquals("Fix the tap", (outcome as AnalysisOutcome.Success).analysis.title)
         assertEquals(listOf(LlmRunner.DEFAULT_TEMPERATURE, 0f), runner.temperatures)
     }
 
@@ -54,7 +54,9 @@ class TranscriptAnalyzerTest {
     fun `it gives up after the retry`() = runTest {
         val runner = FakeLlmRunner(listOf("nope", "still nope"))
 
-        assertNull(TranscriptAnalyzer({ runner }, UTC, logDebug = {}, logWarn = {}).analyze(transcript()))
+        val outcome = TranscriptAnalyzer({ runner }, UTC, logDebug = {}, logWarn = {}).analyze(transcript())
+
+        assertEquals(AnalysisOutcome.Blocked(AnalysisBlock.EmptyResult), outcome)
         assertEquals(2, runner.prompts.size)
     }
 
@@ -63,14 +65,19 @@ class TranscriptAnalyzerTest {
         val empty = """{"title":"","summary":"","tasks":[],"reminders":[]}"""
         val runner = FakeLlmRunner(listOf(empty, good))
 
-        assertEquals("Fix the tap", TranscriptAnalyzer({ runner }, UTC, logDebug = {}, logWarn = {}).analyze(transcript())?.title)
+        val outcome = TranscriptAnalyzer({ runner }, UTC, logDebug = {}, logWarn = {}).analyze(transcript())
+
+        assertEquals("Fix the tap", (outcome as AnalysisOutcome.Success).analysis.title)
     }
 
     @Test
     fun `a throwing runner does not propagate`() = runTest {
         val runner = FakeLlmRunner(listOf(good), throwOnGenerate = true)
 
-        assertNull(TranscriptAnalyzer({ runner }, UTC, logDebug = {}, logWarn = {}).analyze(transcript()))
+        val outcome = TranscriptAnalyzer({ runner }, UTC, logDebug = {}, logWarn = {}).analyze(transcript())
+
+        assertTrue(outcome is AnalysisOutcome.Blocked)
+        assertTrue((outcome as AnalysisOutcome.Blocked).reason is AnalysisBlock.GenerationFailed)
     }
 
     @Test
@@ -80,7 +87,9 @@ class TranscriptAnalyzerTest {
             availability = LlmAvailability.Unsupported("no AICore"),
         )
 
-        assertNull(TranscriptAnalyzer({ runner }, UTC, logDebug = {}, logWarn = {}).analyze(transcript()))
+        val outcome = TranscriptAnalyzer({ runner }, UTC, logDebug = {}, logWarn = {}).analyze(transcript())
+
+        assertEquals(AnalysisOutcome.Blocked(AnalysisBlock.NoBackend("no AICore")), outcome)
         assertTrue(runner.prompts.isEmpty())
     }
 
@@ -91,7 +100,9 @@ class TranscriptAnalyzerTest {
             availability = LlmAvailability.NeedsDownload(bytes = 550_000_000),
         )
 
-        assertNull(TranscriptAnalyzer({ runner }, UTC, logDebug = {}, logWarn = {}).analyze(transcript()))
+        val outcome = TranscriptAnalyzer({ runner }, UTC, logDebug = {}, logWarn = {}).analyze(transcript())
+
+        assertEquals(AnalysisOutcome.Blocked(AnalysisBlock.WaitingForModel(550_000_000)), outcome)
         assertTrue(runner.prompts.isEmpty())
     }
 
@@ -99,7 +110,9 @@ class TranscriptAnalyzerTest {
     fun `a blank transcript is not sent to the model`() = runTest {
         val runner = FakeLlmRunner(listOf(good))
 
-        assertNull(TranscriptAnalyzer({ runner }, UTC, logDebug = {}, logWarn = {}).analyze(transcript(text = "   ")))
+        val outcome = TranscriptAnalyzer({ runner }, UTC, logDebug = {}, logWarn = {}).analyze(transcript(text = "   "))
+
+        assertEquals(AnalysisOutcome.Blocked(AnalysisBlock.EmptyTranscript), outcome)
         assertTrue(runner.prompts.isEmpty())
     }
 }

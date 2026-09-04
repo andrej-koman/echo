@@ -2,23 +2,20 @@ package dev.andrej.echo.data
 
 import kotlinx.coroutines.flow.Flow
 
-/** Tasks and reminders pulled out of transcripts. Both live in one file; they change together. */
+/** Todo items pulled out of transcripts. */
 interface DerivedRepository {
 
-    val tasks: Flow<List<Task>>
-
-    /** Soonest first. Reminders with no resolved time come last. */
-    val reminders: Flow<List<Reminder>>
+    /** Soonest first; within a day, timed items before date-only ones. */
+    val items: Flow<List<TodoItem>>
 
     /** Replaces whatever the given transcript produced before, so re-analysis does not duplicate. */
     suspend fun replaceFor(
         transcriptId: String,
-        tasks: List<String>,
-        reminders: List<Pair<String, Long?>>,
+        items: List<NewTodo>,
         createdAt: Long = System.currentTimeMillis(),
     )
 
-    suspend fun setDone(taskId: String, done: Boolean)
+    suspend fun setDone(itemId: String, done: Boolean)
 
     suspend fun deleteFor(transcriptId: String)
 }

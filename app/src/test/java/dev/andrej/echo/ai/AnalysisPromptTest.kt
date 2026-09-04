@@ -8,84 +8,86 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 private val UTC = ZoneId.of("UTC")
+private val TODAY = LocalDate.of(2026, 9, 4)
 
 class AnalysisPromptTest {
 
     private val clean = """
         {"title":"Call the plumber","summary":"Kitchen tap is dripping.",
-         "tasks":["Call the plumber","Buy a washer"],
-         "reminders":[{"text":"Call the plumber","due":"2026-09-04T10:00"}]}
+         "items":[{"text":"Call the plumber","due":"2026-09-04T10:00"},{"text":"Buy a washer","due":null}]}
     """.trimIndent()
+
+    private fun parse(raw: String) = parseAnalysis(raw, UTC, TODAY)
 
     @Test
     fun `clean json is parsed`() {
-        val analysis = parseAnalysis(clean, UTC)!!
+        val analysis = parse(clean)!!
 
         assertEquals("Call the plumber", analysis.title)
         assertEquals("Kitchen tap is dripping.", analysis.summary)
-        assertEquals(listOf("Call the plumber", "Buy a washer"), analysis.tasks)
-        assertEquals(1, analysis.reminders.size)
-        assertEquals("Call the plumber", analysis.reminders.single().first)
+        assertEquals(2, analysis.items.size)
+        val timed = analysis.items.single { it.text == "Call the plumber" }
+        assertTrue(timed.hasTime)
+        val untimed = analysis.items.single { it.text == "Buy a washer" }
+        assertTrue(!untimed.hasTime)
     }
 
     @Test
     fun `fenced json is parsed`() {
-        val analysis = parseAnalysis("```json\n$clean\n```", UTC)!!
+        val analysis = parse("```json\n$clean\n```")!!
 
         assertEquals("Call the plumber", analysis.title)
-        assertEquals(2, analysis.tasks.size)
+        assertEquals(2, analysis.items.size)
     }
 
     @Test
     fun `json wrapped in prose is parsed`() {
         val raw = "Sure! Here is the JSON you asked for:\n$clean\nHope that helps."
 
-        assertEquals("Call the plumber", parseAnalysis(raw, UTC)!!.title)
+        assertEquals("Call the plumber", parse(raw)!!.title)
     }
 
     @Test
     fun `unknown fields are ignored`() {
-        val raw = """{"title":"A","mood":"chirpy","tasks":[],"reminders":[]}"""
+        val raw = """{"title":"A","mood":"chirpy","items":[]}"""
 
-        assertEquals("A", parseAnalysis(raw, UTC)!!.title)
+        assertEquals("A", parse(raw)!!.title)
     }
 
     @Test
     fun `missing fields fall back to empty`() {
-        val analysis = parseAnalysis("""{"title":"Only a title"}""", UTC)!!
+        val analysis = parse("""{"title":"Only a title"}""")!!
 
         assertEquals("Only a title", analysis.title)
         assertNull(analysis.summary)
-        assertTrue(analysis.tasks.isEmpty())
-        assertTrue(analysis.reminders.isEmpty())
+        assertTrue(analysis.items.isEmpty())
     }
 
     @Test
     fun `blank strings become null`() {
-        val analysis = parseAnalysis("""{"title":"   ","summary":""}""", UTC)!!
+        val analysis = parse("""{"title":"   ","summary":""}""")!!
 
         assertNull(analysis.title)
         assertNull(analysis.summary)
     }
 
     @Test
-    fun `blank tasks and reminders are dropped`() {
-        val raw = """{"tasks":["  ","real"],"reminders":[{"text":"","due":null},{"text":"keep"}]}"""
-        val analysis = parseAnalysis(raw, UTC)!!
+    fun `blank items are dropped`() {
+        val raw = """{"items":[{"text":"","due":null},{"text":"keep"}]}"""
+        val analysis = parse(raw)!!
 
-        assertEquals(listOf("real"), analysis.tasks)
-        assertEquals(listOf("keep"), analysis.reminders.map { it.first })
+        assertEquals(listOf("keep"), analysis.items.map { it.text })
     }
 
     @Test
     fun `malformed json is null`() {
-        assertNull(parseAnalysis("""{"title": "unterminated""", UTC))
+        assertNull(parse("""{"title": "unterminated"""))
     }
 
     @Test
     fun `output with no json at all is null`() {
-        assertNull(parseAnalysis("I'm sorry, I can't help with that.", UTC))
-        assertNull(parseAnalysis("", UTC))
+        assertNull(parse("I'm sorry, I can't help with that."))
+        assertNull(parse(""))
     }
 
     @Test
@@ -109,22 +111,20 @@ class AnalysisPromptTest {
 
 class ResolveDueTest {
 
-    private fun due(value: String?) = resolveDue(value, UTC)
+    private fun due(value: String?) = resolveDue(value, UTC, TODAY)
 
     @Test
-    fun `date and time resolves`() {
-        assertEquals(
-            LocalDate.of(2026, 9, 4).atTime(10, 0).atZone(UTC).toInstant().toEpochMilli(),
-            due("2026-09-04T10:00"),
-        )
+    fun `date and time resolves with a time`() {
+        val result = due("2026-09-04T10:00")
+        assertEquals(LocalDate.of(2026, 9, 4).atTime(10, 0).atZone(UTC).toInstant().toEpochMilli(), result.at)
+        assertTrue(result.hasTime)
     }
 
     @Test
-    fun `bare date resolves to midnight`() {
-        assertEquals(
-            LocalDate.of(2026, 9, 4).atStartOfDay(UTC).toInstant().toEpochMilli(),
-            due("2026-09-04"),
-        )
+    fun `bare date resolves to midnight with no time`() {
+        val result = due("2026-09-04")
+        assertEquals(LocalDate.of(2026, 9, 4).atStartOfDay(UTC).toInstant().toEpochMilli(), result.at)
+        assertTrue(!result.hasTime)
     }
 
     @Test
@@ -133,24 +133,32 @@ class ResolveDueTest {
     }
 
     @Test
-    fun `unresolved relative phrases are null, not wrong`() {
-        assertNull(due("next Tuesday"))
-        assertNull(due("tomorrow at ten"))
-        assertNull(due("soon"))
+    fun `unresolved relative phrases fall back to today, untimed`() {
+        val expected = TODAY.atStartOfDay(UTC).toInstant().toEpochMilli()
+        for (value in listOf("next Tuesday", "tomorrow at ten", "soon")) {
+            val result = due(value)
+            assertEquals(expected, result.at)
+            assertTrue(!result.hasTime)
+        }
     }
 
     @Test
-    fun `absent and literal null are null`() {
-        assertNull(due(null))
-        assertNull(due(""))
-        assertNull(due("   "))
-        assertNull(due("null"))
-        assertNull(due("NULL"))
+    fun `absent and literal null fall back to today, untimed`() {
+        val expected = TODAY.atStartOfDay(UTC).toInstant().toEpochMilli()
+        for (value in listOf(null, "", "   ", "null", "NULL")) {
+            val result = due(value)
+            assertEquals(expected, result.at)
+            assertTrue(!result.hasTime)
+        }
     }
 
     @Test
-    fun `nonsense date is null`() {
-        assertNull(due("2026-13-45"))
-        assertNull(due("not a date"))
+    fun `nonsense date falls back to today, untimed`() {
+        val expected = TODAY.atStartOfDay(UTC).toInstant().toEpochMilli()
+        for (value in listOf("2026-13-45", "not a date")) {
+            val result = due(value)
+            assertEquals(expected, result.at)
+            assertTrue(!result.hasTime)
+        }
     }
 }

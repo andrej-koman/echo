@@ -397,8 +397,8 @@ class RecordViewModelTest {
             repository = repository,
             derived = derived,
             runner = analyzingRunner(
-                """{"title":"Plumber","summary":"Call them.","tasks":["call the plumber"],
-                   "reminders":[{"text":"call the plumber","due":"2026-09-04T10:00"}]}""",
+                """{"title":"Plumber","summary":"Call them.",
+                   "items":[{"text":"call the plumber","due":"2026-09-04T10:00"}]}""",
             ),
         )
         advanceUntilIdle()
@@ -413,10 +413,9 @@ class RecordViewModelTest {
         assertEquals("Call them.", transcript.summary)
         assertEquals(42L, transcript.analyzedAt)
 
-        val task = derived.tasks.first().single()
-        assertEquals("call the plumber", task.text)
-        assertEquals(transcript.id, task.sourceTranscriptId)
-        assertEquals(transcript.id, derived.reminders.first().single().sourceTranscriptId)
+        val item = derived.items.first().single()
+        assertEquals("call the plumber", item.text)
+        assertEquals(transcript.id, item.sourceTranscriptId)
     }
 
     @Test
@@ -438,7 +437,7 @@ class RecordViewModelTest {
 
         assertEquals("keep me", repository.transcripts.first().single().text)
         assertEquals(null, repository.transcripts.first().single().title)
-        assertTrue(derived.tasks.first().isEmpty())
+        assertTrue(derived.items.first().isEmpty())
         assertFalse(viewModel.uiState.value.isProcessing)
     }
 
@@ -460,7 +459,7 @@ class RecordViewModelTest {
         advanceUntilIdle()
 
         assertEquals("keep me too", repository.transcripts.first().single().text)
-        assertTrue(derived.tasks.first().isEmpty())
+        assertTrue(derived.items.first().isEmpty())
         assertFalse(viewModel.uiState.value.isProcessing)
     }
 

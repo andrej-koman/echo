@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.andrej.echo.ai.AiCardState
 import dev.andrej.echo.data.DerivedRepository
-import dev.andrej.echo.data.Task
+import dev.andrej.echo.data.TodoItem
 import dev.andrej.echo.data.TranscriptRepository
 import dev.andrej.echo.ui.transcripts.title
 import kotlinx.coroutines.flow.Flow
@@ -17,7 +17,7 @@ import kotlinx.coroutines.launch
 data class TaskGroup(
     val sourceTranscriptId: String,
     val sourceTitle: String,
-    val tasks: List<Task>,
+    val items: List<TodoItem>,
 )
 
 data class TasksUiState(
@@ -34,27 +34,27 @@ class TasksViewModel(
 ) : ViewModel() {
 
     val state: StateFlow<TasksUiState> =
-        combine(derived.tasks, repository.transcripts, aiCardState) { tasks, transcripts, ai ->
-            val groups = tasks
+        combine(derived.items, repository.transcripts, aiCardState) { items, transcripts, ai ->
+            val groups = items
                 .groupBy { it.sourceTranscriptId }
                 .map { (transcriptId, group) ->
                     val transcript = transcripts.firstOrNull { it.id == transcriptId }
                     TaskGroup(
                         sourceTranscriptId = transcriptId,
                         sourceTitle = transcript?.title ?: transcript?.let { title(it.text) } ?: "Recording",
-                        tasks = group,
+                        items = group,
                     )
                 }
-                .sortedByDescending { group -> group.tasks.maxOf { it.createdAt } }
+                .sortedByDescending { group -> group.items.maxOf { it.createdAt } }
 
             TasksUiState(
                 groups = groups,
                 loaded = true,
-                aiOff = tasks.isEmpty() && ai !is AiCardState.NanoReady && ai !is AiCardState.LiteRtReady,
+                aiOff = items.isEmpty() && ai !is AiCardState.NanoReady && ai !is AiCardState.LiteRtReady,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TasksUiState())
 
-    fun setDone(taskId: String, done: Boolean) {
-        viewModelScope.launch { derived.setDone(taskId, done) }
+    fun setDone(itemId: String, done: Boolean) {
+        viewModelScope.launch { derived.setDone(itemId, done) }
     }
 }

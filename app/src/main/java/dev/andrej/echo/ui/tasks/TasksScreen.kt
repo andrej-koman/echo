@@ -27,7 +27,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.andrej.echo.R
-import dev.andrej.echo.data.Task
+import dev.andrej.echo.data.TodoItem
 import dev.andrej.echo.ui.components.ButtonVariant
 import dev.andrej.echo.ui.components.EchoButton
 import dev.andrej.echo.ui.components.EchoCard
@@ -110,7 +110,7 @@ fun TasksScreen(
                             .clickable { onOpenSource(group.sourceTranscriptId) },
                     )
                 }
-                items(group.tasks, key = { it.id }) { task ->
+                items(group.items, key = { it.id }) { task ->
                     TaskRow(
                         task = task,
                         onToggle = { viewModel.setDone(task.id, !task.done) },
@@ -123,7 +123,7 @@ fun TasksScreen(
 }
 
 @Composable
-private fun TaskRow(task: Task, onToggle: () -> Unit, onOpenSource: () -> Unit) {
+private fun TaskRow(task: TodoItem, onToggle: () -> Unit, onOpenSource: () -> Unit) {
     EchoCard(modifier = Modifier.fillMaxWidth(), onClick = onOpenSource) {
         Row(
             modifier = Modifier.fillMaxWidth(),

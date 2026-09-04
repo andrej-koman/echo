@@ -33,7 +33,6 @@ import dev.andrej.echo.ui.auth.AiViewModel
 import dev.andrej.echo.ui.auth.AuthViewModel
 import dev.andrej.echo.ui.home.HomeViewModel
 import dev.andrej.echo.ui.record.RecordViewModel
-import dev.andrej.echo.ui.reminders.RemindersViewModel
 import dev.andrej.echo.ui.tasks.TasksViewModel
 import dev.andrej.echo.ui.transcripts.TranscriptsViewModel
 import java.io.File
@@ -172,7 +171,7 @@ class AppContainer(context: Context) {
                 ) as T
 
             modelClass.isAssignableFrom(TranscriptsViewModel::class.java) ->
-                TranscriptsViewModel(repository, analysisQueue, pendingAnalysisWorker) as T
+                TranscriptsViewModel(repository, analysisQueue, pendingAnalysisWorker, derived) as T
 
             modelClass.isAssignableFrom(AuthViewModel::class.java) ->
                 AuthViewModel(auth) as T
@@ -190,9 +189,6 @@ class AppContainer(context: Context) {
 
             modelClass.isAssignableFrom(TasksViewModel::class.java) ->
                 TasksViewModel(derived, repository, aiCardState) as T
-
-            modelClass.isAssignableFrom(RemindersViewModel::class.java) ->
-                RemindersViewModel(derived, repository) as T
 
             else -> error("Unknown ViewModel: ${modelClass.name}")
         }

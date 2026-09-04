@@ -3,6 +3,7 @@ package dev.andrej.echo.ai
 import android.util.Log
 import dev.andrej.echo.data.Transcript
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 
 /**
@@ -45,18 +46,24 @@ class TranscriptAnalyzer(
                 return AnalysisOutcome.Blocked(AnalysisBlock.NoBackend(availability.reason))
         }
 
-        val today = Instant.ofEpochMilli(transcript.createdAt).atZone(zone).toLocalDate()
-        val prompt = buildAnalysisPrompt(transcript.text, today)
+        val transcriptDay = Instant.ofEpochMilli(transcript.createdAt).atZone(zone).toLocalDate()
+        val prompt = buildAnalysisPrompt(transcript.text, transcriptDay)
 
-        val first = attempt(runner, prompt, LlmRunner.DEFAULT_TEMPERATURE)
+        // Deliberately today's wall-clock day, not transcriptDay: re-analysing a month-old note
+        // should resolve its relative phrases against that note's day (the prompt above), but an
+        // item where nobody named a date is due now, not a month ago.
+        val today = LocalDate.now(zone)
+
+        val first = attempt(runner, prompt, LlmRunner.DEFAULT_TEMPERATURE, today)
         if (first is AnalysisOutcome.Success) return first
-        return attempt(runner, prompt, temperature = 0f)
+        return attempt(runner, prompt, temperature = 0f, today)
     }
 
     private suspend fun attempt(
         runner: LlmRunner,
         prompt: String,
         temperature: Float,
+        today: LocalDate,
     ): AnalysisOutcome {
         val raw = try {
             runner.generate(prompt, temperature)
@@ -66,7 +73,7 @@ class TranscriptAnalyzer(
         }
         logDebug("raw output (temperature=$temperature): $raw")
 
-        val analysis = parseAnalysis(raw, zone)
+        val analysis = parseAnalysis(raw, zone, today)
         if (analysis == null) {
             logWarn("could not parse a JSON object out of the raw output above")
             return AnalysisOutcome.Blocked(AnalysisBlock.EmptyResult)
@@ -74,7 +81,7 @@ class TranscriptAnalyzer(
 
         logDebug("parsed: $analysis")
         if (!analysis.hasContent) {
-            logWarn("parsed but empty (no title/summary/tasks/reminders) — discarded")
+            logWarn("parsed but empty (no title/summary/items) — discarded")
             return AnalysisOutcome.Blocked(AnalysisBlock.EmptyResult)
         }
         return AnalysisOutcome.Success(analysis)
@@ -86,4 +93,4 @@ class TranscriptAnalyzer(
 }
 
 private val Analysis.hasContent: Boolean
-    get() = title != null || summary != null || tasks.isNotEmpty() || reminders.isNotEmpty()
+    get() = title != null || summary != null || items.isNotEmpty()

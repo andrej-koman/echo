@@ -28,7 +28,7 @@ speech/       TranscriptionEngine interface + AndroidSpeechEngine (SpeechRecogni
 ai/           LlmRunner interface + MlKitLlmRunner (Gemini Nano) and LiteRtLlmRunner (bundled
               Qwen3), ModelStore/HttpModelDownloader for the weights, AnalysisPrompt,
               TranscriptAnalyzer, AnalysisOutcome/AnalysisBlock, PendingAnalysisWorker
-data/         Transcript, TranscriptRepository (JSON file), Task/Reminder + DerivedRepository
+data/         Transcript, TranscriptRepository (JSON file), TodoItem + DerivedRepository
               (derived.json), PendingAnalysis + AnalysisQueueRepository (pending_analysis.json),
               SettingsStore, AuthStore
 auth/         AuthRepository interface + GoogleAuthRepository (Credential Manager)
@@ -36,7 +36,6 @@ ui/theme/     OutLoud design tokens (Color, Type, Shape, Spacing, Elevation, Mot
 ui/components/ the ported design system kit
 ui/home/      HomeScreen + HomeViewModel — up next, recent notes
 ui/tasks/     TasksScreen + TasksViewModel — grouped by source transcript, done checkbox
-ui/reminders/ RemindersScreen + RemindersViewModel — grouped by source transcript
 ui/capture/   CaptureScreen — Listening and Processing
 ui/record/    RecordViewModel (still named for its old screen)
 ui/auth/      SignInScreen, AccountScreen, AuthViewModel, AiViewModel
@@ -49,8 +48,7 @@ Engine sits behind an interface so a different backend (e.g. Whisper) can replac
 
 Four tabs: Home / Tasks — record button — Notes / Transcripts, Home the start destination. The record
 button sits in the bar's middle slot (`TabBar(centerGap = true)` leaves the gap, `EchoApp` overlays the
-button on a bar-coloured cradle so it pokes above the hairline); Reminders lost its tab to make room and
-keeps only its route until it holds anything. The tab bar is icon-only — no labels, no
+button on a bar-coloured cradle so it pokes above the hairline). The tab bar is icon-only — no labels, no
 selection crossfade — and the NavHost runs with every transition set to `None`: the design's
 screen changes read as jank on device, so switching is a hard cut. Tab switches go through `NavHostController.selectTab`: Home pops back to Home, other tabs
 `popUpTo(HOME)` + `launchSingleTop`. Never `saveState`/`restoreState` — the saved tab stack keys to
@@ -71,16 +69,26 @@ NavHost, so signing out drops the whole graph rather than unwinding a back stack
 - `TranscriptsViewModel.title()` derives a title from the opening of the text (first sentence, or
   six words) — the fallback for a transcript analysis has not named yet, not a permanent scheme.
   `Transcript.asRow()` prefers `title`/`summary` when present.
-- Tasks and Reminders are grouped by `sourceTranscriptId` in their screens; the group header
-  shows the source transcript's title and taps through to its detail. `TasksScreen`'s empty
-  state routes to `AccountScreen` when nothing has ever been analyzed and no backend is usable
-  (`TasksUiState.aiOff`) — otherwise it reads as a dead end.
-  Reminders has no tab slot (the record button took it) and is reachable only by navigating the
-  route directly; nothing does yet, so it is unreached in the running app until something links
-  to it.
-- Home's "Up next" mixes undone tasks and reminders, dated ones sorted soonest-first ahead of
-  undated ones by recency, capped at three (`HomeViewModel.buildUpNext`). The section disappears
-  rather than rendering an empty card when there is nothing due.
+- Task and Reminder unified into one `TodoItem` (`text`, `dueAt` — never null, `hasTime`,
+  `done`). A speaker who names no date at all still gets an item due **today**; `hasTime`
+  records only whether a clock time was stated. `resolveDue` (in `ai/AnalysisPrompt.kt`)
+  resolves this: `LocalDateTime.parse` succeeding means a timed item, `LocalDate.parse`
+  succeeding means a date-only item, and anything else — an unresolved relative phrase, a
+  malformed stamp, absent entirely — falls back to today's start of day, untimed. That fallback
+  uses wall-clock "today" at parse time (`TranscriptAnalyzer` passes `LocalDate.now(zone)`
+  down), deliberately not the transcript's own day: re-analysing a month-old note should still
+  resolve *its* relative phrases against that note's day (the prompt's "Today is …" line, driven
+  by `transcript.createdAt`), but an item with no named date is due now, not a month ago.
+  `TasksScreen` still groups items by `sourceTranscriptId` (regrouping by due date is a later
+  step); `TasksUiState.aiOff` is keyed off `items.isEmpty()`.
+- Old-shape `derived.json` (the pre-unification `tasks`/`reminders` lists) is not migrated —
+  it decodes to zero rows via `Json { ignoreUnknownKeys = true }` plus a defaulted `items`
+  field, and a re-Analyze regenerates. `derivedId` no longer takes a `kind` — one entity, one
+  id — but keeps the null-byte separator between transcript id and text: a plain
+  concatenation would let `"t1"` + `"x"` collide with `"t"` + `"1x"`.
+- Home's "Up next" is undone `TodoItem`s sorted by `(dueAt, hasTime descending)`, capped at
+  three (`HomeViewModel.buildUpNext`). The section disappears rather than rendering an empty
+  card when there is nothing due.
 - Rows carry `updatedAt` and transcripts carry a `deletedAt` tombstone — `delete()` marks, the
   `transcripts` flow filters. Both default off `createdAt`/null, so files written before them still
   parse. Sync is not built and is not planned yet; these exist so a delete and a last-write-wins
@@ -183,9 +191,9 @@ tokens and kit, not ported from a design.
   inert); with data it is two sections, "Up next" then "Recent notes" — no greeting, no action cards.
   "Up next" is `StubUpNext`, three hardcoded items, until transcripts are routed into todos and
   reminders. Recent note cards carry no tag pill: `Transcript` has no tag field.
-- The three content tabs (Tasks / Notes / Reminders) are still stubs, but the data behind them
+- The two content tabs (Tasks / Notes) are still stubs, but the data behind them
   is real: `RecordViewModel.stopRecording` now saves the transcript and then runs
-  `TranscriptAnalyzer`, writing `Task`/`Reminder` rows and a title and summary back onto the
+  `TranscriptAnalyzer`, writing `TodoItem` rows and a title and summary back onto the
   transcript. The Processing screen holds for that work — `STUB_PROCESSING_DELAY_MS` is gone.
   The transcript is saved *before* analysis, so no model failure can cost a recording.
 

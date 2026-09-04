@@ -43,8 +43,6 @@ import dev.andrej.echo.ui.detail.TranscriptDetailScreen
 import dev.andrej.echo.ui.home.HomeScreen
 import dev.andrej.echo.ui.home.HomeViewModel
 import dev.andrej.echo.ui.record.RecordViewModel
-import dev.andrej.echo.ui.reminders.RemindersScreen
-import dev.andrej.echo.ui.reminders.RemindersViewModel
 import dev.andrej.echo.ui.tasks.TasksScreen
 import dev.andrej.echo.ui.tasks.TasksViewModel
 import dev.andrej.echo.ui.theme.EchoTheme
@@ -56,7 +54,6 @@ private object Routes {
     const val HOME = "home"
     const val TASKS = "tasks"
     const val NOTES = "notes"
-    const val REMINDERS = "reminders"
     const val TRANSCRIPTS = "transcripts"
     const val CAPTURE = "capture"
     const val ACCOUNT = "account"
@@ -65,8 +62,6 @@ private object Routes {
     fun detail(id: String) = "detail/$id"
 }
 
-// The record button takes the middle slot of the bar, so Reminders lost its tab. The route stays
-// so it can come back once it holds anything.
 private val Tabs = listOf(
     TabItem(Routes.HOME, "Home", R.drawable.ic_home),
     TabItem(Routes.TASKS, "Tasks", R.drawable.ic_list_checks),
@@ -117,7 +112,7 @@ private fun SignedInApp(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val route = backStackEntry?.destination?.route
 
-    val onTabs = route in Tabs.map { it.route } + Routes.REMINDERS
+    val onTabs = route in Tabs.map { it.route }
 
     Box(modifier = Modifier.fillMaxSize()) {
         NavHost(
@@ -154,15 +149,6 @@ private fun SignedInApp(
                 NotesScreen(
                     viewModel = transcriptsViewModel,
                     onOpen = { navController.navigate(Routes.detail(it)) },
-                    onOpenAccount = { navController.navigate(Routes.ACCOUNT) },
-                )
-            }
-
-            composable(Routes.REMINDERS) {
-                val remindersViewModel: RemindersViewModel = viewModel(factory = viewModelFactory)
-                RemindersScreen(
-                    viewModel = remindersViewModel,
-                    onOpenSource = { navController.navigate(Routes.detail(it)) },
                     onOpenAccount = { navController.navigate(Routes.ACCOUNT) },
                 )
             }

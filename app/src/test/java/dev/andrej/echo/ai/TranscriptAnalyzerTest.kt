@@ -12,7 +12,7 @@ private val UTC = ZoneId.of("UTC")
 
 class TranscriptAnalyzerTest {
 
-    private val good = """{"title":"Fix the tap","summary":"It drips.","tasks":["Buy a washer"],"reminders":[]}"""
+    private val good = """{"title":"Fix the tap","summary":"It drips.","items":[{"text":"Buy a washer","due":null}]}"""
 
     private fun transcript(text: String = "the kitchen tap drips, buy a washer") = Transcript(
         id = "t1",
@@ -28,7 +28,7 @@ class TranscriptAnalyzerTest {
         val analysis = (outcome as AnalysisOutcome.Success).analysis
 
         assertEquals("Fix the tap", analysis.title)
-        assertEquals(listOf("Buy a washer"), analysis.tasks)
+        assertEquals(listOf("Buy a washer"), analysis.items.map { it.text })
     }
 
     @Test
@@ -62,7 +62,7 @@ class TranscriptAnalyzerTest {
 
     @Test
     fun `an empty result counts as a failure and is retried`() = runTest {
-        val empty = """{"title":"","summary":"","tasks":[],"reminders":[]}"""
+        val empty = """{"title":"","summary":"","items":[]}"""
         val runner = FakeLlmRunner(listOf(empty, good))
 
         val outcome = TranscriptAnalyzer({ runner }, UTC, logDebug = {}, logWarn = {}).analyze(transcript())

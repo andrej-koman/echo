@@ -114,8 +114,7 @@ class PendingAnalysisWorker(
     private suspend fun applySuccess(transcriptId: String, outcome: AnalysisOutcome.Success) {
         derived.replaceFor(
             transcriptId = transcriptId,
-            tasks = outcome.analysis.tasks,
-            reminders = outcome.analysis.reminders,
+            items = outcome.analysis.items,
             createdAt = now(),
         )
         transcripts.attachAnalysis(

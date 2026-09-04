@@ -1,15 +1,77 @@
 package dev.andrej.echo.ui.transcripts
 
 import dev.andrej.echo.ai.AnalysisBlock
+import dev.andrej.echo.ai.FakeLlmRunner
+import dev.andrej.echo.ai.LlmAvailability
+import dev.andrej.echo.ai.PendingAnalysisWorker
+import dev.andrej.echo.ai.TranscriptAnalyzer
+import dev.andrej.echo.data.JsonAnalysisQueueRepository
+import dev.andrej.echo.data.JsonDerivedRepository
+import dev.andrej.echo.data.JsonTranscriptRepository
+import dev.andrej.echo.data.NewTodo
 import dev.andrej.echo.data.PendingAnalysis
 import dev.andrej.echo.data.Transcript
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Test
+import java.time.ZoneId
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class TranscriptsViewModelTest {
+
+    @get:Rule
+    val tempFolder = TemporaryFolder()
+
+    private val dispatcher = StandardTestDispatcher()
+
+    @Before
+    fun setUp() = Dispatchers.setMain(dispatcher)
+
+    @After
+    fun tearDown() = Dispatchers.resetMain()
+
+    @Test
+    fun `deleting a transcript also clears its derived rows`() = runTest {
+        val repository = JsonTranscriptRepository(tempFolder.newFolder(), dispatcher)
+        val derived = JsonDerivedRepository(tempFolder.newFolder(), dispatcher)
+        val queue = JsonAnalysisQueueRepository(tempFolder.newFolder(), dispatcher)
+        val worker = PendingAnalysisWorker(
+            queue = queue,
+            transcripts = repository,
+            derived = derived,
+            analyzer = TranscriptAnalyzer(
+                { FakeLlmRunner(availability = LlmAvailability.Unsupported("no model")) },
+                ZoneId.of("UTC"),
+                logDebug = {},
+                logWarn = {},
+            ),
+            scope = CoroutineScope(dispatcher),
+        )
+        val saved = repository.save(text = "call the plumber", language = "en-GB", durationMs = 0)
+        derived.replaceFor(saved.id, listOf(NewTodo("call the plumber", 1_000L, false)))
+        val viewModel = TranscriptsViewModel(repository, queue, worker, derived)
+
+        viewModel.delete(saved.id)
+        advanceUntilIdle()
+
+        assertTrue(derived.items.first().isEmpty())
+    }
 
     @Test
     fun `title stops at the first sentence`() {

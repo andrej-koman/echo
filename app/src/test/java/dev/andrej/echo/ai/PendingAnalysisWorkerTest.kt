@@ -23,7 +23,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
 private val UTC = ZoneId.of("UTC")
-private val good = """{"title":"Fix the tap","summary":"It drips.","tasks":["Buy a washer"],"reminders":[]}"""
+private val good = """{"title":"Fix the tap","summary":"It drips.","items":[{"text":"Buy a washer","due":null}]}"""
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PendingAnalysisWorkerTest {
@@ -71,7 +71,7 @@ class PendingAnalysisWorkerTest {
         assertEquals("Fix the tap", transcript.title)
         assertEquals(42L, transcript.analyzedAt)
         assertTrue(queue.pending.first().isEmpty())
-        assertEquals("Buy a washer", derived.tasks.first().single().text)
+        assertEquals("Buy a washer", derived.items.first().single().text)
     }
 
     @Test

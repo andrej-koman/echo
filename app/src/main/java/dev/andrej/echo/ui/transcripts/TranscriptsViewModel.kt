@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import dev.andrej.echo.ai.AnalysisBlock
 import dev.andrej.echo.ai.PendingAnalysisWorker
 import dev.andrej.echo.data.AnalysisQueueRepository
+import dev.andrej.echo.data.DerivedRepository
 import dev.andrej.echo.data.PendingAnalysis
 import dev.andrej.echo.data.Transcript
 import dev.andrej.echo.data.TranscriptRepository
@@ -51,6 +52,7 @@ class TranscriptsViewModel(
     private val repository: TranscriptRepository,
     private val queue: AnalysisQueueRepository,
     private val worker: PendingAnalysisWorker,
+    private val derived: DerivedRepository,
     private val now: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
 
@@ -84,7 +86,10 @@ class TranscriptsViewModel(
     }
 
     fun delete(id: String) {
-        viewModelScope.launch { repository.delete(id) }
+        viewModelScope.launch {
+            derived.deleteFor(id)
+            repository.delete(id)
+        }
     }
 
     fun analyze(transcriptId: String) {

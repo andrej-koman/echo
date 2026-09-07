@@ -13,141 +13,146 @@ class JsonDerivedRepositoryTest {
     @get:Rule
     val tempFolder = TemporaryFolder()
 
-    private fun repository() = JsonDerivedRepository(tempFolder.newFolder())
+    private val notifications = RecordingNotificationScheduler()
+
+    private fun repository() = JsonDerivedRepository(tempFolder.newFolder(), notifications)
+
+    private fun item(text: String, dueAt: Long = 1_000L, hasTime: Boolean = false) =
+        NewTodo(text, dueAt, hasTime)
 
     @Test
-    fun `tasks and reminders are stored against their transcript`() = runTest {
+    fun `items are stored against their transcript`() = runTest {
         val repository = repository()
 
         repository.replaceFor(
             transcriptId = "t1",
-            tasks = listOf("Buy a washer"),
-            reminders = listOf("Call the plumber" to 2_000L),
+            items = listOf(item("Buy a washer", dueAt = 2_000L, hasTime = true)),
             createdAt = 1_000,
         )
 
-        val task = repository.tasks.first().single()
-        assertEquals("Buy a washer", task.text)
-        assertEquals("t1", task.sourceTranscriptId)
-        assertTrue(!task.done)
-
-        val reminder = repository.reminders.first().single()
-        assertEquals(2_000L, reminder.dueAt)
+        val stored = repository.items.first().single()
+        assertEquals("Buy a washer", stored.text)
+        assertEquals("t1", stored.sourceTranscriptId)
+        assertEquals(2_000L, stored.dueAt)
+        assertTrue(stored.hasTime)
+        assertTrue(!stored.done)
     }
 
     @Test
-    fun `reminders come out soonest first with no time last`() = runTest {
+    fun `items come out soonest first, timed before date-only on the same day`() = runTest {
         val repository = repository()
 
         repository.replaceFor(
             transcriptId = "t1",
-            tasks = emptyList(),
-            reminders = listOf("later" to 3_000L, "no time" to null, "sooner" to 1_000L),
+            items = listOf(
+                item("later", dueAt = 3_000L, hasTime = true),
+                item("date-only same time", dueAt = 1_000L, hasTime = false),
+                item("sooner", dueAt = 1_000L, hasTime = true),
+            ),
         )
 
         assertEquals(
-            listOf("sooner", "later", "no time"),
-            repository.reminders.first().map { it.text },
+            listOf("sooner", "date-only same time", "later"),
+            repository.items.first().map { it.text },
         )
     }
 
     @Test
     fun `re-analysis replaces rather than duplicates`() = runTest {
         val repository = repository()
-        repository.replaceFor("t1", listOf("first pass"), emptyList())
+        repository.replaceFor("t1", listOf(item("first pass")))
 
-        repository.replaceFor("t1", listOf("second pass"), emptyList())
+        repository.replaceFor("t1", listOf(item("second pass")))
 
-        assertEquals(listOf("second pass"), repository.tasks.first().map { it.text })
+        assertEquals(listOf("second pass"), repository.items.first().map { it.text })
     }
 
     @Test
-    fun `re-analysis keeps a task ticked when its text survives`() = runTest {
+    fun `re-analysis keeps an item ticked when its text survives`() = runTest {
         val repository = repository()
-        repository.replaceFor("t1", listOf("buy milk", "call mum"), emptyList())
-        val ticked = repository.tasks.first().first { it.text == "buy milk" }
+        repository.replaceFor("t1", listOf(item("buy milk"), item("call mum")))
+        val ticked = repository.items.first().first { it.text == "buy milk" }
         repository.setDone(ticked.id, done = true)
 
-        repository.replaceFor("t1", listOf("buy milk", "call mum", "book flights"), emptyList())
+        repository.replaceFor("t1", listOf(item("buy milk"), item("call mum"), item("book flights")))
 
         assertEquals(
             mapOf("buy milk" to true, "call mum" to false, "book flights" to false),
-            repository.tasks.first().associate { it.text to it.done },
+            repository.items.first().associate { it.text to it.done },
         )
     }
 
     @Test
-    fun `the same task from the same transcript keeps one stable id`() = runTest {
+    fun `the same item from the same transcript keeps one stable id`() = runTest {
         val repository = repository()
-        repository.replaceFor("t1", listOf("buy milk"), emptyList())
-        val before = repository.tasks.first().single().id
+        repository.replaceFor("t1", listOf(item("buy milk")))
+        val before = repository.items.first().single().id
 
-        repository.replaceFor("t1", listOf("Buy Milk "), emptyList())
+        repository.replaceFor("t1", listOf(item("Buy Milk ")))
 
-        assertEquals(before, repository.tasks.first().single().id)
+        assertEquals(before, repository.items.first().single().id)
     }
 
     @Test
     fun `the same text under two transcripts gets two ids`() = runTest {
         val repository = repository()
-        repository.replaceFor("t1", listOf("buy milk"), emptyList())
-        repository.replaceFor("t2", listOf("buy milk"), emptyList())
+        repository.replaceFor("t1", listOf(item("buy milk")))
+        repository.replaceFor("t2", listOf(item("buy milk")))
 
-        assertEquals(2, repository.tasks.first().map { it.id }.toSet().size)
+        assertEquals(2, repository.items.first().map { it.id }.toSet().size)
     }
 
     @Test
-    fun `a task repeated in one analysis collapses to a single row`() = runTest {
+    fun `an item repeated in one analysis collapses to a single row`() = runTest {
         val repository = repository()
 
-        repository.replaceFor("t1", listOf("buy milk", "buy milk"), emptyList())
+        repository.replaceFor("t1", listOf(item("buy milk"), item("buy milk")))
 
-        assertEquals(listOf("buy milk"), repository.tasks.first().map { it.text })
+        assertEquals(listOf("buy milk"), repository.items.first().map { it.text })
     }
 
     @Test
     fun `replacing one transcript leaves the others alone`() = runTest {
         val repository = repository()
-        repository.replaceFor("t1", listOf("keep me"), emptyList())
-        repository.replaceFor("t2", listOf("replace me"), emptyList())
+        repository.replaceFor("t1", listOf(item("keep me")))
+        repository.replaceFor("t2", listOf(item("replace me")))
 
-        repository.replaceFor("t2", listOf("replaced"), emptyList())
+        repository.replaceFor("t2", listOf(item("replaced")))
 
-        assertEquals(setOf("keep me", "replaced"), repository.tasks.first().map { it.text }.toSet())
+        assertEquals(setOf("keep me", "replaced"), repository.items.first().map { it.text }.toSet())
     }
 
     @Test
-    fun `setDone flips one task`() = runTest {
+    fun `setDone flips one item`() = runTest {
         val repository = repository()
-        repository.replaceFor("t1", listOf("a", "b"), emptyList())
-        val target = repository.tasks.first().first { it.text == "a" }
+        repository.replaceFor("t1", listOf(item("a"), item("b")))
+        val target = repository.items.first().first { it.text == "a" }
 
         repository.setDone(target.id, done = true)
 
-        val tasks = repository.tasks.first().associate { it.text to it.done }
-        assertEquals(mapOf("a" to true, "b" to false), tasks)
+        val items = repository.items.first().associate { it.text to it.done }
+        assertEquals(mapOf("a" to true, "b" to false), items)
     }
 
     @Test
-    fun `deleteFor removes both lists for one transcript`() = runTest {
+    fun `deleteFor removes rows for one transcript`() = runTest {
         val repository = repository()
-        repository.replaceFor("t1", listOf("gone"), listOf("also gone" to null))
-        repository.replaceFor("t2", listOf("stays"), listOf("stays too" to null))
+        repository.replaceFor("t1", listOf(item("gone")))
+        repository.replaceFor("t2", listOf(item("stays")))
 
         repository.deleteFor("t1")
 
-        assertEquals(listOf("stays"), repository.tasks.first().map { it.text })
-        assertEquals(listOf("stays too"), repository.reminders.first().map { it.text })
+        assertEquals(listOf("stays"), repository.items.first().map { it.text })
     }
 
     @Test
     fun `rows survive a new repository instance`() = runTest {
         val directory = tempFolder.newFolder()
-        JsonDerivedRepository(directory).replaceFor("t1", listOf("persisted"), emptyList())
+        JsonDerivedRepository(directory, notifications).replaceFor("t1", listOf(item("persisted")))
 
         assertEquals(
             listOf("persisted"),
-            JsonDerivedRepository(directory).tasks.first().map { it.text },
+            JsonDerivedRepository(directory, notifications).items.first().map { it.text },
         )
     }
 
@@ -155,11 +160,82 @@ class JsonDerivedRepositoryTest {
     fun `corrupt file is recovered as empty and still writable`() = runTest {
         val directory = tempFolder.newFolder()
         directory.resolve("derived.json").writeText("{not json at all")
-        val repository = JsonDerivedRepository(directory)
+        val repository = JsonDerivedRepository(directory, notifications)
 
-        assertTrue(repository.tasks.first().isEmpty())
+        assertTrue(repository.items.first().isEmpty())
 
-        repository.replaceFor("t1", listOf("after recovery"), emptyList())
-        assertEquals(listOf("after recovery"), repository.tasks.first().map { it.text })
+        repository.replaceFor("t1", listOf(item("after recovery")))
+        assertEquals(listOf("after recovery"), repository.items.first().map { it.text })
+    }
+
+    @Test
+    fun `an old-shape derived json decodes to zero rows without throwing`() = runTest {
+        val directory = tempFolder.newFolder()
+        directory.resolve("derived.json").writeText(
+            """{"tasks":[{"id":"a","sourceTranscriptId":"t1","text":"old","createdAt":1}],"reminders":[]}""",
+        )
+        val repository = JsonDerivedRepository(directory, notifications)
+
+        assertTrue(repository.items.first().isEmpty())
+    }
+
+    @Test
+    fun `replaceFor schedules the written rows`() = runTest {
+        val repository = repository()
+
+        repository.replaceFor("t1", listOf(item("call the plumber")))
+
+        val id = repository.items.first().single().id
+        assertEquals(listOf(id), notifications.scheduled)
+    }
+
+    @Test
+    fun `a re-analysis that drops a row cancels its notification`() = runTest {
+        val repository = repository()
+        repository.replaceFor("t1", listOf(item("keep"), item("drop")))
+        val dropped = repository.items.first().first { it.text == "drop" }.id
+
+        repository.replaceFor("t1", listOf(item("keep")))
+
+        assertTrue(dropped in notifications.cancelled)
+    }
+
+    @Test
+    fun `setDone true cancels, setDone false reschedules`() = runTest {
+        val repository = repository()
+        repository.replaceFor("t1", listOf(item("call the plumber")))
+        val id = repository.items.first().single().id
+        notifications.scheduled.clear()
+
+        repository.setDone(id, done = true)
+        assertTrue(id in notifications.cancelled)
+
+        notifications.cancelled.clear()
+        repository.setDone(id, done = false)
+        assertTrue(id in notifications.scheduled)
+    }
+
+    @Test
+    fun `re-analysis does not resurrect a ticked row's alarm`() = runTest {
+        val repository = repository()
+        repository.replaceFor("t1", listOf(item("buy milk")))
+        val id = repository.items.first().single().id
+        repository.setDone(id, done = true)
+        notifications.scheduled.clear()
+
+        repository.replaceFor("t1", listOf(item("buy milk")))
+
+        assertTrue(id !in notifications.scheduled)
+    }
+
+    @Test
+    fun `deleteFor cancels all of that transcript's ids`() = runTest {
+        val repository = repository()
+        repository.replaceFor("t1", listOf(item("a"), item("b")))
+        val ids = repository.items.first().map { it.id }
+
+        repository.deleteFor("t1")
+
+        assertEquals(ids.toSet(), notifications.cancelled.toSet())
     }
 }

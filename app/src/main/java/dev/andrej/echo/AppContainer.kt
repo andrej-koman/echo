@@ -27,13 +27,13 @@ import dev.andrej.echo.data.SettingsStore
 import dev.andrej.echo.data.SharedPreferencesAuthStore
 import dev.andrej.echo.data.SharedPreferencesSettingsStore
 import dev.andrej.echo.data.TranscriptRepository
+import dev.andrej.echo.notify.AlarmManagerNotificationScheduler
 import dev.andrej.echo.speech.AndroidSpeechEngine
 import dev.andrej.echo.speech.TranscriptionEngine
 import dev.andrej.echo.ui.auth.AiViewModel
 import dev.andrej.echo.ui.auth.AuthViewModel
 import dev.andrej.echo.ui.home.HomeViewModel
 import dev.andrej.echo.ui.record.RecordViewModel
-import dev.andrej.echo.ui.reminders.RemindersViewModel
 import dev.andrej.echo.ui.tasks.TasksViewModel
 import dev.andrej.echo.ui.transcripts.TranscriptsViewModel
 import java.io.File
@@ -44,6 +44,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.map
@@ -68,8 +69,10 @@ class AppContainer(context: Context) {
     val engine: TranscriptionEngine =
         AndroidSpeechEngine(applicationContext)
 
+    private val notificationScheduler = AlarmManagerNotificationScheduler(applicationContext)
+
     val derived: DerivedRepository =
-        JsonDerivedRepository(applicationContext.filesDir)
+        JsonDerivedRepository(applicationContext.filesDir, notificationScheduler)
 
     val analysisQueue: AnalysisQueueRepository =
         JsonAnalysisQueueRepository(applicationContext.filesDir)
@@ -143,6 +146,11 @@ class AppContainer(context: Context) {
         pendingAnalysisWorker.requestDrain()
     }
 
+    /** Exact alarms do not survive a reboot or an app update — [dev.andrej.echo.notify.BootReceiver] calls this. */
+    suspend fun rescheduleNotifications() {
+        derived.items.first().forEach { if (!it.done) notificationScheduler.schedule(it) }
+    }
+
     private var downloadJob: Job? = null
 
     fun downloadModel() {
@@ -172,7 +180,7 @@ class AppContainer(context: Context) {
                 ) as T
 
             modelClass.isAssignableFrom(TranscriptsViewModel::class.java) ->
-                TranscriptsViewModel(repository, analysisQueue, pendingAnalysisWorker) as T
+                TranscriptsViewModel(repository, analysisQueue, pendingAnalysisWorker, derived) as T
 
             modelClass.isAssignableFrom(AuthViewModel::class.java) ->
                 AuthViewModel(auth) as T
@@ -189,10 +197,7 @@ class AppContainer(context: Context) {
                 HomeViewModel(repository, derived, analysisQueue) as T
 
             modelClass.isAssignableFrom(TasksViewModel::class.java) ->
-                TasksViewModel(derived, repository, aiCardState) as T
-
-            modelClass.isAssignableFrom(RemindersViewModel::class.java) ->
-                RemindersViewModel(derived, repository) as T
+                TasksViewModel(derived, aiCardState) as T
 
             else -> error("Unknown ViewModel: ${modelClass.name}")
         }

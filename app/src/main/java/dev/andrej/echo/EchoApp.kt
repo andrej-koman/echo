@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.shape.CircleShape
@@ -43,8 +44,6 @@ import dev.andrej.echo.ui.detail.TranscriptDetailScreen
 import dev.andrej.echo.ui.home.HomeScreen
 import dev.andrej.echo.ui.home.HomeViewModel
 import dev.andrej.echo.ui.record.RecordViewModel
-import dev.andrej.echo.ui.reminders.RemindersScreen
-import dev.andrej.echo.ui.reminders.RemindersViewModel
 import dev.andrej.echo.ui.tasks.TasksScreen
 import dev.andrej.echo.ui.tasks.TasksViewModel
 import dev.andrej.echo.ui.theme.EchoTheme
@@ -56,7 +55,6 @@ private object Routes {
     const val HOME = "home"
     const val TASKS = "tasks"
     const val NOTES = "notes"
-    const val REMINDERS = "reminders"
     const val TRANSCRIPTS = "transcripts"
     const val CAPTURE = "capture"
     const val ACCOUNT = "account"
@@ -65,8 +63,6 @@ private object Routes {
     fun detail(id: String) = "detail/$id"
 }
 
-// The record button takes the middle slot of the bar, so Reminders lost its tab. The route stays
-// so it can come back once it holds anything.
 private val Tabs = listOf(
     TabItem(Routes.HOME, "Home", R.drawable.ic_home),
     TabItem(Routes.TASKS, "Tasks", R.drawable.ic_list_checks),
@@ -78,6 +74,8 @@ private val Tabs = listOf(
 fun EchoApp(
     viewModelFactory: ViewModelProvider.Factory,
     modifier: Modifier = Modifier,
+    pendingOpenTranscriptId: String? = null,
+    onOpenTranscriptHandled: () -> Unit = {},
 ) {
     val authViewModel: AuthViewModel = viewModel(factory = viewModelFactory)
     val authState by authViewModel.state.collectAsStateWithLifecycle()
@@ -102,6 +100,8 @@ fun EchoApp(
                 viewModelFactory = viewModelFactory,
                 authState = authState,
                 onSignOut = authViewModel::signOut,
+                pendingOpenTranscriptId = pendingOpenTranscriptId,
+                onOpenTranscriptHandled = onOpenTranscriptHandled,
             )
         }
     }
@@ -112,12 +112,21 @@ private fun SignedInApp(
     viewModelFactory: ViewModelProvider.Factory,
     authState: AuthState,
     onSignOut: () -> Unit,
+    pendingOpenTranscriptId: String? = null,
+    onOpenTranscriptHandled: () -> Unit = {},
 ) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val route = backStackEntry?.destination?.route
 
-    val onTabs = route in Tabs.map { it.route } + Routes.REMINDERS
+    val onTabs = route in Tabs.map { it.route }
+
+    LaunchedEffect(pendingOpenTranscriptId) {
+        if (pendingOpenTranscriptId != null) {
+            navController.navigate(Routes.detail(pendingOpenTranscriptId))
+            onOpenTranscriptHandled()
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         NavHost(
@@ -154,15 +163,6 @@ private fun SignedInApp(
                 NotesScreen(
                     viewModel = transcriptsViewModel,
                     onOpen = { navController.navigate(Routes.detail(it)) },
-                    onOpenAccount = { navController.navigate(Routes.ACCOUNT) },
-                )
-            }
-
-            composable(Routes.REMINDERS) {
-                val remindersViewModel: RemindersViewModel = viewModel(factory = viewModelFactory)
-                RemindersScreen(
-                    viewModel = remindersViewModel,
-                    onOpenSource = { navController.navigate(Routes.detail(it)) },
                     onOpenAccount = { navController.navigate(Routes.ACCOUNT) },
                 )
             }

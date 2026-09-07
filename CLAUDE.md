@@ -28,7 +28,7 @@ speech/       TranscriptionEngine interface + AndroidSpeechEngine (SpeechRecogni
 ai/           LlmRunner interface + MlKitLlmRunner (Gemini Nano) and LiteRtLlmRunner (bundled
               Qwen3), ModelStore/HttpModelDownloader for the weights, AnalysisPrompt,
               TranscriptAnalyzer, AnalysisOutcome/AnalysisBlock, PendingAnalysisWorker
-data/         Transcript, TranscriptRepository (JSON file), Task/Reminder + DerivedRepository
+data/         Transcript, TranscriptRepository (JSON file), TodoItem + DerivedRepository
               (derived.json), PendingAnalysis + AnalysisQueueRepository (pending_analysis.json),
               SettingsStore, AuthStore
 auth/         AuthRepository interface + GoogleAuthRepository (Credential Manager)
@@ -36,7 +36,6 @@ ui/theme/     OutLoud design tokens (Color, Type, Shape, Spacing, Elevation, Mot
 ui/components/ the ported design system kit
 ui/home/      HomeScreen + HomeViewModel — up next, recent notes
 ui/tasks/     TasksScreen + TasksViewModel — grouped by source transcript, done checkbox
-ui/reminders/ RemindersScreen + RemindersViewModel — grouped by source transcript
 ui/capture/   CaptureScreen — Listening and Processing
 ui/record/    RecordViewModel (still named for its old screen)
 ui/auth/      SignInScreen, AccountScreen, AuthViewModel, AiViewModel
@@ -49,8 +48,7 @@ Engine sits behind an interface so a different backend (e.g. Whisper) can replac
 
 Four tabs: Home / Tasks — record button — Notes / Transcripts, Home the start destination. The record
 button sits in the bar's middle slot (`TabBar(centerGap = true)` leaves the gap, `EchoApp` overlays the
-button on a bar-coloured cradle so it pokes above the hairline); Reminders lost its tab to make room and
-keeps only its route until it holds anything. The tab bar is icon-only — no labels, no
+button on a bar-coloured cradle so it pokes above the hairline). The tab bar is icon-only — no labels, no
 selection crossfade — and the NavHost runs with every transition set to `None`: the design's
 screen changes read as jank on device, so switching is a hard cut. Tab switches go through `NavHostController.selectTab`: Home pops back to Home, other tabs
 `popUpTo(HOME)` + `launchSingleTop`. Never `saveState`/`restoreState` — the saved tab stack keys to
@@ -71,16 +69,44 @@ NavHost, so signing out drops the whole graph rather than unwinding a back stack
 - `TranscriptsViewModel.title()` derives a title from the opening of the text (first sentence, or
   six words) — the fallback for a transcript analysis has not named yet, not a permanent scheme.
   `Transcript.asRow()` prefers `title`/`summary` when present.
-- Tasks and Reminders are grouped by `sourceTranscriptId` in their screens; the group header
-  shows the source transcript's title and taps through to its detail. `TasksScreen`'s empty
-  state routes to `AccountScreen` when nothing has ever been analyzed and no backend is usable
-  (`TasksUiState.aiOff`) — otherwise it reads as a dead end.
-  Reminders has no tab slot (the record button took it) and is reachable only by navigating the
-  route directly; nothing does yet, so it is unreached in the running app until something links
-  to it.
-- Home's "Up next" mixes undone tasks and reminders, dated ones sorted soonest-first ahead of
-  undated ones by recency, capped at three (`HomeViewModel.buildUpNext`). The section disappears
-  rather than rendering an empty card when there is nothing due.
+- Task and Reminder unified into one `TodoItem` (`text`, `dueAt` — never null, `hasTime`,
+  `done`). A speaker who names no date at all still gets an item due **today**; `hasTime`
+  records only whether a clock time was stated. `resolveDue` (in `ai/AnalysisPrompt.kt`)
+  resolves this: `LocalDateTime.parse` succeeding means a timed item, `LocalDate.parse`
+  succeeding means a date-only item, and anything else — an unresolved relative phrase, a
+  malformed stamp, absent entirely — falls back to today's start of day, untimed. That fallback
+  uses wall-clock "today" at parse time (`TranscriptAnalyzer` passes `LocalDate.now(zone)`
+  down), deliberately not the transcript's own day: re-analysing a month-old note should still
+  resolve *its* relative phrases against that note's day (the prompt's "Today is …" line, driven
+  by `transcript.createdAt`), but an item with no named date is due now, not a month ago.
+  `buildAnalysisPrompt` takes the transcript's own `createdAt` as a `LocalDateTime`, not just a
+  `LocalDate` — the prompt states both "Today is …" *and* "the current time is …" so the model
+  has something to add a spoken duration to. Without the current time, "in 20 minutes" is
+  unanswerable and the on-device model was observed inventing an arbitrary hour (`02:20` for a
+  note recorded at 11am) rather than refusing. `parseAnalysis` also repairs one specific
+  small-model JSON slip seen on-device: writing `]` where it means to close an item object
+  (`"due":"..."]]}` instead of `"..."}]}`), applied only as a fallback when the brace count is
+  short by exactly one — a genuinely different malformed response still returns null rather
+  than being guessed at.
+  `TasksScreen`/`TasksViewModel.groupByDue` groups items by due date instead of source
+  transcript: **Overdue** first, then Today, Tomorrow, then one group per later date. Membership
+  ignores `done` — a ticked overdue row still sits under Overdue, struck through, rather than
+  jumping groups. `isOverdue` treats timed and date-only items differently: a timed item is
+  overdue the moment its clock time passes, even earlier today, but a date-only item due today
+  isn't overdue until tomorrow. Within a group, timed items come first (soonest first), then
+  date-only items (oldest-created first). The group header is a plain day label now, no longer
+  clickable through to a transcript — that only made sense when a group *was* one transcript's
+  items; each row still opens its own source via `TaskRow`'s `onOpenSource`. Due-time formatting
+  (`formatDue`, `formatTime`, `Long.midnight()`) lives in `ui/DueLabels.kt`, shared by Home and
+  Tasks rather than copied a third time. `TasksUiState.aiOff` is keyed off `items.isEmpty()`.
+- Old-shape `derived.json` (the pre-unification `tasks`/`reminders` lists) is not migrated —
+  it decodes to zero rows via `Json { ignoreUnknownKeys = true }` plus a defaulted `items`
+  field, and a re-Analyze regenerates. `derivedId` no longer takes a `kind` — one entity, one
+  id — but keeps the null-byte separator between transcript id and text: a plain
+  concatenation would let `"t1"` + `"x"` collide with `"t"` + `"1x"`.
+- Home's "Up next" is undone `TodoItem`s sorted by `(dueAt, hasTime descending)`, capped at
+  three (`HomeViewModel.buildUpNext`). The section disappears rather than rendering an empty
+  card when there is nothing due.
 - Rows carry `updatedAt` and transcripts carry a `deletedAt` tombstone — `delete()` marks, the
   `transcripts` flow filters. Both default off `createdAt`/null, so files written before them still
   parse. Sync is not built and is not planned yet; these exist so a delete and a last-write-wins
@@ -181,13 +207,53 @@ tokens and kit, not ported from a design.
 - Home reads its recent notes from `TranscriptsViewModel`; it has no view model of its own. With no
   transcripts it shows only the mascot empty state (its "Upload audio" / "Type a note" buttons are
   inert); with data it is two sections, "Up next" then "Recent notes" — no greeting, no action cards.
-  "Up next" is `StubUpNext`, three hardcoded items, until transcripts are routed into todos and
-  reminders. Recent note cards carry no tag pill: `Transcript` has no tag field.
-- The three content tabs (Tasks / Notes / Reminders) are still stubs, but the data behind them
+  "Up next" is real (`HomeViewModel.buildUpNext`), not stubbed. Recent note cards carry no tag
+  pill: `Transcript` has no tag field.
+- The two content tabs (Tasks / Notes) are still stubs, but the data behind them
   is real: `RecordViewModel.stopRecording` now saves the transcript and then runs
-  `TranscriptAnalyzer`, writing `Task`/`Reminder` rows and a title and summary back onto the
+  `TranscriptAnalyzer`, writing `TodoItem` rows and a title and summary back onto the
   transcript. The Processing screen holds for that work — `STUB_PROCESSING_DELAY_MS` is gone.
   The transcript is saved *before* analysis, so no model failure can cost a recording.
+
+## Notifications
+
+Every undone `TodoItem` gets an `AlarmManager` notification: 15 minutes before `dueAt` when
+`hasTime`, else a fixed 9:00 AM local time on `dueAt`'s day. `NotificationScheduler`
+(`data/NotificationScheduler.kt`, plus `fireTimeFor`) is a pure-JVM interface so the scheduling
+*logic* — `JsonDerivedRepository`'s `sync`/`resync`, called from every write path
+(`replaceFor`, `setDone`, `deleteFor`) — is unit-testable without Android; the Android
+implementation, `notify/AlarmManagerNotificationScheduler.kt`, is unreachable from unit tests and
+only verified on device. `JsonDerivedRepository` takes the scheduler as a **required**
+constructor param, not a defaulted no-op, so a build can't silently ship without notifications.
+
+- **`USE_EXACT_ALARM`**, not `SCHEDULE_EXACT_ALARM`: auto-granted and non-revocable for apps
+  whose core function is alarms/reminders, but that exemption is a Play Store policy review, not
+  a manifest guarantee — a future policy rejection would force a fallback to inexact alarms or
+  `canScheduleExactAlarms()` gating, neither of which exists today.
+- **`PendingIntent` identity is the Intent's data URI (`echo://item/<id>`), not `requestCode`.**
+  `PendingIntent` equality goes through `Intent.filterEquals`, which checks action/data/type/
+  package/component/categories and ignores extras — so `requestCode = itemId.hashCode()` alone
+  would be a 32-bit collision lottery where one item's alarm silently overwrites another's. With
+  an explicit component and a per-item data URI, `requestCode = 0` is safe. The content
+  `PendingIntent` (notification tap → `MainActivity`) needs its own per-item data URI for the
+  same reason, plus `FLAG_ACTIVITY_SINGLE_TOP` as an *Intent* flag (not a manifest `launchMode`)
+  to get `onNewIntent` delivery against `MainActivity`'s default `standard` launch mode.
+- **`MY_PACKAGE_REPLACED` clears exact alarms exactly like a reboot does** — during
+  `./gradlew installAndRun` development this means every alarm silently disappears without
+  `notify/BootReceiver.kt` listening for both actions. It is *not* `directBootAware` and does not
+  listen for `LOCKED_BOOT_COMPLETED`: `filesDir` is credential-encrypted and unreadable before
+  first unlock, same constraint as everywhere else in this app.
+- Tap-through to the source transcript is an `Intent` extra read in `MainActivity`, not a
+  Navigation-Compose deep link: `EchoApp` renders `SignInScreen` (or nothing, while `AuthState`
+  is `Unknown`) *outside* the `NavHost`, so a cold start calling `handleDeepLink` on a
+  controller that doesn't exist yet would drop the intent. `MainActivity` holds the pending
+  transcript id in `Activity` state instead (seeded in `onCreate`, updated in `onNewIntent`, the
+  extra removed each time so a config-change recreation doesn't renavigate), and passes it down
+  to `SignedInApp`'s `NavHost` once it exists.
+- `POST_NOTIFICATIONS` is requested from `TasksScreen` the first time its item list goes
+  non-empty, guarded by a file-scoped `askedForNotifications` so it fires once per process. If
+  denied, scheduling still runs — alarms fire — but `NotificationManager.notify()` silently
+  no-ops; no crash, no retry, no re-prompt.
 
 ## On-device AI
 

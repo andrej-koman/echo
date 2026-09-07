@@ -4,6 +4,7 @@ import android.util.Log
 import dev.andrej.echo.data.Transcript
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.ZoneId
 
 /**
@@ -46,12 +47,12 @@ class TranscriptAnalyzer(
                 return AnalysisOutcome.Blocked(AnalysisBlock.NoBackend(availability.reason))
         }
 
-        val transcriptDay = Instant.ofEpochMilli(transcript.createdAt).atZone(zone).toLocalDate()
-        val prompt = buildAnalysisPrompt(transcript.text, transcriptDay)
+        val transcriptNow = Instant.ofEpochMilli(transcript.createdAt).atZone(zone).toLocalDateTime()
+        val prompt = buildAnalysisPrompt(transcript.text, transcriptNow)
 
-        // Deliberately today's wall-clock day, not transcriptDay: re-analysing a month-old note
-        // should resolve its relative phrases against that note's day (the prompt above), but an
-        // item where nobody named a date is due now, not a month ago.
+        // Deliberately today's wall-clock day, not transcriptNow's: re-analysing a month-old note
+        // should resolve its relative phrases against that note's own moment (the prompt above),
+        // but an item where nobody named a date is due now, not a month ago.
         val today = LocalDate.now(zone)
 
         val first = attempt(runner, prompt, LlmRunner.DEFAULT_TEMPERATURE, today)

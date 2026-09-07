@@ -3,6 +3,7 @@ package dev.andrej.echo.ai
 import dev.andrej.echo.data.JsonAnalysisQueueRepository
 import dev.andrej.echo.data.JsonDerivedRepository
 import dev.andrej.echo.data.JsonTranscriptRepository
+import dev.andrej.echo.data.RecordingNotificationScheduler
 import java.time.ZoneId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -40,7 +41,8 @@ class PendingAnalysisWorkerTest {
     fun tearDown() = Dispatchers.resetMain()
 
     private fun transcripts() = JsonTranscriptRepository(tempFolder.newFolder(), dispatcher)
-    private fun derived() = JsonDerivedRepository(tempFolder.newFolder(), dispatcher)
+    private fun derived() =
+        JsonDerivedRepository(tempFolder.newFolder(), RecordingNotificationScheduler(), dispatcher)
     private fun queue() = JsonAnalysisQueueRepository(tempFolder.newFolder(), dispatcher)
 
     private fun worker(

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.shape.CircleShape
@@ -73,6 +74,8 @@ private val Tabs = listOf(
 fun EchoApp(
     viewModelFactory: ViewModelProvider.Factory,
     modifier: Modifier = Modifier,
+    pendingOpenTranscriptId: String? = null,
+    onOpenTranscriptHandled: () -> Unit = {},
 ) {
     val authViewModel: AuthViewModel = viewModel(factory = viewModelFactory)
     val authState by authViewModel.state.collectAsStateWithLifecycle()
@@ -97,6 +100,8 @@ fun EchoApp(
                 viewModelFactory = viewModelFactory,
                 authState = authState,
                 onSignOut = authViewModel::signOut,
+                pendingOpenTranscriptId = pendingOpenTranscriptId,
+                onOpenTranscriptHandled = onOpenTranscriptHandled,
             )
         }
     }
@@ -107,12 +112,21 @@ private fun SignedInApp(
     viewModelFactory: ViewModelProvider.Factory,
     authState: AuthState,
     onSignOut: () -> Unit,
+    pendingOpenTranscriptId: String? = null,
+    onOpenTranscriptHandled: () -> Unit = {},
 ) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val route = backStackEntry?.destination?.route
 
     val onTabs = route in Tabs.map { it.route }
+
+    LaunchedEffect(pendingOpenTranscriptId) {
+        if (pendingOpenTranscriptId != null) {
+            navController.navigate(Routes.detail(pendingOpenTranscriptId))
+            onOpenTranscriptHandled()
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         NavHost(

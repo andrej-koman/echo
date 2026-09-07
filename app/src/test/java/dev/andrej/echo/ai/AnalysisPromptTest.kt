@@ -85,16 +85,34 @@ class AnalysisPromptTest {
     }
 
     @Test
+    fun `a missing brace before the closing array bracket is repaired`() {
+        // Observed on-device: the model drops the item object's closing brace before ']'.
+        val raw = """{"title":"take out the trash","summary":"...",""" +
+            """"items":[{"text":"take out the trash","due":"2026-09-07T10:00:00"]]}"""
+
+        val analysis = parse(raw)!!
+
+        assertEquals("take out the trash", analysis.items.single().text)
+        assertTrue(analysis.items.single().hasTime)
+    }
+
+    @Test
+    fun `a genuinely truncated array is still null, not mis-repaired`() {
+        assertNull(parse("""{"title":"A","items":[{"text":"x","due":null}"""))
+    }
+
+    @Test
     fun `output with no json at all is null`() {
         assertNull(parse("I'm sorry, I can't help with that."))
         assertNull(parse(""))
     }
 
     @Test
-    fun `prompt carries the date and the text`() {
-        val prompt = buildAnalysisPrompt("call the plumber", LocalDate.of(2026, 9, 3))
+    fun `prompt carries the date, the current time and the text`() {
+        val prompt = buildAnalysisPrompt("call the plumber", LocalDate.of(2026, 9, 3).atTime(11, 5))
 
         assertTrue(prompt.contains("Today is 2026-09-03"))
+        assertTrue(prompt.contains("the current time is 11:05"))
         assertTrue(prompt.contains("call the plumber"))
     }
 
@@ -102,7 +120,7 @@ class AnalysisPromptTest {
     fun `long transcripts are truncated`() {
         val long = (1..MAX_PROMPT_WORDS + 500).joinToString(" ") { "word$it" }
 
-        val prompt = buildAnalysisPrompt(long, LocalDate.of(2026, 9, 3))
+        val prompt = buildAnalysisPrompt(long, LocalDate.of(2026, 9, 3).atTime(11, 5))
 
         assertTrue(prompt.contains("word$MAX_PROMPT_WORDS"))
         assertTrue(!prompt.contains("word${MAX_PROMPT_WORDS + 1} "))

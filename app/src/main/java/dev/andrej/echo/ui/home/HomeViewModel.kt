@@ -7,16 +7,12 @@ import dev.andrej.echo.data.DerivedRepository
 import dev.andrej.echo.data.TodoItem
 import dev.andrej.echo.data.Transcript
 import dev.andrej.echo.data.TranscriptRepository
+import dev.andrej.echo.ui.formatDue
 import dev.andrej.echo.ui.transcripts.TranscriptsUiState
 import dev.andrej.echo.ui.transcripts.group
 import dev.andrej.echo.ui.transcripts.pendingCopyByTranscript
 import dev.andrej.echo.ui.transcripts.spokenTotal
 import dev.andrej.echo.ui.transcripts.title
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Date
-import java.util.Locale
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -85,22 +81,3 @@ internal fun buildUpNext(
         }
 }
 
-private val dueTimeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
-private val dueDateFormat = SimpleDateFormat("d MMM, h:mm a", Locale.getDefault())
-
-private fun formatDue(dueAt: Long, now: Long): String {
-    val days = TimeUnit.MILLISECONDS.toDays(dueAt.midnight() - now.midnight())
-    return when (days) {
-        0L -> "Today, ${dueTimeFormat.format(Date(dueAt))}"
-        1L -> "Tomorrow, ${dueTimeFormat.format(Date(dueAt))}"
-        else -> dueDateFormat.format(Date(dueAt))
-    }
-}
-
-private fun Long.midnight(): Long = Calendar.getInstance().apply {
-    timeInMillis = this@midnight
-    set(Calendar.HOUR_OF_DAY, 0)
-    set(Calendar.MINUTE, 0)
-    set(Calendar.SECOND, 0)
-    set(Calendar.MILLISECOND, 0)
-}.timeInMillis

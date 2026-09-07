@@ -13,7 +13,9 @@ class JsonDerivedRepositoryTest {
     @get:Rule
     val tempFolder = TemporaryFolder()
 
-    private fun repository() = JsonDerivedRepository(tempFolder.newFolder())
+    private val notifications = RecordingNotificationScheduler()
+
+    private fun repository() = JsonDerivedRepository(tempFolder.newFolder(), notifications)
 
     private fun item(text: String, dueAt: Long = 1_000L, hasTime: Boolean = false) =
         NewTodo(text, dueAt, hasTime)
@@ -146,11 +148,11 @@ class JsonDerivedRepositoryTest {
     @Test
     fun `rows survive a new repository instance`() = runTest {
         val directory = tempFolder.newFolder()
-        JsonDerivedRepository(directory).replaceFor("t1", listOf(item("persisted")))
+        JsonDerivedRepository(directory, notifications).replaceFor("t1", listOf(item("persisted")))
 
         assertEquals(
             listOf("persisted"),
-            JsonDerivedRepository(directory).items.first().map { it.text },
+            JsonDerivedRepository(directory, notifications).items.first().map { it.text },
         )
     }
 
@@ -158,7 +160,7 @@ class JsonDerivedRepositoryTest {
     fun `corrupt file is recovered as empty and still writable`() = runTest {
         val directory = tempFolder.newFolder()
         directory.resolve("derived.json").writeText("{not json at all")
-        val repository = JsonDerivedRepository(directory)
+        val repository = JsonDerivedRepository(directory, notifications)
 
         assertTrue(repository.items.first().isEmpty())
 
@@ -172,8 +174,68 @@ class JsonDerivedRepositoryTest {
         directory.resolve("derived.json").writeText(
             """{"tasks":[{"id":"a","sourceTranscriptId":"t1","text":"old","createdAt":1}],"reminders":[]}""",
         )
-        val repository = JsonDerivedRepository(directory)
+        val repository = JsonDerivedRepository(directory, notifications)
 
         assertTrue(repository.items.first().isEmpty())
+    }
+
+    @Test
+    fun `replaceFor schedules the written rows`() = runTest {
+        val repository = repository()
+
+        repository.replaceFor("t1", listOf(item("call the plumber")))
+
+        val id = repository.items.first().single().id
+        assertEquals(listOf(id), notifications.scheduled)
+    }
+
+    @Test
+    fun `a re-analysis that drops a row cancels its notification`() = runTest {
+        val repository = repository()
+        repository.replaceFor("t1", listOf(item("keep"), item("drop")))
+        val dropped = repository.items.first().first { it.text == "drop" }.id
+
+        repository.replaceFor("t1", listOf(item("keep")))
+
+        assertTrue(dropped in notifications.cancelled)
+    }
+
+    @Test
+    fun `setDone true cancels, setDone false reschedules`() = runTest {
+        val repository = repository()
+        repository.replaceFor("t1", listOf(item("call the plumber")))
+        val id = repository.items.first().single().id
+        notifications.scheduled.clear()
+
+        repository.setDone(id, done = true)
+        assertTrue(id in notifications.cancelled)
+
+        notifications.cancelled.clear()
+        repository.setDone(id, done = false)
+        assertTrue(id in notifications.scheduled)
+    }
+
+    @Test
+    fun `re-analysis does not resurrect a ticked row's alarm`() = runTest {
+        val repository = repository()
+        repository.replaceFor("t1", listOf(item("buy milk")))
+        val id = repository.items.first().single().id
+        repository.setDone(id, done = true)
+        notifications.scheduled.clear()
+
+        repository.replaceFor("t1", listOf(item("buy milk")))
+
+        assertTrue(id !in notifications.scheduled)
+    }
+
+    @Test
+    fun `deleteFor cancels all of that transcript's ids`() = runTest {
+        val repository = repository()
+        repository.replaceFor("t1", listOf(item("a"), item("b")))
+        val ids = repository.items.first().map { it.id }
+
+        repository.deleteFor("t1")
+
+        assertEquals(ids.toSet(), notifications.cancelled.toSet())
     }
 }

@@ -10,6 +10,7 @@ import dev.andrej.echo.data.JsonDerivedRepository
 import dev.andrej.echo.data.JsonTranscriptRepository
 import dev.andrej.echo.data.NewTodo
 import dev.andrej.echo.data.PendingAnalysis
+import dev.andrej.echo.data.RecordingNotificationScheduler
 import dev.andrej.echo.data.Transcript
 import java.time.ZoneId
 import java.util.Calendar
@@ -49,7 +50,7 @@ class TranscriptsViewModelTest {
     @Test
     fun `deleting a transcript also clears its derived rows`() = runTest {
         val repository = JsonTranscriptRepository(tempFolder.newFolder(), dispatcher)
-        val derived = JsonDerivedRepository(tempFolder.newFolder(), dispatcher)
+        val derived = JsonDerivedRepository(tempFolder.newFolder(), RecordingNotificationScheduler(), dispatcher)
         val queue = JsonAnalysisQueueRepository(tempFolder.newFolder(), dispatcher)
         val worker = PendingAnalysisWorker(
             queue = queue,

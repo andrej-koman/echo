@@ -9,6 +9,7 @@ import dev.andrej.echo.data.FakeSettingsStore
 import dev.andrej.echo.data.JsonAnalysisQueueRepository
 import dev.andrej.echo.data.JsonDerivedRepository
 import dev.andrej.echo.data.JsonTranscriptRepository
+import dev.andrej.echo.data.RecordingNotificationScheduler
 import dev.andrej.echo.speech.Availability
 import dev.andrej.echo.speech.FailureReason
 import dev.andrej.echo.speech.FakeTranscriptionEngine
@@ -50,7 +51,8 @@ class RecordViewModelTest {
     // Writes run on the test scheduler so advanceUntilIdle covers them.
     private fun repository() = JsonTranscriptRepository(tempFolder.newFolder(), dispatcher)
 
-    private fun derivedRepository() = JsonDerivedRepository(tempFolder.newFolder(), dispatcher)
+    private fun derivedRepository() =
+        JsonDerivedRepository(tempFolder.newFolder(), RecordingNotificationScheduler(), dispatcher)
 
     private fun viewModel(
         engine: FakeTranscriptionEngine = FakeTranscriptionEngine(),

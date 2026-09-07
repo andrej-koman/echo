@@ -32,7 +32,6 @@ import dev.andrej.echo.ui.components.ButtonVariant
 import dev.andrej.echo.ui.components.CardPadding
 import dev.andrej.echo.ui.components.EchoButton
 import dev.andrej.echo.ui.components.EchoCard
-import dev.andrej.echo.ui.components.EchoIconButton
 import dev.andrej.echo.ui.components.EchoSearchField
 import dev.andrej.echo.ui.components.EchoTopBar
 import dev.andrej.echo.ui.components.EmptyState
@@ -49,7 +48,6 @@ private const val RECENT_COUNT = 3
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
-    onOpenAccount: () -> Unit,
     onSeeTasks: () -> Unit,
     onSeeAll: () -> Unit,
     onOpen: (String) -> Unit,
@@ -62,13 +60,6 @@ fun HomeScreen(
     Column(modifier = modifier.fillMaxSize()) {
         EchoTopBar(
             leading = { Mascot(size = 30.dp) },
-            trailing = {
-                EchoIconButton(
-                    iconRes = R.drawable.ic_user,
-                    contentDescription = "Account",
-                    onClick = onOpenAccount,
-                )
-            },
         ) {
             EchoSearchField(
                 value = state.query,

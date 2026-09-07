@@ -26,7 +26,6 @@ import dev.andrej.echo.auth.AuthState
 import dev.andrej.echo.ui.components.ButtonVariant
 import dev.andrej.echo.ui.components.EchoButton
 import dev.andrej.echo.ui.components.EchoCard
-import dev.andrej.echo.ui.components.EchoIconButton
 import dev.andrej.echo.ui.components.EchoTopBar
 import dev.andrej.echo.ui.theme.EchoTheme
 
@@ -35,23 +34,13 @@ fun AccountScreen(
     state: AuthState,
     aiState: AiCardState,
     onSignOut: () -> Unit,
-    onBack: () -> Unit,
     onDownloadModel: () -> Unit,
     onCancelDownload: () -> Unit,
     onDeleteModel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
-        EchoTopBar(
-            title = "Account",
-            leading = {
-                EchoIconButton(
-                    iconRes = R.drawable.ic_chevron_left,
-                    contentDescription = "Back",
-                    onClick = onBack,
-                )
-            },
-        )
+        EchoTopBar(title = "Profile")
 
         Column(
             modifier = Modifier

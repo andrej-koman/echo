@@ -48,16 +48,14 @@ import dev.andrej.echo.ui.tasks.TasksScreen
 import dev.andrej.echo.ui.tasks.TasksViewModel
 import dev.andrej.echo.ui.theme.EchoTheme
 import dev.andrej.echo.ui.transcripts.NotesScreen
-import dev.andrej.echo.ui.transcripts.TranscriptsScreen
 import dev.andrej.echo.ui.transcripts.TranscriptsViewModel
 
 private object Routes {
     const val HOME = "home"
     const val TASKS = "tasks"
     const val NOTES = "notes"
-    const val TRANSCRIPTS = "transcripts"
     const val CAPTURE = "capture"
-    const val ACCOUNT = "account"
+    const val PROFILE = "profile"
     const val DETAIL = "detail/{id}"
 
     fun detail(id: String) = "detail/$id"
@@ -67,7 +65,7 @@ private val Tabs = listOf(
     TabItem(Routes.HOME, "Home", R.drawable.ic_home),
     TabItem(Routes.TASKS, "Tasks", R.drawable.ic_list_checks),
     TabItem(Routes.NOTES, "Notes", R.drawable.ic_file_text),
-    TabItem(Routes.TRANSCRIPTS, "Transcripts", R.drawable.ic_audio_waveform),
+    TabItem(Routes.PROFILE, "Profile", R.drawable.ic_user),
 )
 
 @Composable
@@ -143,8 +141,7 @@ private fun SignedInApp(
                 HomeScreen(
                     viewModel = homeViewModel,
                     onSeeTasks = { navController.selectTab(Routes.TASKS) },
-                    onOpenAccount = { navController.navigate(Routes.ACCOUNT) },
-                    onSeeAll = { navController.selectTab(Routes.TRANSCRIPTS) },
+                    onSeeAll = { navController.selectTab(Routes.NOTES) },
                     onOpen = { navController.navigate(Routes.detail(it)) },
                 )
             }
@@ -154,7 +151,7 @@ private fun SignedInApp(
                 TasksScreen(
                     viewModel = tasksViewModel,
                     onOpenSource = { navController.navigate(Routes.detail(it)) },
-                    onOpenAccount = { navController.navigate(Routes.ACCOUNT) },
+                    onOpenProfile = { navController.selectTab(Routes.PROFILE) },
                 )
             }
 
@@ -163,16 +160,6 @@ private fun SignedInApp(
                 NotesScreen(
                     viewModel = transcriptsViewModel,
                     onOpen = { navController.navigate(Routes.detail(it)) },
-                    onOpenAccount = { navController.navigate(Routes.ACCOUNT) },
-                )
-            }
-
-            composable(Routes.TRANSCRIPTS) {
-                val transcriptsViewModel: TranscriptsViewModel = viewModel(factory = viewModelFactory)
-                TranscriptsScreen(
-                    viewModel = transcriptsViewModel,
-                    onOpen = { navController.navigate(Routes.detail(it)) },
-                    onOpenAccount = { navController.navigate(Routes.ACCOUNT) },
                 )
             }
 
@@ -184,14 +171,13 @@ private fun SignedInApp(
                 )
             }
 
-            composable(Routes.ACCOUNT) {
+            composable(Routes.PROFILE) {
                 val aiViewModel: AiViewModel = viewModel(factory = viewModelFactory)
                 val aiState by aiViewModel.state.collectAsStateWithLifecycle()
                 AccountScreen(
                     state = authState,
                     aiState = aiState,
                     onSignOut = onSignOut,
-                    onBack = { navController.popBackStack() },
                     onDownloadModel = aiViewModel.onDownloadModel,
                     onCancelDownload = aiViewModel.onCancelDownload,
                     onDeleteModel = aiViewModel.onDeleteModel,

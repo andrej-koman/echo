@@ -88,6 +88,30 @@ fun TranscriptDetailScreen(
         ) {
             pending[transcript.id]?.let { PendingBadge(it) }
 
+            transcript.summary?.let { summary ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "NOTE",
+                        style = EchoTheme.typography.microCaps,
+                        color = EchoTheme.colors.textTertiary,
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.weight(1f),
+                        color = EchoTheme.colors.borderSubtle,
+                    )
+                }
+
+                Text(
+                    text = summary,
+                    style = EchoTheme.typography.body,
+                    color = EchoTheme.colors.textPrimary,
+                )
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),

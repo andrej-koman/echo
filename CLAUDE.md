@@ -38,15 +38,22 @@ ui/home/      HomeScreen + HomeViewModel — up next, recent notes
 ui/tasks/     TasksScreen + TasksViewModel — grouped by source transcript, done checkbox
 ui/capture/   CaptureScreen — Listening and Processing
 ui/record/    RecordViewModel (still named for its old screen)
-ui/auth/      SignInScreen, AccountScreen, AuthViewModel, AiViewModel
-ui/transcripts/, ui/detail/    also NotesScreen — reuses the transcript row rendering
+ui/auth/      SignInScreen, AccountScreen (the Profile tab), AuthViewModel, AiViewModel
+ui/transcripts/, ui/detail/    NotesScreen (the merged Notes tab — grouped list, search,
+              TranscriptRow, PendingBadge), TranscriptDetailScreen (NOTE + raw TRANSCRIPT
+              sections)
 AppContainer manual DI, no Hilt
 ```
 
 Engine sits behind an interface so a different backend (e.g. Whisper) can replace it without touching UI.
 `AuthRepository` is behind an interface for the same reason — Google is the only provider today.
 
-Four tabs: Home / Tasks — record button — Notes / Transcripts, Home the start destination. The record
+Four tabs: Home / Tasks — record button — Notes / Profile, Home the start destination. There is no
+separate Transcripts tab — Notes is the one browsable list (former Transcripts content merged into it,
+`ui/transcripts/NotesScreen.kt`), and raw transcript text lives only in Profile's read-only
+"RAW TRANSCRIPTS" section (`AccountScreen.kt`), not as a tab of its own. No header account icon
+button anywhere — Profile is reached only via its tab (Tasks' empty-state "Turn on AI" button also
+tab-switches there, via `onOpenProfile`). The record
 button sits in the bar's middle slot (`TabBar(centerGap = true)` leaves the gap, `EchoApp` overlays the
 button on a bar-coloured cradle so it pokes above the hairline). The tab bar is icon-only — no labels, no
 selection crossfade — and the NavHost runs with every transition set to `None`: the design's
@@ -68,7 +75,10 @@ NavHost, so signing out drops the whole graph rather than unwinding a back stack
   has no email field of its own — `id` is the email address for Google accounts.
 - `TranscriptsViewModel.title()` derives a title from the opening of the text (first sentence, or
   six words) — the fallback for a transcript analysis has not named yet, not a permanent scheme.
-  `Transcript.asRow()` prefers `title`/`summary` when present.
+  `Transcript.asRow()` prefers `title`/`summary` when present. `summary` is the AI's full
+  reformatted note (a readable rewrite of the ramble, not a short blurb) — the prompt in
+  `ai/AnalysisPrompt.kt` asks for this explicitly. Row excerpts and `TranscriptDetailScreen`'s
+  NOTE section both just render it as-is; nothing truncates or re-summarizes it further.
 - Task and Reminder unified into one `TodoItem` (`text`, `dueAt` — never null, `hasTime`,
   `done`). A speaker who names no date at all still gets an item due **today**; `hasTime`
   records only whether a clock time was stated. `resolveDue` (in `ai/AnalysisPrompt.kt`)
@@ -149,11 +159,11 @@ NavHost, so signing out drops the whole graph rather than unwinding a back stack
   — a plain `{text, severity}` pair, no Compose types, so it stays testable without a device. An
   entry only gets copy once the drain has actually attempted it (`lastBlock != null`); a
   freshly-enqueued row shows nothing for the moment before that. `PendingBadge` (in
-  `ui/transcripts/TranscriptsScreen.kt`, reused by Home and the detail screen) renders it as an
+  `ui/transcripts/NotesScreen.kt`, reused by Home and the detail screen) renders it as an
   `EchoBadge`: `Parked` (waiting on a model or backend) in `BadgeTone.Neutral`, `Failed`
   (`GenerationFailed`/`EmptyResult`, exhausted or not — the badge doesn't distinguish) in
   `BadgeTone.Warning`. `EmptyTranscript` never renders — it's never enqueued. No dedicated
-  first-run modal; the badge is the only affordance, on transcript rows (Home and Transcripts),
+  first-run modal; the badge is the only affordance, on transcript rows (Home and Notes),
   recent-note cards, and the detail screen, which already has the Analyze button to retry with.
 
 ## Design system

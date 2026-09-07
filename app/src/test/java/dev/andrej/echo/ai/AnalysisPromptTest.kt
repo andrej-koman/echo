@@ -117,6 +117,14 @@ class AnalysisPromptTest {
     }
 
     @Test
+    fun `prompt asks for a reformatted note, not a short blurb`() {
+        val prompt = buildAnalysisPrompt("call the plumber", LocalDate.of(2026, 9, 3).atTime(11, 5))
+
+        assertTrue(prompt.contains("clean, readable note"))
+        assertTrue(!prompt.contains("max 2 sentences"))
+    }
+
+    @Test
     fun `long transcripts are truncated`() {
         val long = (1..MAX_PROMPT_WORDS + 500).joinToString(" ") { "word$it" }
 

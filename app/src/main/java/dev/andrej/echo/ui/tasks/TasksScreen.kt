@@ -39,7 +39,6 @@ import dev.andrej.echo.ui.formatTime
 import dev.andrej.echo.ui.components.ButtonVariant
 import dev.andrej.echo.ui.components.EchoButton
 import dev.andrej.echo.ui.components.EchoCard
-import dev.andrej.echo.ui.components.EchoIconButton
 import dev.andrej.echo.ui.components.EchoTopBar
 import dev.andrej.echo.ui.components.EmptyState
 import dev.andrej.echo.ui.components.Mascot
@@ -54,7 +53,7 @@ private var askedForNotifications = false
 fun TasksScreen(
     viewModel: TasksViewModel,
     onOpenSource: (String) -> Unit,
-    onOpenAccount: () -> Unit,
+    onOpenProfile: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -76,13 +75,6 @@ fun TasksScreen(
         EchoTopBar(
             title = "Tasks",
             leading = { Mascot(size = 30.dp, variant = MascotVariant.Tasks) },
-            trailing = {
-                EchoIconButton(
-                    iconRes = R.drawable.ic_user,
-                    contentDescription = "Account",
-                    onClick = onOpenAccount,
-                )
-            },
         )
 
         if (!state.loaded) {
@@ -104,7 +96,7 @@ fun TasksScreen(
                 if (state.aiOff) {
                     EchoButton(
                         text = "Turn on AI",
-                        onClick = onOpenAccount,
+                        onClick = onOpenProfile,
                         variant = ButtonVariant.Secondary,
                         modifier = Modifier.padding(top = EchoTheme.spacing.s4),
                     )

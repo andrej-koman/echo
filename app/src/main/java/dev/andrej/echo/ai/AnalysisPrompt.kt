@@ -42,7 +42,9 @@ fun buildAnalysisPrompt(text: String, now: LocalDateTime): String {
 
         {"title":"...","summary":"...","items":[{"text":"...","due":"ISO date, ISO datetime, or null"}]}
 
-        title: max 6 words. summary: max 2 sentences. items: things the speaker intends to do or
+        title: max 6 words. summary: rewrite what was said into a clean, readable note — organize
+        rambling into short paragraphs or a list where that helps, keep everything the speaker
+        said, do not compress it into a short blurb. items: things the speaker intends to do or
         be reminded of, one per stated action. text: the action itself, imperative, no time
         attached. due: if a clock time was stated ("at 10am", "tomorrow at 3") or a duration from
         now ("in 20 minutes", "in an hour") resolve to a full ISO8601 timestamp using today's date
@@ -52,7 +54,7 @@ fun buildAnalysisPrompt(text: String, now: LocalDateTime): String {
         Example. Today is 2026-01-01, the current time is 08:00.
         Voice note: "Remind me to call the dentist tomorrow at 9am. Also water the plants in 20
         minutes. Also need to buy milk."
-        {"title":"Call dentist, water plants","summary":"Reminder to call the dentist tomorrow morning; also water the plants soon and buy milk.","items":[{"text":"Call the dentist","due":"2026-01-02T09:00:00"},{"text":"Water the plants","due":"2026-01-01T08:20:00"},{"text":"Buy milk","due":null}]}
+        {"title":"Call dentist, water plants","summary":"Call the dentist tomorrow morning to confirm the appointment. Also water the plants soon, and remember to buy milk on the way home.","items":[{"text":"Call the dentist","due":"2026-01-02T09:00:00"},{"text":"Water the plants","due":"2026-01-01T08:20:00"},{"text":"Buy milk","due":null}]}
 
         Voice note:
         ""${'"'}

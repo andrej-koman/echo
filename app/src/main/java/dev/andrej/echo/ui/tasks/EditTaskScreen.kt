@@ -50,9 +50,9 @@ import dev.andrej.echo.ui.components.IconButtonVariant
 import dev.andrej.echo.ui.components.ThinkingDots
 import dev.andrej.echo.ui.formatTime
 import dev.andrej.echo.ui.midnight
+import dev.andrej.echo.ui.notes.clock
+import dev.andrej.echo.ui.notes.title
 import dev.andrej.echo.ui.theme.EchoTheme
-import dev.andrej.echo.ui.transcripts.clock
-import dev.andrej.echo.ui.transcripts.title
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date

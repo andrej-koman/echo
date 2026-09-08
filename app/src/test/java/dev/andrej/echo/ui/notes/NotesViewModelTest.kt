@@ -1,4 +1,4 @@
-package dev.andrej.echo.ui.transcripts
+package dev.andrej.echo.ui.notes
 
 import dev.andrej.echo.ai.AnalysisBlock
 import dev.andrej.echo.ai.FakeLlmRunner
@@ -34,7 +34,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class TranscriptsViewModelTest {
+class NotesViewModelTest {
 
     @get:Rule
     val tempFolder = TemporaryFolder()
@@ -66,7 +66,7 @@ class TranscriptsViewModelTest {
         )
         val saved = repository.save(text = "call the plumber", language = "en-GB", durationMs = 0)
         derived.replaceFor(saved.id, listOf(NewTodo("call the plumber", 1_000L, false)))
-        val viewModel = TranscriptsViewModel(repository, queue, worker, derived)
+        val viewModel = NotesViewModel(repository, queue, worker, derived)
 
         viewModel.delete(saved.id)
         advanceUntilIdle()

@@ -35,7 +35,7 @@ import dev.andrej.echo.ui.auth.AuthViewModel
 import dev.andrej.echo.ui.home.HomeViewModel
 import dev.andrej.echo.ui.record.RecordViewModel
 import dev.andrej.echo.ui.tasks.TasksViewModel
-import dev.andrej.echo.ui.transcripts.TranscriptsViewModel
+import dev.andrej.echo.ui.notes.NotesViewModel
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -179,8 +179,8 @@ class AppContainer(context: Context) {
                     warmup = ::warmUpLlm,
                 ) as T
 
-            modelClass.isAssignableFrom(TranscriptsViewModel::class.java) ->
-                TranscriptsViewModel(repository, analysisQueue, pendingAnalysisWorker, derived) as T
+            modelClass.isAssignableFrom(NotesViewModel::class.java) ->
+                NotesViewModel(repository, analysisQueue, pendingAnalysisWorker, derived) as T
 
             modelClass.isAssignableFrom(AuthViewModel::class.java) ->
                 AuthViewModel(auth) as T

@@ -30,7 +30,6 @@ enum class MascotVariant(@DrawableRes val drawable: Int) {
     Plain(R.drawable.mascot_echo),
     Tasks(R.drawable.mascot_tasks),
     Notes(R.drawable.mascot_notes),
-    Transcripts(R.drawable.mascot_transcripts),
 }
 
 @Composable

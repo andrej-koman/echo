@@ -8,11 +8,11 @@ import dev.andrej.echo.data.TodoItem
 import dev.andrej.echo.data.Transcript
 import dev.andrej.echo.data.TranscriptRepository
 import dev.andrej.echo.ui.formatDue
-import dev.andrej.echo.ui.transcripts.TranscriptsUiState
-import dev.andrej.echo.ui.transcripts.group
-import dev.andrej.echo.ui.transcripts.pendingCopyByTranscript
-import dev.andrej.echo.ui.transcripts.spokenTotal
-import dev.andrej.echo.ui.transcripts.title
+import dev.andrej.echo.ui.notes.NotesUiState
+import dev.andrej.echo.ui.notes.group
+import dev.andrej.echo.ui.notes.pendingCopyByTranscript
+import dev.andrej.echo.ui.notes.spokenTotal
+import dev.andrej.echo.ui.notes.title
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -37,17 +37,17 @@ class HomeViewModel(
 
     private val query = MutableStateFlow("")
 
-    val notes: StateFlow<TranscriptsUiState> =
+    val notes: StateFlow<NotesUiState> =
         combine(repository.transcripts, query, queue.pending) { transcripts, text, pending ->
             val matches = transcripts.filter { it.text.contains(text.trim(), ignoreCase = true) }
-            TranscriptsUiState(
+            NotesUiState(
                 query = text,
                 groups = group(matches, now(), pendingCopyByTranscript(pending)),
                 total = transcripts.size,
                 totalDuration = spokenTotal(transcripts.sumOf { it.durationMs }),
                 loaded = true,
             )
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TranscriptsUiState())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), NotesUiState())
 
     val upNext: StateFlow<List<UpNextItem>> =
         combine(derived.items, repository.transcripts) { items, transcripts ->

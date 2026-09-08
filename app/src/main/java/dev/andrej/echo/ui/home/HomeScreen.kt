@@ -38,9 +38,9 @@ import dev.andrej.echo.ui.components.Mascot
 import dev.andrej.echo.ui.components.SectionHeader
 import dev.andrej.echo.ui.components.ThinkingDots
 import dev.andrej.echo.ui.components.Waveform
+import dev.andrej.echo.ui.notes.NoteRow
+import dev.andrej.echo.ui.notes.PendingBadge
 import dev.andrej.echo.ui.theme.EchoTheme
-import dev.andrej.echo.ui.transcripts.PendingBadge
-import dev.andrej.echo.ui.transcripts.TranscriptRow
 
 private const val RECENT_COUNT = 3
 
@@ -194,7 +194,7 @@ private fun UpNextCard(items: List<UpNextItem>, onOpen: (String) -> Unit) {
 }
 
 @Composable
-private fun RecentNote(row: TranscriptRow, onOpen: () -> Unit) {
+private fun RecentNote(row: NoteRow, onOpen: () -> Unit) {
     EchoCard(modifier = Modifier.fillMaxWidth(), padding = CardPadding.Lg, onClick = onOpen) {
         Text(
             text = row.title,

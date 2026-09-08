@@ -1,4 +1,4 @@
-package dev.andrej.echo.ui.transcripts
+package dev.andrej.echo.ui.notes
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -40,7 +40,7 @@ import dev.andrej.echo.ui.theme.EchoTheme
 
 @Composable
 fun NotesScreen(
-    viewModel: TranscriptsViewModel,
+    viewModel: NotesViewModel,
     onOpen: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -85,7 +85,7 @@ fun NotesScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .testTag(TAG_TRANSCRIPTS_LIST),
+                .testTag(TAG_NOTES_LIST),
             contentPadding = PaddingValues(
                 start = EchoTheme.spacing.gutterScreen,
                 end = EchoTheme.spacing.gutterScreen,
@@ -123,11 +123,11 @@ fun NotesScreen(
 
 /** One shared card per day, rows separated by a hairline — same rhythm as Tasks' grouped list. */
 @Composable
-private fun NotesGroupCard(items: List<TranscriptRow>, onOpen: (String) -> Unit) {
+private fun NotesGroupCard(items: List<NoteRow>, onOpen: (String) -> Unit) {
     EchoCard(modifier = Modifier.fillMaxWidth(), padding = CardPadding.None) {
         Column(modifier = Modifier.padding(vertical = EchoTheme.spacing.s2, horizontal = EchoTheme.spacing.s4)) {
             items.forEachIndexed { index, row ->
-                TranscriptRow(row = row, onOpen = { onOpen(row.id) })
+                NoteRow(row = row, onOpen = { onOpen(row.id) })
                 if (index != items.lastIndex) {
                     HorizontalDivider(color = EchoTheme.colors.borderSubtle)
                 }
@@ -154,8 +154,8 @@ private fun NotesGroupHeader(label: String, count: Int, modifier: Modifier = Mod
 }
 
 @Composable
-internal fun TranscriptRow(
-    row: TranscriptRow,
+internal fun NoteRow(
+    row: NoteRow,
     onOpen: () -> Unit,
 ) {
     Row(
@@ -246,4 +246,4 @@ internal fun PendingBadge(pending: PendingCopy, modifier: Modifier = Modifier) {
     )
 }
 
-const val TAG_TRANSCRIPTS_LIST = "transcripts_list"
+const val TAG_NOTES_LIST = "notes_list"

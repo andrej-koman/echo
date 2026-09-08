@@ -54,8 +54,8 @@ import dev.andrej.echo.ui.components.Mascot
 import dev.andrej.echo.ui.components.MascotMood
 import dev.andrej.echo.ui.components.MascotVariant
 import dev.andrej.echo.ui.components.ThinkingDots
+import dev.andrej.echo.ui.notes.title
 import dev.andrej.echo.ui.theme.EchoTheme
-import dev.andrej.echo.ui.transcripts.title
 import java.text.SimpleDateFormat
 import java.time.ZoneId
 import java.util.Date

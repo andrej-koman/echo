@@ -41,21 +41,21 @@ import dev.andrej.echo.ui.components.EchoCard
 import dev.andrej.echo.ui.components.EchoIconButton
 import dev.andrej.echo.ui.components.EchoTopBar
 import dev.andrej.echo.ui.components.IconButtonVariant
+import dev.andrej.echo.ui.notes.NotesViewModel
+import dev.andrej.echo.ui.notes.PendingCopy
+import dev.andrej.echo.ui.notes.PendingSeverity
+import dev.andrej.echo.ui.notes.clock
+import dev.andrej.echo.ui.notes.title
 import dev.andrej.echo.ui.tasks.TaskGroupCard
 import dev.andrej.echo.ui.theme.EchoTheme
-import dev.andrej.echo.ui.transcripts.PendingCopy
-import dev.andrej.echo.ui.transcripts.PendingSeverity
-import dev.andrej.echo.ui.transcripts.TranscriptsViewModel
-import dev.andrej.echo.ui.transcripts.clock
-import dev.andrej.echo.ui.transcripts.title
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 @Composable
-fun TranscriptDetailScreen(
-    transcriptId: String,
-    viewModel: TranscriptsViewModel,
+fun NoteDetailScreen(
+    noteId: String,
+    viewModel: NotesViewModel,
     onDeleted: () -> Unit,
     onBack: () -> Unit,
     onEditTask: (String) -> Unit,
@@ -65,15 +65,15 @@ fun TranscriptDetailScreen(
     val analyzingId by viewModel.analyzingId.collectAsStateWithLifecycle()
     val pending by viewModel.pending.collectAsStateWithLifecycle()
     val tasks by viewModel.tasks.collectAsStateWithLifecycle()
-    val transcript = transcripts.firstOrNull { it.id == transcriptId }
+    val transcript = transcripts.firstOrNull { it.id == noteId }
     val context = LocalContext.current
 
     Column(modifier = modifier.fillMaxSize()) {
-        val entryPending = pending[transcriptId]
-        val analyzing = analyzingId == transcriptId
+        val entryPending = pending[noteId]
+        val analyzing = analyzingId == noteId
 
         EchoTopBar(
-            title = transcript?.let { it.title ?: title(it.text) } ?: "Transcript",
+            title = transcript?.let { it.title ?: title(it.text) } ?: "Note",
             subtitle = transcript?.let {
                 "${detailDate.format(Date(it.createdAt))} · ${clock(it.durationMs)} · ${wordCount(it.text)} words"
             },
@@ -91,7 +91,7 @@ fun TranscriptDetailScreen(
                         contentDescription = "Delete",
                         tint = EchoTheme.colors.textDanger,
                         onClick = {
-                            viewModel.delete(transcriptId)
+                            viewModel.delete(noteId)
                             onDeleted()
                         },
                     )
@@ -110,7 +110,7 @@ fun TranscriptDetailScreen(
                         },
                         onClick = {
                             if (!analyzing && entryPending?.severity != PendingSeverity.Parked) {
-                                viewModel.analyze(transcriptId)
+                                viewModel.analyze(noteId)
                             }
                         },
                     )
@@ -121,7 +121,7 @@ fun TranscriptDetailScreen(
         if (transcript == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    text = "Transcript not found.",
+                    text = "Note not found.",
                     style = EchoTheme.typography.body,
                     color = EchoTheme.colors.textTertiary,
                 )
@@ -141,7 +141,7 @@ fun TranscriptDetailScreen(
                 AnalysisStatusCard(
                     pending = entryPending,
                     retrying = analyzing,
-                    onRetry = { viewModel.analyze(transcriptId) },
+                    onRetry = { viewModel.analyze(noteId) },
                 )
             } else {
                 transcript.summary?.let { summary ->
@@ -153,7 +153,7 @@ fun TranscriptDetailScreen(
                     )
                 }
 
-                val notesTasks = tasks.filter { it.sourceTranscriptId == transcriptId }
+                val notesTasks = tasks.filter { it.sourceTranscriptId == noteId }
                 if (notesTasks.isNotEmpty()) {
                     SectionCaption(label = "TASKS FROM THIS NOTE", trailingCount = notesTasks.size)
                     TaskGroupCard(
@@ -168,7 +168,7 @@ fun TranscriptDetailScreen(
 
             SectionCaption(label = "WHAT WAS SAID", trailingText = transcript.language)
 
-            RawTranscriptCard(
+            RawNoteCard(
                 text = transcript.text,
                 onCopy = { context.copyToClipboard(transcript.text) },
             )
@@ -269,7 +269,7 @@ private fun AnalysisStatusCard(
 }
 
 @Composable
-private fun RawTranscriptCard(text: String, onCopy: () -> Unit) {
+private fun RawNoteCard(text: String, onCopy: () -> Unit) {
     var expanded by remember(text) { mutableStateOf(false) }
 
     EchoCard(modifier = Modifier.fillMaxWidth()) {

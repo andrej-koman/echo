@@ -1,4 +1,4 @@
-package dev.andrej.echo.ui.transcripts
+package dev.andrej.echo.ui.notes
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -27,7 +27,7 @@ enum class PendingSeverity { Parked, Failed }
 
 data class PendingCopy(val text: String, val severity: PendingSeverity)
 
-data class TranscriptRow(
+data class NoteRow(
     val id: String,
     val title: String,
     val excerpt: String,
@@ -37,20 +37,20 @@ data class TranscriptRow(
     val pending: PendingCopy? = null,
 )
 
-data class TranscriptGroup(
+data class NoteGroup(
     val label: String,
-    val items: List<TranscriptRow>,
+    val items: List<NoteRow>,
 )
 
-data class TranscriptsUiState(
+data class NotesUiState(
     val query: String = "",
-    val groups: List<TranscriptGroup> = emptyList(),
+    val groups: List<NoteGroup> = emptyList(),
     val total: Int = 0,
     val totalDuration: String = "",
     val loaded: Boolean = false,
 )
 
-class TranscriptsViewModel(
+class NotesViewModel(
     private val repository: TranscriptRepository,
     private val queue: AnalysisQueueRepository,
     private val worker: PendingAnalysisWorker,
@@ -72,18 +72,18 @@ class TranscriptsViewModel(
     val tasks: StateFlow<List<TodoItem>> = derived.items
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val state: StateFlow<TranscriptsUiState> =
+    val state: StateFlow<NotesUiState> =
         combine(repository.transcripts, query, pending, tasks) { transcripts, text, pendingByTranscript, allTasks ->
             val matches = transcripts.filter { it.text.contains(text.trim(), ignoreCase = true) }
             val taskCountByTranscript = allTasks.groupingBy { it.sourceTranscriptId }.eachCount()
-            TranscriptsUiState(
+            NotesUiState(
                 query = text,
                 groups = group(matches, now(), pendingByTranscript, taskCountByTranscript),
                 total = transcripts.size,
                 totalDuration = spokenTotal(transcripts.sumOf { it.durationMs }),
                 loaded = true,
             )
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TranscriptsUiState())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), NotesUiState())
 
     fun search(text: String) {
         query.value = text
@@ -115,15 +115,15 @@ internal fun group(
     now: Long,
     pending: Map<String, PendingCopy> = emptyMap(),
     taskCounts: Map<String, Int> = emptyMap(),
-): List<TranscriptGroup> =
+): List<NoteGroup> =
     transcripts
         .sortedByDescending { it.createdAt }
         .groupBy { dayLabel(it.createdAt, now) }
         .map { (label, items) ->
-            TranscriptGroup(label, items.map { it.asRow(pending[it.id], taskCounts[it.id] ?: 0) })
+            NoteGroup(label, items.map { it.asRow(pending[it.id], taskCounts[it.id] ?: 0) })
         }
 
-private fun Transcript.asRow(pending: PendingCopy?, taskCount: Int) = TranscriptRow(
+private fun Transcript.asRow(pending: PendingCopy?, taskCount: Int) = NoteRow(
     id = id,
     title = title ?: title(text),
     excerpt = summary ?: text.trim(),

@@ -40,16 +40,16 @@ import dev.andrej.echo.ui.components.RecordButtonSize
 import dev.andrej.echo.ui.components.RecordButtonState
 import dev.andrej.echo.ui.components.TabBar
 import dev.andrej.echo.ui.components.TabItem
-import dev.andrej.echo.ui.detail.TranscriptDetailScreen
+import dev.andrej.echo.ui.detail.NoteDetailScreen
 import dev.andrej.echo.ui.home.HomeScreen
 import dev.andrej.echo.ui.home.HomeViewModel
+import dev.andrej.echo.ui.notes.NotesScreen
+import dev.andrej.echo.ui.notes.NotesViewModel
 import dev.andrej.echo.ui.record.RecordViewModel
 import dev.andrej.echo.ui.tasks.EditTaskScreen
 import dev.andrej.echo.ui.tasks.TasksScreen
 import dev.andrej.echo.ui.tasks.TasksViewModel
 import dev.andrej.echo.ui.theme.EchoTheme
-import dev.andrej.echo.ui.transcripts.NotesScreen
-import dev.andrej.echo.ui.transcripts.TranscriptsViewModel
 
 private object Routes {
     const val HOME = "home"
@@ -159,9 +159,9 @@ private fun SignedInApp(
             }
 
             composable(Routes.NOTES) {
-                val transcriptsViewModel: TranscriptsViewModel = viewModel(factory = viewModelFactory)
+                val notesViewModel: NotesViewModel = viewModel(factory = viewModelFactory)
                 NotesScreen(
-                    viewModel = transcriptsViewModel,
+                    viewModel = notesViewModel,
                     onOpen = { navController.navigate(Routes.detail(it)) },
                 )
             }
@@ -188,10 +188,10 @@ private fun SignedInApp(
             }
 
             composable(Routes.DETAIL) { entry ->
-                val transcriptsViewModel: TranscriptsViewModel = viewModel(factory = viewModelFactory)
-                TranscriptDetailScreen(
-                    viewModel = transcriptsViewModel,
-                    transcriptId = entry.arguments?.getString("id").orEmpty(),
+                val notesViewModel: NotesViewModel = viewModel(factory = viewModelFactory)
+                NoteDetailScreen(
+                    viewModel = notesViewModel,
+                    noteId = entry.arguments?.getString("id").orEmpty(),
                     onDeleted = { navController.popBackStack() },
                     onBack = { navController.popBackStack() },
                     onEditTask = { navController.navigate(Routes.editTask(it)) },

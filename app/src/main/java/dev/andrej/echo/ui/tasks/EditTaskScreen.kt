@@ -35,12 +35,10 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.andrej.echo.R
-import dev.andrej.echo.ui.components.ButtonSize
-import dev.andrej.echo.ui.components.ButtonVariant
-import dev.andrej.echo.ui.components.EchoButton
 import dev.andrej.echo.ui.components.EchoCard
 import dev.andrej.echo.ui.components.EchoIconButton
 import dev.andrej.echo.ui.components.EchoTopBar
+import dev.andrej.echo.ui.components.FilterPill
 import dev.andrej.echo.ui.formatTime
 import dev.andrej.echo.ui.midnight
 import dev.andrej.echo.ui.theme.EchoTheme
@@ -78,6 +76,17 @@ fun EditTaskScreen(
                 )
             },
             trailing = {
+                if (task != null) {
+                    EchoIconButton(
+                        iconRes = R.drawable.ic_trash,
+                        contentDescription = "Delete task",
+                        tint = EchoTheme.colors.textDanger,
+                        onClick = {
+                            viewModel.delete(task.id)
+                            onBack()
+                        },
+                    )
+                }
                 EchoIconButton(
                     iconRes = R.drawable.ic_check,
                     contentDescription = "Save",
@@ -122,9 +131,12 @@ fun EditTaskScreen(
 
             DayRow(dueAt = editedDueAt, onPick = { editedDueAt = it })
 
-            if (editedHasTime) {
-                TimeRow(dueAt = editedDueAt, onPick = { editedDueAt = it })
-            }
+            TimeRow(
+                dueAt = editedDueAt,
+                hasTime = editedHasTime,
+                onPick = { editedDueAt = it },
+                onEnable = { editedHasTime = true },
+            )
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -148,6 +160,8 @@ fun EditTaskScreen(
             }
 
             QuickChipRow(
+                dueAt = editedDueAt,
+                hasTime = editedHasTime,
                 onToday = { editedDueAt = withDate(editedDueAt, System.currentTimeMillis()) },
                 onTomorrow = {
                     editedDueAt = withDate(editedDueAt, System.currentTimeMillis() + DAY_MILLIS)
@@ -179,16 +193,6 @@ fun EditTaskScreen(
                     }
                 }
             }
-
-            EchoButton(
-                text = "Delete",
-                onClick = {
-                    viewModel.delete(task.id)
-                    onBack()
-                },
-                variant = ButtonVariant.Danger,
-                fullWidth = true,
-            )
         }
     }
 }
@@ -226,13 +230,17 @@ private fun DayRow(dueAt: Long, onPick: (Long) -> Unit) {
 }
 
 @Composable
-private fun TimeRow(dueAt: Long, onPick: (Long) -> Unit) {
+private fun TimeRow(dueAt: Long, hasTime: Boolean, onPick: (Long) -> Unit, onEnable: () -> Unit) {
     val context = LocalContext.current
+    val overdue = hasTime && dueAt < System.currentTimeMillis()
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(EchoTheme.colors.surfaceCard)
-            .clickable { showTimePicker(context, dueAt, onPick) }
+            .clickable {
+                if (!hasTime) onEnable()
+                showTimePicker(context, dueAt, onPick)
+            }
             .padding(EchoTheme.spacing.s5),
         horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3),
         verticalAlignment = Alignment.CenterVertically,
@@ -240,7 +248,7 @@ private fun TimeRow(dueAt: Long, onPick: (Long) -> Unit) {
         Icon(
             painter = painterResource(R.drawable.ic_clock),
             contentDescription = null,
-            tint = EchoTheme.colors.textTertiary,
+            tint = if (hasTime) EchoTheme.colors.textTertiary else EchoTheme.colors.borderStrong,
             modifier = Modifier.size(16.dp),
         )
         Text(
@@ -249,20 +257,41 @@ private fun TimeRow(dueAt: Long, onPick: (Long) -> Unit) {
             color = EchoTheme.colors.textSecondary,
             modifier = Modifier.weight(1f),
         )
-        Text(text = formatTime(dueAt), style = EchoTheme.typography.bodySm, color = EchoTheme.colors.textPrimary)
+        Text(
+            text = when {
+                !hasTime -> "None"
+                overdue -> "${formatTime(dueAt)} · overdue"
+                else -> formatTime(dueAt)
+            },
+            style = EchoTheme.typography.bodySm,
+            color = when {
+                !hasTime -> EchoTheme.colors.textTertiary
+                overdue -> EchoTheme.colors.textDanger
+                else -> EchoTheme.colors.textPrimary
+            },
+        )
     }
 }
 
 @Composable
-private fun QuickChipRow(onToday: () -> Unit, onTomorrow: () -> Unit, onTime: (Int) -> Unit) {
+private fun QuickChipRow(
+    dueAt: Long,
+    hasTime: Boolean,
+    onToday: () -> Unit,
+    onTomorrow: () -> Unit,
+    onTime: (Int) -> Unit,
+) {
+    val today = (dueAt.midnight() - System.currentTimeMillis().midnight()) / DAY_MILLIS == 0L
+    val tomorrow = (dueAt.midnight() - System.currentTimeMillis().midnight()) / DAY_MILLIS == 1L
+    val hour = Calendar.getInstance().apply { timeInMillis = dueAt }.get(Calendar.HOUR_OF_DAY)
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        EchoButton(text = "Today", onClick = onToday, variant = ButtonVariant.Secondary, size = ButtonSize.Sm)
-        EchoButton(text = "Tomorrow", onClick = onTomorrow, variant = ButtonVariant.Secondary, size = ButtonSize.Sm)
-        EchoButton(text = "9 AM", onClick = { onTime(9) }, variant = ButtonVariant.Secondary, size = ButtonSize.Sm)
-        EchoButton(text = "6 PM", onClick = { onTime(18) }, variant = ButtonVariant.Secondary, size = ButtonSize.Sm)
+        FilterPill(label = "Today", active = today, onClick = onToday)
+        FilterPill(label = "Tomorrow", active = tomorrow, onClick = onTomorrow)
+        FilterPill(label = "9 AM", active = hasTime && hour == 9, onClick = { onTime(9) })
+        FilterPill(label = "6 PM", active = hasTime && hour == 18, onClick = { onTime(18) })
     }
 }
 

@@ -23,6 +23,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.andrej.echo.ui.theme.EchoTheme
 import dev.andrej.echo.ui.theme.rememberEchoHaptics
@@ -40,6 +41,7 @@ fun TabBar(
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
     centerGap: Boolean = false,
+    centerGapWidth: Dp = 72.dp,
 ) {
     val colors = EchoTheme.colors
 
@@ -55,24 +57,18 @@ fun TabBar(
                     strokeWidth = 1.dp.toPx(),
                 )
             }
-            .padding(
-                top = 10.dp,
-                bottom = 12.dp,
-                start = EchoTheme.spacing.gutterScreen,
-                end = EchoTheme.spacing.gutterScreen,
-            ),
-        horizontalArrangement = Arrangement.SpaceBetween,
+            .padding(top = 10.dp, bottom = 12.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         items.forEachIndexed { index, item ->
             if (centerGap && index == items.size / 2) {
-                Spacer(modifier = Modifier.weight(1f))
+                Spacer(modifier = Modifier.width(centerGapWidth))
             }
             Tab(
                 item = item,
                 active = item.route == selected,
                 onClick = { onSelect(item.route) },
-                modifier = Modifier.weight(1f),
             )
         }
     }

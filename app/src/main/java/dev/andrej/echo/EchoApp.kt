@@ -44,6 +44,7 @@ import dev.andrej.echo.ui.detail.TranscriptDetailScreen
 import dev.andrej.echo.ui.home.HomeScreen
 import dev.andrej.echo.ui.home.HomeViewModel
 import dev.andrej.echo.ui.record.RecordViewModel
+import dev.andrej.echo.ui.tasks.EditTaskScreen
 import dev.andrej.echo.ui.tasks.TasksScreen
 import dev.andrej.echo.ui.tasks.TasksViewModel
 import dev.andrej.echo.ui.theme.EchoTheme
@@ -57,8 +58,10 @@ private object Routes {
     const val CAPTURE = "capture"
     const val PROFILE = "profile"
     const val DETAIL = "detail/{id}"
+    const val EDIT_TASK = "tasks/{id}/edit"
 
     fun detail(id: String) = "detail/$id"
+    fun editTask(id: String) = "tasks/$id/edit"
 }
 
 private val Tabs = listOf(
@@ -150,7 +153,7 @@ private fun SignedInApp(
                 val tasksViewModel: TasksViewModel = viewModel(factory = viewModelFactory)
                 TasksScreen(
                     viewModel = tasksViewModel,
-                    onOpenSource = { navController.navigate(Routes.detail(it)) },
+                    onEditTask = { navController.navigate(Routes.editTask(it)) },
                     onOpenProfile = { navController.selectTab(Routes.PROFILE) },
                 )
             }
@@ -191,6 +194,16 @@ private fun SignedInApp(
                     transcriptId = entry.arguments?.getString("id").orEmpty(),
                     onDeleted = { navController.popBackStack() },
                     onBack = { navController.popBackStack() },
+                )
+            }
+
+            composable(Routes.EDIT_TASK) { entry ->
+                val tasksViewModel: TasksViewModel = viewModel(factory = viewModelFactory)
+                EditTaskScreen(
+                    viewModel = tasksViewModel,
+                    taskId = entry.arguments?.getString("id").orEmpty(),
+                    onBack = { navController.popBackStack() },
+                    onOpenSource = { navController.navigate(Routes.detail(it)) },
                 )
             }
         }

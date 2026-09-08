@@ -11,12 +11,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.andrej.echo.R
 import dev.andrej.echo.ui.theme.EchoTheme
 
 private val TOP_BAR_CONTENT_HEIGHT = 42.dp
@@ -51,6 +56,58 @@ fun EchoTopBar(
                 )
             }
         }
+    }
+}
+
+/** Search icon toggles an inline [EchoSearchField] in place of the title; same pattern on every tab. */
+@Composable
+fun EchoTopBar(
+    title: String,
+    query: String,
+    onQueryChange: (String) -> Unit,
+    searchPlaceholder: String,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    leading: @Composable (RowScope.() -> Unit)? = null,
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    if (expanded) {
+        EchoTopBar(
+            modifier = modifier,
+            leading = leading,
+            trailing = {
+                EchoIconButton(
+                    iconRes = R.drawable.ic_x,
+                    contentDescription = "Close search",
+                    onClick = {
+                        expanded = false
+                        onQueryChange("")
+                    },
+                )
+            },
+        ) {
+            EchoSearchField(
+                value = query,
+                onValueChange = onQueryChange,
+                placeholder = searchPlaceholder,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    } else {
+        EchoTopBar(
+            title = title,
+            modifier = modifier,
+            subtitle = subtitle,
+            leading = leading,
+            trailing = {
+                EchoIconButton(
+                    iconRes = R.drawable.ic_search,
+                    contentDescription = "Search",
+                    onClick = { expanded = true },
+                )
+            },
+        )
     }
 }
 

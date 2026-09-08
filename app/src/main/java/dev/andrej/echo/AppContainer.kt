@@ -197,7 +197,7 @@ class AppContainer(context: Context) {
                 HomeViewModel(repository, derived, analysisQueue) as T
 
             modelClass.isAssignableFrom(TasksViewModel::class.java) ->
-                TasksViewModel(derived, aiCardState) as T
+                TasksViewModel(derived, repository, aiCardState) as T
 
             else -> error("Unknown ViewModel: ${modelClass.name}")
         }

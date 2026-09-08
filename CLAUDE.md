@@ -98,17 +98,31 @@ NavHost, so signing out drops the whole graph rather than unwinding a back stack
   (`"due":"..."]]}` instead of `"..."}]}`), applied only as a fallback when the brace count is
   short by exactly one — a genuinely different malformed response still returns null rather
   than being guessed at.
-  `TasksScreen`/`TasksViewModel.groupByDue` groups items by due date instead of source
-  transcript: **Overdue** first, then Today, Tomorrow, then one group per later date. Membership
-  ignores `done` — a ticked overdue row still sits under Overdue, struck through, rather than
-  jumping groups. `isOverdue` treats timed and date-only items differently: a timed item is
-  overdue the moment its clock time passes, even earlier today, but a date-only item due today
-  isn't overdue until tomorrow. Within a group, timed items come first (soonest first), then
-  date-only items (oldest-created first). The group header is a plain day label now, no longer
-  clickable through to a transcript — that only made sense when a group *was* one transcript's
-  items; each row still opens its own source via `TaskRow`'s `onOpenSource`. Due-time formatting
-  (`formatDue`, `formatTime`, `Long.midnight()`) lives in `ui/DueLabels.kt`, shared by Home and
-  Tasks rather than copied a third time. `TasksUiState.aiOff` is keyed off `items.isEmpty()`.
+  `TasksScreen`/`TasksViewModel.groupByDue` groups undone items into three buckets only: **Today**
+  (folds in every overdue item too, sorted ahead of the rest of today's), **Tomorrow**, and one
+  flat **Upcoming** group for everything later (`DueGroup.showDate = true` there, so `TaskRow`
+  formats its "when" label with `formatDue` instead of `formatTime`). Done items never appear in
+  `groupByDue`'s output at all — they collapse into a separate "Completed" section instead
+  (`completedByRecency`, most recently checked off first), shown behind a `CompletedHeader`
+  toggle at the bottom of the list so a long history of ticked items doesn't push undone work off
+  screen. `isOverdue` treats timed and date-only items differently: a timed item is overdue the
+  moment its clock time passes, even earlier today, but a date-only item due today isn't overdue
+  until tomorrow. Within a group, timed items come first (soonest first), then date-only items
+  (oldest-created first). Tapping a row opens `EditTaskScreen` (`onEditTask`) instead of jumping
+  straight to the source transcript — that full-screen editor lets you retitle a task, change its
+  day/time via native `DatePickerDialog`/`TimePickerDialog`, toggle notification on/off, delete it
+  (`DerivedRepository.update`/`delete`, added alongside `replaceFor`/`setDone`/`deleteFor`, using
+  the same `update { current -> ... }`/`sync` machinery), and reach the source transcript only
+  from its own "Heard in" row. `TasksViewModel` takes a `TranscriptRepository` for that lookup, on
+  top of `DerivedRepository`. Due-time formatting (`formatDue`, `formatTime`, `Long.midnight()`)
+  lives in `ui/DueLabels.kt`, shared by Home and Tasks rather than copied a third time.
+  `TasksUiState.aiOff` is keyed off `items.isEmpty()` (before the search filter, so searching
+  never flips it).
+  Search is a `query` `MutableStateFlow` folded into each of Home/Tasks/Notes' `combine` before
+  grouping (`filterByQuery` for Tasks). All three tabs share one `EchoTopBar` overload
+  (`title`/`query`/`onQueryChange`/`searchPlaceholder`) that toggles a trailing search icon into an
+  inline `EchoSearchField` in place of the title, rather than each screen keeping its own
+  always-visible field.
 - Old-shape `derived.json` (the pre-unification `tasks`/`reminders` lists) is not migrated —
   it decodes to zero rows via `Json { ignoreUnknownKeys = true }` plus a defaulted `items`
   field, and a re-Analyze regenerates. `derivedId` no longer takes a `kind` — one entity, one
@@ -211,9 +225,10 @@ tokens and kit, not ported from a design.
   outer spinner arc share one period; it is ambient, so it checks `LocalReducedMotion`.
   `success()` needs `VibrationEffect.EFFECT_DOUBLE_CLICK` and so needs the `VIBRATE` permission
   and its own check of `Settings.System.HAPTIC_FEEDBACK_ENABLED`.
-- `EchoTopBar` has two forms: a `title`/`subtitle` one and a slot one taking arbitrary centre content
-  (Home puts the search field there instead of a title). Both draw the same bar chrome, so every screen
-  header keeps one surface, hairline and height.
+- `EchoTopBar` has three forms: a `title`/`subtitle` one, a slot one taking arbitrary centre
+  content, and a searchable one (`title`/`query`/`onQueryChange`/`searchPlaceholder`) that
+  delegates to the other two depending on whether its search icon has been tapped. All three draw
+  the same bar chrome, so every screen header keeps one surface, hairline and height.
 - Home reads its recent notes from `TranscriptsViewModel`; it has no view model of its own. With no
   transcripts it shows only the mascot empty state (its "Upload audio" / "Type a note" buttons are
   inert); with data it is two sections, "Up next" then "Recent notes" — no greeting, no action cards.

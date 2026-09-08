@@ -51,7 +51,7 @@ class TasksViewModelTest {
     }
 
     @Test
-    fun `overdue is grouped ahead of today, tomorrow and later, regardless of done`() {
+    fun `three buckets only, overdue folded into Today ahead of the rest, done items excluded`() {
         val items = listOf(
             item("overdue-timed", YESTERDAY_9AM, hasTime = true),
             item("today-timed-passed", TODAY_9AM, hasTime = true, done = true),
@@ -62,14 +62,34 @@ class TasksViewModelTest {
 
         val groups = groupByDue(items, NOW, UTC)
 
-        assertEquals(listOf("Overdue", "Today", "Tomorrow", "11 Sep 2026"), groups.map { it.label })
+        assertEquals(listOf("Today", "Tomorrow", "Upcoming"), groups.map { it.label })
         assertEquals(
-            setOf("overdue-timed", "today-timed-passed"),
-            groups.single { it.label == "Overdue" }.items.map { it.id }.toSet(),
+            listOf("overdue-timed", "today-untimed"),
+            groups.single { it.label == "Today" }.items.map { it.id },
         )
-        assertEquals(listOf("today-untimed"), groups.single { it.label == "Today" }.items.map { it.id })
         assertEquals(listOf("tomorrow"), groups.single { it.label == "Tomorrow" }.items.map { it.id })
-        assertEquals(listOf("next-week"), groups.single { it.label == "11 Sep 2026" }.items.map { it.id })
+        assertEquals(listOf("next-week"), groups.single { it.label == "Upcoming" }.items.map { it.id })
+        assertFalse(groups.single { it.label == "Today" }.showDate)
+        assertFalse(groups.single { it.label == "Tomorrow" }.showDate)
+        assertTrue(groups.single { it.label == "Upcoming" }.showDate)
+    }
+
+    @Test
+    fun `done items are excluded from groupByDue entirely, even if it empties a group`() {
+        val items = listOf(item("done-only", TODAY_START, hasTime = false, done = true))
+
+        assertEquals(emptyList<DueGroup>(), groupByDue(items, NOW, UTC))
+    }
+
+    @Test
+    fun `completedByRecency returns only done items, most recently updated first`() {
+        val items = listOf(
+            item("undone", TODAY_START, hasTime = false),
+            item("done-older", TODAY_START, hasTime = false, done = true).copy(updatedAt = 100),
+            item("done-newer", TODAY_START, hasTime = false, done = true).copy(updatedAt = 200),
+        )
+
+        assertEquals(listOf("done-newer", "done-older"), completedByRecency(items).map { it.id })
     }
 
     @Test
@@ -81,12 +101,25 @@ class TasksViewModelTest {
             item("sooner-time", TODAY_9AM, hasTime = true),
         )
 
-        // today-9am has passed relative to NOW (noon), so the timed items land in Overdue.
-        val overdue = groupByDue(items, NOW, UTC).single { it.label == "Overdue" }.items.map { it.id }
-
-        assertEquals(listOf("sooner-time", "later-time"), overdue)
-
+        // Both timed items have passed relative to NOW (noon), so they sort ahead as overdue,
+        // then the date-only items follow by creation order.
         val today = groupByDue(items, NOW, UTC).single { it.label == "Today" }.items.map { it.id }
-        assertEquals(listOf("early-created-first", "late-created-first"), today)
+
+        assertEquals(
+            listOf("sooner-time", "later-time", "early-created-first", "late-created-first"),
+            today,
+        )
+    }
+
+    @Test
+    fun `filterByQuery matches task text case-insensitively`() {
+        val items = listOf(
+            item("Buy milk", TODAY_START, hasTime = false),
+            item("Call mum", TODAY_START, hasTime = false),
+        )
+
+        assertEquals(listOf("Buy milk"), filterByQuery(items, "milk").map { it.text })
+        assertEquals(listOf("Buy milk"), filterByQuery(items, "MILK").map { it.text })
+        assertEquals(items.map { it.text }, filterByQuery(items, "").map { it.text })
     }
 }

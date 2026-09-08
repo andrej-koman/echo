@@ -24,9 +24,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextDecoration
@@ -35,6 +39,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.andrej.echo.R
 import dev.andrej.echo.data.TodoItem
+import dev.andrej.echo.ui.formatDue
 import dev.andrej.echo.ui.formatTime
 import dev.andrej.echo.ui.components.ButtonVariant
 import dev.andrej.echo.ui.components.EchoButton
@@ -52,13 +57,14 @@ private var askedForNotifications = false
 @Composable
 fun TasksScreen(
     viewModel: TasksViewModel,
-    onOpenSource: (String) -> Unit,
+    onEditTask: (String) -> Unit,
     onOpenProfile: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val notificationLauncher = rememberLauncherForActivityResult(RequestPermission()) {}
+    var completedExpanded by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.groups.isNotEmpty()) {
         if (!askedForNotifications && state.groups.isNotEmpty()) {
@@ -74,6 +80,9 @@ fun TasksScreen(
     Column(modifier = modifier.fillMaxSize()) {
         EchoTopBar(
             title = "Tasks",
+            query = state.query,
+            onQueryChange = viewModel::search,
+            searchPlaceholder = "Search tasks…",
             leading = { Mascot(size = 30.dp, variant = MascotVariant.Tasks) },
         )
 
@@ -82,7 +91,7 @@ fun TasksScreen(
             return@Column
         }
 
-        if (state.groups.isEmpty()) {
+        if (state.groups.isEmpty() && state.completed.isEmpty()) {
             EmptyState(
                 title = if (state.aiOff) "Turn on AI to get tasks" else "Nothing to do",
                 body = if (state.aiOff) {
@@ -127,9 +136,30 @@ fun TasksScreen(
                 items(group.items, key = { it.id }) { task ->
                     TaskRow(
                         task = task,
+                        showDate = group.showDate,
                         onToggle = { viewModel.setDone(task.id, !task.done) },
-                        onOpenSource = { onOpenSource(task.sourceTranscriptId) },
+                        onEdit = { onEditTask(task.id) },
                     )
+                }
+            }
+
+            if (state.completed.isNotEmpty()) {
+                item(key = "completed-header") {
+                    CompletedHeader(
+                        count = state.completed.size,
+                        expanded = completedExpanded,
+                        onToggle = { completedExpanded = !completedExpanded },
+                        modifier = Modifier.padding(start = 2.dp, top = EchoTheme.spacing.s4),
+                    )
+                }
+                if (completedExpanded) {
+                    items(state.completed, key = { it.id }) { task ->
+                        TaskRow(
+                            task = task,
+                            onToggle = { viewModel.setDone(task.id, !task.done) },
+                            onEdit = { onEditTask(task.id) },
+                        )
+                    }
                 }
             }
         }
@@ -137,8 +167,43 @@ fun TasksScreen(
 }
 
 @Composable
-private fun TaskRow(task: TodoItem, onToggle: () -> Unit, onOpenSource: () -> Unit) {
-    EchoCard(modifier = Modifier.fillMaxWidth(), onClick = onOpenSource) {
+private fun CompletedHeader(
+    count: Int,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "Completed ($count)".uppercase(),
+            style = EchoTheme.typography.microCaps,
+            color = EchoTheme.colors.textTertiary,
+        )
+        Icon(
+            painter = painterResource(R.drawable.ic_chevron_down),
+            contentDescription = null,
+            tint = EchoTheme.colors.textTertiary,
+            modifier = Modifier
+                .size(14.dp)
+                .rotate(if (expanded) 180f else 0f),
+        )
+    }
+}
+
+@Composable
+private fun TaskRow(
+    task: TodoItem,
+    onToggle: () -> Unit,
+    onEdit: () -> Unit,
+    showDate: Boolean = false,
+) {
+    EchoCard(modifier = Modifier.fillMaxWidth(), onClick = onEdit) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5),
@@ -154,7 +219,7 @@ private fun TaskRow(task: TodoItem, onToggle: () -> Unit, onOpenSource: () -> Un
             )
             if (task.hasTime) {
                 Text(
-                    text = formatTime(task.dueAt),
+                    text = if (showDate) formatDue(task.dueAt, System.currentTimeMillis()) else formatTime(task.dueAt),
                     style = EchoTheme.typography.microCaps,
                     color = EchoTheme.colors.textTertiary,
                 )

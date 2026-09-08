@@ -32,7 +32,6 @@ import dev.andrej.echo.ui.components.ButtonVariant
 import dev.andrej.echo.ui.components.CardPadding
 import dev.andrej.echo.ui.components.EchoButton
 import dev.andrej.echo.ui.components.EchoCard
-import dev.andrej.echo.ui.components.EchoSearchField
 import dev.andrej.echo.ui.components.EchoTopBar
 import dev.andrej.echo.ui.components.EmptyState
 import dev.andrej.echo.ui.components.Mascot
@@ -59,15 +58,12 @@ fun HomeScreen(
 
     Column(modifier = modifier.fillMaxSize()) {
         EchoTopBar(
+            title = "Home",
+            query = state.query,
+            onQueryChange = viewModel::search,
+            searchPlaceholder = "Search for notes…",
             leading = { Mascot(size = 30.dp) },
-        ) {
-            EchoSearchField(
-                value = state.query,
-                onValueChange = viewModel::search,
-                placeholder = "Search for notes…",
-                modifier = Modifier.weight(1f),
-            )
-        }
+        )
 
         if (!state.loaded) {
             Box(

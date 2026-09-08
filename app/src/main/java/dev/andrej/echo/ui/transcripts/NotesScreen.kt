@@ -29,7 +29,6 @@ import dev.andrej.echo.R
 import dev.andrej.echo.ui.components.BadgeTone
 import dev.andrej.echo.ui.components.EchoBadge
 import dev.andrej.echo.ui.components.EchoCard
-import dev.andrej.echo.ui.components.EchoSearchField
 import dev.andrej.echo.ui.components.EchoTopBar
 import dev.andrej.echo.ui.components.EmptyState
 import dev.andrej.echo.ui.components.Mascot
@@ -48,6 +47,9 @@ fun NotesScreen(
     Column(modifier = modifier.fillMaxSize()) {
         EchoTopBar(
             title = "Notes",
+            query = state.query,
+            onQueryChange = viewModel::search,
+            searchPlaceholder = "Search all notes…",
             subtitle = if (!state.loaded) {
                 ""
             } else if (state.total == 0) {
@@ -90,15 +92,6 @@ fun NotesScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
         ) {
-            item {
-                EchoSearchField(
-                    value = state.query,
-                    onValueChange = viewModel::search,
-                    placeholder = "Search all notes…",
-                    modifier = Modifier.padding(bottom = 2.dp),
-                )
-            }
-
             if (state.groups.isEmpty()) {
                 item {
                     Text(

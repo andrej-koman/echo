@@ -234,7 +234,7 @@ class JsonDerivedRepositoryTest {
         repository.replaceFor("t1", listOf(item("old text", dueAt = 1_000L, hasTime = false)))
         val id = repository.items.first().single().id
 
-        repository.update(id, text = "new text", dueAt = 5_000L, hasTime = true)
+        repository.update(id, text = "new text", dueAt = 5_000L, hasTime = true, notify = true)
 
         val updated = repository.items.first().single()
         assertEquals("new text", updated.text)
@@ -250,7 +250,7 @@ class JsonDerivedRepositoryTest {
         val id = repository.items.first().single().id
         notifications.scheduled.clear()
 
-        repository.update(id, text = "a", dueAt = 5_000L, hasTime = true)
+        repository.update(id, text = "a", dueAt = 5_000L, hasTime = true, notify = true)
 
         assertTrue(id in notifications.scheduled)
     }
@@ -263,7 +263,7 @@ class JsonDerivedRepositoryTest {
         repository.setDone(id, done = true)
         notifications.scheduled.clear()
 
-        repository.update(id, text = "b", dueAt = 5_000L, hasTime = true)
+        repository.update(id, text = "b", dueAt = 5_000L, hasTime = true, notify = true)
 
         assertTrue(repository.items.first().single().done)
         assertTrue(id !in notifications.scheduled)

@@ -9,6 +9,7 @@ data class TodoItem(
     val text: String,
     val dueAt: Long,
     val hasTime: Boolean,
+    val notify: Boolean = true,
     val done: Boolean = false,
     val createdAt: Long,
     val updatedAt: Long = createdAt,

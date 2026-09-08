@@ -17,7 +17,7 @@ interface DerivedRepository {
 
     suspend fun setDone(itemId: String, done: Boolean)
 
-    suspend fun update(itemId: String, text: String, dueAt: Long, hasTime: Boolean)
+    suspend fun update(itemId: String, text: String, dueAt: Long, hasTime: Boolean, notify: Boolean)
 
     suspend fun delete(itemId: String)
 

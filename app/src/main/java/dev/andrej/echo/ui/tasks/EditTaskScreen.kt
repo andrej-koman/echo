@@ -4,11 +4,13 @@ import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.Context
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -19,8 +21,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -29,16 +29,25 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.andrej.echo.R
+import dev.andrej.echo.ui.components.CardPadding
 import dev.andrej.echo.ui.components.EchoCard
 import dev.andrej.echo.ui.components.EchoIconButton
 import dev.andrej.echo.ui.components.EchoTopBar
 import dev.andrej.echo.ui.components.FilterPill
+import dev.andrej.echo.ui.components.IconButtonVariant
+import dev.andrej.echo.ui.components.ThinkingDots
 import dev.andrej.echo.ui.formatTime
 import dev.andrej.echo.ui.midnight
 import dev.andrej.echo.ui.theme.EchoTheme
@@ -61,9 +70,19 @@ fun EditTaskScreen(
     val transcripts by viewModel.transcripts.collectAsStateWithLifecycle()
     val task = (state.groups.flatMap { it.items } + state.completed).firstOrNull { it.id == taskId }
 
-    var editedText by remember(taskId) { mutableStateOf(task?.text.orEmpty()) }
-    var editedDueAt by remember(taskId) { mutableStateOf(task?.dueAt ?: 0L) }
-    var editedHasTime by remember(taskId) { mutableStateOf(task?.hasTime ?: false) }
+    var editedText by remember { mutableStateOf("") }
+    var editedDueAt by remember { mutableStateOf(0L) }
+    var editedHasTime by remember { mutableStateOf(false) }
+    var editedNotify by remember { mutableStateOf(true) }
+    var loadedFor by remember { mutableStateOf<String?>(null) }
+
+    if (task != null && loadedFor != taskId) {
+        editedText = task.text
+        editedDueAt = task.dueAt
+        editedHasTime = task.hasTime
+        editedNotify = task.notify
+        loadedFor = taskId
+    }
 
     Column(modifier = modifier.fillMaxSize()) {
         EchoTopBar(
@@ -81,6 +100,7 @@ fun EditTaskScreen(
                         iconRes = R.drawable.ic_trash,
                         contentDescription = "Delete task",
                         tint = EchoTheme.colors.textDanger,
+                        modifier = Modifier.scale(0.8f),
                         onClick = {
                             viewModel.delete(task.id)
                             onBack()
@@ -90,9 +110,10 @@ fun EditTaskScreen(
                 EchoIconButton(
                     iconRes = R.drawable.ic_check,
                     contentDescription = "Save",
+                    variant = IconButtonVariant.Soft,
                     onClick = {
                         if (task != null) {
-                            viewModel.update(task.id, editedText, editedDueAt, editedHasTime)
+                            viewModel.update(task.id, editedText, editedDueAt, editedHasTime, editedNotify)
                             onBack()
                         }
                     },
@@ -102,11 +123,15 @@ fun EditTaskScreen(
 
         if (task == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    text = "Task not found.",
-                    style = EchoTheme.typography.body,
-                    color = EchoTheme.colors.textTertiary,
-                )
+                if (state.loaded) {
+                    Text(
+                        text = "Task not found.",
+                        style = EchoTheme.typography.body,
+                        color = EchoTheme.colors.textTertiary,
+                    )
+                } else {
+                    ThinkingDots()
+                }
             }
             return@Column
         }
@@ -119,44 +144,78 @@ fun EditTaskScreen(
                 .navigationBarsPadding(),
             verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s6),
         ) {
-            BasicTextField(
-                value = editedText,
-                onValueChange = { editedText = it },
-                textStyle = EchoTheme.typography.body.copy(color = EchoTheme.colors.textPrimary),
-                cursorBrush = SolidColor(EchoTheme.colors.textAccent),
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
+                verticalAlignment = Alignment.Top,
+            ) {
+                TaskDoneCheckbox(
+                    done = task.done,
+                    onToggle = { viewModel.setDone(task.id, !task.done) },
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    BasicTextField(
+                        value = editedText,
+                        onValueChange = { editedText = it },
+                        textStyle = EchoTheme.typography.heading.copy(color = EchoTheme.colors.textPrimary),
+                        cursorBrush = SolidColor(EchoTheme.colors.textAccent),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 2.dp),
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_pen_line),
+                            contentDescription = null,
+                            tint = EchoTheme.colors.textTertiary,
+                            modifier = Modifier.size(12.dp),
+                        )
+                        Text(
+                            text = "Tap to rewrite",
+                            style = EchoTheme.typography.micro,
+                            color = EchoTheme.colors.textTertiary,
+                        )
+                    }
+                }
+            }
 
             SectionDivider("WHEN")
 
-            DayRow(dueAt = editedDueAt, onPick = { editedDueAt = it })
-
-            TimeRow(
-                dueAt = editedDueAt,
-                hasTime = editedHasTime,
-                onPick = { editedDueAt = it },
-                onEnable = { editedHasTime = true },
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "Notify me",
-                    style = EchoTheme.typography.bodySm,
-                    color = EchoTheme.colors.textPrimary,
-                    modifier = Modifier.weight(1f),
+            EchoCard(modifier = Modifier.fillMaxWidth(), padding = CardPadding.None) {
+                DayRow(dueAt = editedDueAt, onPick = { editedDueAt = it })
+                HorizontalDivider(color = EchoTheme.colors.borderSubtle)
+                TimeRow(
+                    dueAt = editedDueAt,
+                    hasTime = editedHasTime,
+                    onPick = { editedDueAt = it },
+                    onEnable = { editedHasTime = true },
                 )
-                Switch(
-                    checked = editedHasTime,
-                    onCheckedChange = { checked ->
-                        editedHasTime = checked
-                        if (!checked) editedDueAt = editedDueAt.midnight()
-                    },
-                    colors = SwitchDefaults.colors(checkedThumbColor = EchoTheme.colors.actionPrimaryBg),
-                )
+                HorizontalDivider(color = EchoTheme.colors.borderSubtle)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(EchoTheme.spacing.s5),
+                    horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Notify me",
+                            style = EchoTheme.typography.bodySm,
+                            color = EchoTheme.colors.textPrimary,
+                        )
+                        Text(
+                            text = "A time always rings",
+                            style = EchoTheme.typography.micro,
+                            color = EchoTheme.colors.textTertiary,
+                        )
+                    }
+                    EchoSwitch(
+                        checked = editedNotify,
+                        onCheckedChange = { checked -> editedNotify = checked },
+                    )
+                }
             }
 
             QuickChipRow(
@@ -176,19 +235,48 @@ fun EditTaskScreen(
                 SectionDivider("HEARD IN")
                 EchoCard(
                     modifier = Modifier.fillMaxWidth(),
+                    padding = CardPadding.None,
                     onClick = { onOpenSource(transcript.id) },
                 ) {
-                    Column {
-                        Text(
-                            text = transcript.title ?: title(transcript.text),
-                            style = EchoTheme.typography.bodySm,
-                            color = EchoTheme.colors.textPrimary,
-                        )
-                        Text(
-                            text = "${sourceDate.format(Date(transcript.createdAt))} · ${clock(transcript.durationMs)}",
-                            style = EchoTheme.typography.micro,
-                            color = EchoTheme.colors.textTertiary,
-                            modifier = Modifier.padding(top = 2.dp),
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(EchoTheme.spacing.s5),
+                        horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(EchoTheme.colors.surfaceAccentSoft),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_audio_waveform),
+                                contentDescription = null,
+                                tint = EchoTheme.colors.textAccent,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = transcript.title ?: title(transcript.text),
+                                style = EchoTheme.typography.bodySm,
+                                color = EchoTheme.colors.textPrimary,
+                            )
+                            Text(
+                                text = "${sourceDate.format(Date(transcript.createdAt))} · ${clock(transcript.durationMs)}",
+                                style = EchoTheme.typography.micro,
+                                color = EchoTheme.colors.textTertiary,
+                                modifier = Modifier.padding(top = 2.dp),
+                            )
+                        }
+                        Icon(
+                            painter = painterResource(R.drawable.ic_arrow_right),
+                            contentDescription = null,
+                            tint = EchoTheme.colors.textTertiary,
+                            modifier = Modifier.size(14.dp),
                         )
                     }
                 }
@@ -214,18 +302,86 @@ private fun SectionDivider(label: String) {
 }
 
 @Composable
+private fun TaskDoneCheckbox(done: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .padding(top = 2.dp)
+            .size(24.dp)
+            .clip(CircleShape)
+            .then(
+                if (done) {
+                    Modifier.background(EchoTheme.colors.actionPrimaryBg)
+                } else {
+                    Modifier.border(1.5.dp, EchoTheme.colors.borderStrong, CircleShape)
+                },
+            )
+            .clickable(onClick = onToggle),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (done) {
+            Icon(
+                painter = painterResource(R.drawable.ic_check),
+                contentDescription = "Done",
+                tint = EchoTheme.colors.textInverse,
+                modifier = Modifier.size(14.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun WhenRow(
+    iconRes: Int,
+    iconTint: Color,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(EchoTheme.spacing.s5),
+        horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            painter = painterResource(iconRes),
+            contentDescription = null,
+            tint = iconTint,
+            modifier = Modifier.size(16.dp),
+        )
+        Text(
+            text = label,
+            style = EchoTheme.typography.bodySm,
+            color = EchoTheme.colors.textPrimary,
+            modifier = Modifier.weight(1f),
+        )
+        content()
+        Icon(
+            painter = painterResource(R.drawable.ic_arrow_right),
+            contentDescription = null,
+            tint = EchoTheme.colors.textTertiary,
+            modifier = Modifier.size(14.dp),
+        )
+    }
+}
+
+@Composable
 private fun DayRow(dueAt: Long, onPick: (Long) -> Unit) {
     val context = LocalContext.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(EchoTheme.colors.surfaceCard)
-            .clickable { showDatePicker(context, dueAt, onPick) }
-            .padding(EchoTheme.spacing.s5),
-        horizontalArrangement = Arrangement.SpaceBetween,
+    WhenRow(
+        iconRes = R.drawable.ic_calendar,
+        iconTint = EchoTheme.colors.textTertiary,
+        label = "Day",
+        onClick = { showDatePicker(context, dueAt, onPick) },
     ) {
-        Text(text = "Day", style = EchoTheme.typography.bodySm, color = EchoTheme.colors.textSecondary)
-        Text(text = dayLabel(dueAt), style = EchoTheme.typography.bodySm, color = EchoTheme.colors.textPrimary)
+        Text(
+            text = dayLabel(dueAt),
+            style = EchoTheme.typography.monoCaption.copy(fontWeight = FontWeight.Bold),
+            color = EchoTheme.colors.textAccent,
+        )
     }
 }
 
@@ -233,42 +389,51 @@ private fun DayRow(dueAt: Long, onPick: (Long) -> Unit) {
 private fun TimeRow(dueAt: Long, hasTime: Boolean, onPick: (Long) -> Unit, onEnable: () -> Unit) {
     val context = LocalContext.current
     val overdue = hasTime && dueAt < System.currentTimeMillis()
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(EchoTheme.colors.surfaceCard)
-            .clickable {
-                if (!hasTime) onEnable()
-                showTimePicker(context, dueAt, onPick)
-            }
-            .padding(EchoTheme.spacing.s5),
-        horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3),
-        verticalAlignment = Alignment.CenterVertically,
+    WhenRow(
+        iconRes = R.drawable.ic_clock,
+        iconTint = if (hasTime) EchoTheme.colors.textTertiary else EchoTheme.colors.borderStrong,
+        label = "Time",
+        onClick = {
+            if (!hasTime) onEnable()
+            showTimePicker(context, dueAt, onPick)
+        },
     ) {
-        Icon(
-            painter = painterResource(R.drawable.ic_clock),
-            contentDescription = null,
-            tint = if (hasTime) EchoTheme.colors.textTertiary else EchoTheme.colors.borderStrong,
-            modifier = Modifier.size(16.dp),
-        )
-        Text(
-            text = "Time",
-            style = EchoTheme.typography.bodySm,
-            color = EchoTheme.colors.textSecondary,
-            modifier = Modifier.weight(1f),
-        )
         Text(
             text = when {
                 !hasTime -> "None"
                 overdue -> "${formatTime(dueAt)} · overdue"
                 else -> formatTime(dueAt)
             },
-            style = EchoTheme.typography.bodySm,
+            style = EchoTheme.typography.monoCaption.copy(fontWeight = FontWeight.Bold),
             color = when {
                 !hasTime -> EchoTheme.colors.textTertiary
                 overdue -> EchoTheme.colors.textDanger
-                else -> EchoTheme.colors.textPrimary
+                else -> EchoTheme.colors.textAccent
             },
+        )
+    }
+}
+
+/** A pill toggle with a visible sliding knob — Material's Switch renders track and thumb the
+ *  same tan when only checkedThumbColor is set, so "on" and "off" both look like a solid fill. */
+@Composable
+private fun EchoSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
+    val colors = EchoTheme.colors
+    val trackColor by animateColorAsState(if (checked) colors.actionPrimaryBg else colors.borderSubtle, label = "switchTrack")
+    val knobOffset by animateDpAsState(if (checked) 22.dp else 2.dp, label = "switchKnob")
+    Box(
+        modifier = modifier
+            .size(width = 44.dp, height = 24.dp)
+            .clip(EchoTheme.radii.pill)
+            .background(trackColor)
+            .clickable(onClick = { onCheckedChange(!checked) }),
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(start = knobOffset, top = 2.dp)
+                .size(20.dp)
+                .clip(CircleShape)
+                .background(colors.surfaceCard),
         )
     }
 }

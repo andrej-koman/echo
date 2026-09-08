@@ -67,8 +67,8 @@ class TasksViewModel(
         query.value = text
     }
 
-    fun update(itemId: String, text: String, dueAt: Long, hasTime: Boolean) {
-        viewModelScope.launch { derived.update(itemId, text, dueAt, hasTime) }
+    fun update(itemId: String, text: String, dueAt: Long, hasTime: Boolean, notify: Boolean) {
+        viewModelScope.launch { derived.update(itemId, text, dueAt, hasTime, notify) }
     }
 
     fun delete(itemId: String) {

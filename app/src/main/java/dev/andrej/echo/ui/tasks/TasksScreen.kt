@@ -289,7 +289,7 @@ private fun SectionHeader(label: String, stamp: String?, count: Int, modifier: M
 
 /** One shared card per section — rows separated by a hairline, matching the design's grouped list. */
 @Composable
-private fun TaskGroupCard(
+internal fun TaskGroupCard(
     items: List<TodoItem>,
     showDate: Boolean,
     sourceTitleFor: (String) -> String?,

@@ -39,9 +39,10 @@ ui/tasks/     TasksScreen + TasksViewModel — grouped by source transcript, don
 ui/capture/   CaptureScreen — Listening and Processing
 ui/record/    RecordViewModel (still named for its old screen)
 ui/auth/      SignInScreen, AccountScreen (the Profile tab), AuthViewModel, AiViewModel
-ui/transcripts/, ui/detail/    NotesScreen (the merged Notes tab — grouped list, search,
-              TranscriptRow, PendingBadge), TranscriptDetailScreen (NOTE + raw TRANSCRIPT
-              sections)
+ui/transcripts/, ui/detail/    NotesScreen (the merged Notes tab — one shared card per day,
+              hairline dividers, same rhythm as Tasks; search; TranscriptRow, PendingBadge),
+              TranscriptDetailScreen (NOTE + tasks-from-this-note + raw TRANSCRIPT, bar-icon
+              actions)
 AppContainer manual DI, no Hilt
 ```
 
@@ -139,10 +140,24 @@ NavHost, so signing out drops the whole graph rather than unwinding a back stack
   minted fresh, so re-analysis lands on the same ids and `Task.done` survives it. Before this,
   Analyze silently un-ticked every task. Two rows with the same text under one transcript collapse
   to one (`distinctBy`) — a repeated task from a single note is noise.
-- `TranscriptDetailScreen`'s Analyze button re-runs `TranscriptAnalyzer` through
-  `TranscriptsViewModel.analyze()`, for transcripts recorded before analysis existed or a failed
-  run. One in flight at a time (`analyzingId`, sourced from `PendingAnalysisWorker.activeId`),
-  disabling the button under it.
+- `TranscriptDetailScreen` (redesigned from the OutLoud "Transcript Page" doc): the bar carries
+  back / delete / re-analyze as icons instead of three stacked bottom buttons, so the body is
+  content, not chrome. Re-analyze (`ic_audio_waveform`) re-runs `TranscriptAnalyzer` through
+  `TranscriptsViewModel.analyze()`; it goes `IconButtonVariant.Ghost` and no-ops while the entry's
+  `PendingCopy.severity` is `Parked` (nothing to retry yet — `WaitingForModel`/`NoBackend` are
+  preconditions), otherwise `Soft` (bronze) and calls `analyze()`. One in flight at a time
+  (`analyzingId`, sourced from `PendingAnalysisWorker.activeId`). Body: NOTE (the summary) then a
+  "TASKS FROM THIS NOTE" section reusing `TaskGroupCard` from `ui/tasks/TasksScreen.kt` — made
+  `internal` (was `private`) so the detail screen can render the same rows, checkbox and
+  bronze/clay time labels as the Tasks tab, tapping one going to `EditTaskScreen`
+  (`sourceTitleFor = { null }` since the source is already the screen you're on). Below that,
+  "WHAT WAS SAID": the raw transcript clamped to 4 lines with a "Show all"/"Show less" toggle
+  (`remember(text)`, plain `maxLines` swap — no CSS line-clamp equivalent needed) and a "Copy"
+  chip writing to `ClipboardManager`. A `pending` entry (parked or failed) replaces NOTE/TASKS
+  with a status card (icon avatar + copy + a retry button when `Failed`) — analysis hasn't
+  produced a note yet, so there is nothing to show there. `TranscriptsViewModel.tasks` (all
+  `DerivedRepository.items`, unfiltered) backs both this screen's per-transcript filter and the
+  Notes list's per-row task counts.
 - **Pending analysis queue.** `TranscriptAnalyzer.analyze()` returns `AnalysisOutcome`
   (`Success` or `Blocked(AnalysisBlock)`) instead of a nullable `Analysis`, so a failed analysis
   carries a reason instead of vanishing: `EmptyTranscript`, `WaitingForModel(bytes)`,

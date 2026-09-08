@@ -194,6 +194,7 @@ private fun SignedInApp(
                     transcriptId = entry.arguments?.getString("id").orEmpty(),
                     onDeleted = { navController.popBackStack() },
                     onBack = { navController.popBackStack() },
+                    onEditTask = { navController.navigate(Routes.editTask(it)) },
                 )
             }
 

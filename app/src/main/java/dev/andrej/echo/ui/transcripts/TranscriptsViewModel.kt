@@ -7,6 +7,7 @@ import dev.andrej.echo.ai.PendingAnalysisWorker
 import dev.andrej.echo.data.AnalysisQueueRepository
 import dev.andrej.echo.data.DerivedRepository
 import dev.andrej.echo.data.PendingAnalysis
+import dev.andrej.echo.data.TodoItem
 import dev.andrej.echo.data.Transcript
 import dev.andrej.echo.data.TranscriptRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,6 +33,7 @@ data class TranscriptRow(
     val excerpt: String,
     val duration: String,
     val time: String,
+    val taskCount: Int = 0,
     val pending: PendingCopy? = null,
 )
 
@@ -58,23 +60,25 @@ class TranscriptsViewModel(
 
     private val query = MutableStateFlow("")
 
-    /** Runs on an application scope, so navigating away no longer cancels it silently. */
     val analyzingId: StateFlow<String?> = worker.activeId
 
     val transcripts: StateFlow<List<Transcript>> = repository.transcripts
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    /** Keyed by transcript id. Only entries the drain has actually attempted show up here. */
     val pending: StateFlow<Map<String, PendingCopy>> = queue.pending
         .map(::pendingCopyByTranscript)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
+    val tasks: StateFlow<List<TodoItem>> = derived.items
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     val state: StateFlow<TranscriptsUiState> =
-        combine(repository.transcripts, query, pending) { transcripts, text, pendingByTranscript ->
+        combine(repository.transcripts, query, pending, tasks) { transcripts, text, pendingByTranscript, allTasks ->
             val matches = transcripts.filter { it.text.contains(text.trim(), ignoreCase = true) }
+            val taskCountByTranscript = allTasks.groupingBy { it.sourceTranscriptId }.eachCount()
             TranscriptsUiState(
                 query = text,
-                groups = group(matches, now(), pendingByTranscript),
+                groups = group(matches, now(), pendingByTranscript, taskCountByTranscript),
                 total = transcripts.size,
                 totalDuration = spokenTotal(transcripts.sumOf { it.durationMs }),
                 loaded = true,
@@ -92,6 +96,10 @@ class TranscriptsViewModel(
         }
     }
 
+    fun setTaskDone(itemId: String, done: Boolean) {
+        viewModelScope.launch { derived.setDone(itemId, done) }
+    }
+
     fun analyze(transcriptId: String) {
         if (worker.activeId.value != null) return
 
@@ -106,18 +114,22 @@ internal fun group(
     transcripts: List<Transcript>,
     now: Long,
     pending: Map<String, PendingCopy> = emptyMap(),
+    taskCounts: Map<String, Int> = emptyMap(),
 ): List<TranscriptGroup> =
     transcripts
         .sortedByDescending { it.createdAt }
         .groupBy { dayLabel(it.createdAt, now) }
-        .map { (label, items) -> TranscriptGroup(label, items.map { it.asRow(pending[it.id]) }) }
+        .map { (label, items) ->
+            TranscriptGroup(label, items.map { it.asRow(pending[it.id], taskCounts[it.id] ?: 0) })
+        }
 
-private fun Transcript.asRow(pending: PendingCopy?) = TranscriptRow(
+private fun Transcript.asRow(pending: PendingCopy?, taskCount: Int) = TranscriptRow(
     id = id,
     title = title ?: title(text),
     excerpt = summary ?: text.trim(),
     duration = clock(durationMs),
     time = timeFormat.format(Date(createdAt)),
+    taskCount = taskCount,
     pending = pending,
 )
 

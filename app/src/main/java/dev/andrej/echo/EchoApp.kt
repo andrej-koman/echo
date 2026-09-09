@@ -133,6 +133,11 @@ private fun SignedInApp(
 
     val onTabs = route in Tabs.map { it.route }
 
+    val homeViewModel: HomeViewModel = viewModel(factory = viewModelFactory)
+    val tasksViewModel: TasksViewModel = viewModel(factory = viewModelFactory)
+    val notesViewModel: NotesViewModel = viewModel(factory = viewModelFactory)
+    val profileViewModel: ProfileViewModel = viewModel(factory = viewModelFactory)
+
     LaunchedEffect(pendingOpenTranscriptId) {
         if (pendingOpenTranscriptId != null) {
             navController.navigate(Routes.detail(pendingOpenTranscriptId))
@@ -151,7 +156,6 @@ private fun SignedInApp(
             popExitTransition = { ExitTransition.None },
         ) {
             composable(Routes.HOME) {
-                val homeViewModel: HomeViewModel = viewModel(factory = viewModelFactory)
                 HomeScreen(
                     viewModel = homeViewModel,
                     userName = (authState as? AuthState.SignedIn)?.account?.displayName,
@@ -163,7 +167,6 @@ private fun SignedInApp(
             }
 
             composable(Routes.TASKS) {
-                val tasksViewModel: TasksViewModel = viewModel(factory = viewModelFactory)
                 TasksScreen(
                     viewModel = tasksViewModel,
                     onEditTask = { navController.navigate(Routes.editTask(it)) },
@@ -172,7 +175,6 @@ private fun SignedInApp(
             }
 
             composable(Routes.NOTES) {
-                val notesViewModel: NotesViewModel = viewModel(factory = viewModelFactory)
                 NotesScreen(
                     viewModel = notesViewModel,
                     onOpen = { navController.navigate(Routes.detail(it)) },
@@ -188,7 +190,6 @@ private fun SignedInApp(
             }
 
             composable(Routes.PROFILE) {
-                val profileViewModel: ProfileViewModel = viewModel(factory = viewModelFactory)
                 val profileState by profileViewModel.state.collectAsStateWithLifecycle()
                 ProfileScreen(
                     state = profileState,
@@ -220,10 +221,6 @@ private fun SignedInApp(
                     onDownloadModel = settingsViewModel.onDownloadModel,
                     onCancelDownload = settingsViewModel.onCancelDownload,
                     onDeleteModel = settingsViewModel.onDeleteModel,
-                    onDeleteAllRecordings = {
-                        settingsViewModel.deleteAllRecordingsNow()
-                        navController.popBackStack()
-                    },
                 )
             }
 

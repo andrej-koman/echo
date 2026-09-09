@@ -212,9 +212,9 @@ private val dayTimeFormat = SimpleDateFormat("d MMM, HH:mm", Locale.getDefault()
 private fun greetingWord(now: Long, zone: ZoneId): String {
     val hour = java.time.Instant.ofEpochMilli(now).atZone(zone).hour
     return when {
-        hour < 12 -> "Morning"
-        hour < 17 -> "Afternoon"
-        else -> "Evening"
+        hour < 12 -> "Good morning"
+        hour < 17 -> "Good afternoon"
+        else -> "Good evening"
     }
 }
 

@@ -42,7 +42,6 @@ import dev.andrej.echo.ui.components.BadgeTone
 import dev.andrej.echo.ui.components.ButtonSize
 import dev.andrej.echo.ui.components.ButtonVariant
 import dev.andrej.echo.ui.components.CardPadding
-import dev.andrej.echo.ui.components.ConfirmSheet
 import dev.andrej.echo.ui.components.EchoBadge
 import dev.andrej.echo.ui.components.EchoButton
 import dev.andrej.echo.ui.components.EchoCard
@@ -67,14 +66,12 @@ fun SettingsScreen(
     onDownloadModel: () -> Unit,
     onCancelDownload: () -> Unit,
     onDeleteModel: () -> Unit,
-    onDeleteAllRecordings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     var pickingLanguage by remember { mutableStateOf(false) }
     var pickingModel by remember { mutableStateOf(false) }
     var pickingLead by remember { mutableStateOf(false) }
-    var confirmingDeleteAll by remember { mutableStateOf(false) }
     val notificationsAllowed = remember { NotificationManagerCompat.from(context).areNotificationsEnabled() }
     val versionName = remember {
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }
@@ -250,16 +247,6 @@ fun SettingsScreen(
                             onClick = {},
                         )
                     },
-                    {
-                        Box(modifier = Modifier.fillMaxWidth().padding(vertical = EchoTheme.spacing.s5)) {
-                            EchoButton(
-                                text = "Delete all recordings",
-                                onClick = { confirmingDeleteAll = true },
-                                variant = ButtonVariant.Danger,
-                                fullWidth = true,
-                            )
-                        }
-                    },
                 ),
             )
 
@@ -309,18 +296,6 @@ fun SettingsScreen(
         onDismiss = { pickingLead = false },
     )
 
-    ConfirmSheet(
-        visible = confirmingDeleteAll,
-        title = "Delete all recordings?",
-        message = "This removes ${state.notesCount} notes and ${state.tasksCount} tasks from this device. " +
-            "This can't be undone.",
-        confirmLabel = "Delete all recordings",
-        onConfirm = {
-            confirmingDeleteAll = false
-            onDeleteAllRecordings()
-        },
-        onDismiss = { confirmingDeleteAll = false },
-    )
 }
 
 private fun formatMorningTime(hour: Int, minute: Int): String = "%d:%02d %s".format(

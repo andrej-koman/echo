@@ -71,6 +71,7 @@ NavHost, so signing out drops the whole graph rather than unwinding a back stack
 
 - Languages come from the device via `checkRecognitionSupport()` — never hardcode locales. This phone has only `en-GB` installed; `sl-SI` is unsupported on-device.
 - `SpeechRecognizer` ends on silence; `AndroidSpeechEngine` restarts sessions to stay continuous. `ERROR_NO_MATCH` is silence, not failure.
+- No raw audio is ever written to disk — `SpeechRecognizer` streams straight to text, there is no `MediaRecorder`/file step to remove. Only the transcript text is persisted.
 - No Room: KSP has no release matching Kotlin 2.4.10.
 - Sign-in needs `google_web_client_id` in `res/values/auth.xml` — the OAuth **web** client ID,
   plus an Android client ID registered with this package and signing SHA-1. Left blank in the
@@ -240,9 +241,10 @@ NavHost, so signing out drops the whole graph rather than unwinding a back stack
   write without needing to reschedule existing alarms. Settings' FEEL section (Haptics, Reduce
   motion) stays read-only by design — threading the setting through `rememberEchoHaptics()`/
   `LocalReducedMotion` would need a new CompositionLocal reaching every call site, out of scope for
-  this pass; the switches render "on" but ignore taps. `AppContainer.storageUsedBytes()` and
-  `deleteAllRecordings()` back Settings' DATA section; "Export notes and tasks" is UI-shell-only,
-  no real exporter exists. `AuthRepository.deleteAccount()` is a new method with the same body as
+  this pass; the switches render "on" but ignore taps. `AppContainer.storageUsedBytes()` backs
+  Settings' DATA section (no bulk-delete button there — no raw audio is ever saved to delete;
+  see the on-device AI note below). "Export notes and tasks" is UI-shell-only, no real exporter
+  exists. `AuthRepository.deleteAccount()` is a new method with the same body as
   `signOut()` — kept separate because it is a distinct user intent, even though there is no server
   account to actually delete. `HistoryScreen`/`HistoryViewModel` render a month calendar
   (`YearMonth`/`LocalDate` state, not persisted) with a 4-level heat grid (0/1/2/3+ notes that

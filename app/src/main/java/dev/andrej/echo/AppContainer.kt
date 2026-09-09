@@ -210,14 +210,6 @@ class AppContainer(context: Context) {
     fun storageUsedBytes(): Long =
         applicationContext.filesDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
 
-    suspend fun deleteAllRecordings() {
-        repository.transcripts.first().forEach { transcript ->
-            derived.deleteFor(transcript.id)
-            analysisQueue.remove(transcript.id)
-            repository.delete(transcript.id)
-        }
-    }
-
     val viewModelFactory: ViewModelProvider.Factory = object : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T = when {
@@ -259,7 +251,6 @@ class AppContainer(context: Context) {
                     onCancelDownload = ::cancelDownload,
                     onDeleteModel = ::deleteModel,
                     storageUsedBytes = ::storageUsedBytes,
-                    deleteAllRecordings = ::deleteAllRecordings,
                 ) as T
 
             modelClass.isAssignableFrom(HistoryViewModel::class.java) ->

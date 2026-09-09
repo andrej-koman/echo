@@ -52,7 +52,6 @@ import dev.andrej.echo.ui.components.EchoCard
 import dev.andrej.echo.ui.components.EchoTopBar
 import dev.andrej.echo.ui.components.EmptyState
 import dev.andrej.echo.ui.components.Mascot
-import dev.andrej.echo.ui.components.MascotMood
 import dev.andrej.echo.ui.components.MascotVariant
 import dev.andrej.echo.ui.components.ThinkingDots
 import dev.andrej.echo.ui.notes.title
@@ -80,6 +79,10 @@ fun TasksScreen(
     val context = LocalContext.current
     val notificationLauncher = rememberLauncherForActivityResult(RequestPermission()) {}
     var completedExpanded by remember { mutableStateOf(false) }
+    val onlyCompleted = state.loaded && state.groups.isEmpty() && state.completed.isNotEmpty()
+    LaunchedEffect(onlyCompleted) {
+        if (onlyCompleted) completedExpanded = true
+    }
 
     LaunchedEffect(state.groups.isNotEmpty()) {
         if (!askedForNotifications && state.groups.isNotEmpty()) {
@@ -139,12 +142,6 @@ fun TasksScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
         ) {
-            if (state.groups.none { it.label == "Today" }) {
-                item(key = "today-clear") {
-                    TodayClearCard(otherCount = state.groups.sumOf { it.items.size })
-                }
-            }
-
             state.groups.forEach { group ->
                 item(key = "header-${group.label}") {
                     SectionHeader(
@@ -222,33 +219,6 @@ private fun CompletedHeader(
             modifier = Modifier
                 .size(14.dp)
                 .rotate(if (expanded) 180f else 0f),
-        )
-    }
-}
-
-@Composable
-private fun TodayClearCard(otherCount: Int, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(vertical = EchoTheme.spacing.s7),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3, Alignment.CenterVertically),
-    ) {
-        Mascot(size = 76.dp, mood = MascotMood.Nodding)
-        Text(
-            text = "Today is clear",
-            style = EchoTheme.typography.heading,
-            color = EchoTheme.colors.textPrimary,
-        )
-        Text(
-            text = if (otherCount > 0) {
-                "${otherCount} ${if (otherCount == 1) "task is" else "tasks are"} waiting further out."
-            } else {
-                "Nothing else on deck either — you're all caught up."
-            },
-            style = EchoTheme.typography.bodySm,
-            color = EchoTheme.colors.textTertiary,
         )
     }
 }

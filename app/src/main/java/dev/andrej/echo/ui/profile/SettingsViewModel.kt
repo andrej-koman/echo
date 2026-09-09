@@ -45,7 +45,6 @@ class SettingsViewModel(
     val onCancelDownload: () -> Unit,
     val onDeleteModel: () -> Unit,
     private val storageUsedBytes: () -> Long,
-    private val deleteAllRecordings: suspend () -> Unit,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(fromSettings(notesCount = 0, tasksCount = 0))
@@ -121,9 +120,6 @@ class SettingsViewModel(
         _state.value = _state.value.copy(reminderMorningHour = hour, reminderMorningMinute = minute)
     }
 
-    fun deleteAllRecordingsNow() {
-        viewModelScope.launch { deleteAllRecordings() }
-    }
 }
 
 internal fun displayLanguage(tag: String): String =

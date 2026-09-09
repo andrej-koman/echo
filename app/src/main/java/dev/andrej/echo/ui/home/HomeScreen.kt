@@ -171,8 +171,6 @@ fun HomeScreen(
                             onMoreClick = onSeeTasks,
                         )
                     }
-                } else if (state.hero is HeroState.NextUp) {
-                    item { ThenEmptyRow(text = "Nothing else today") }
                 }
 
                 item {
@@ -422,18 +420,6 @@ private fun ThenCard(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun ThenEmptyRow(text: String, modifier: Modifier = Modifier) {
-    Row(
-        modifier = modifier.fillMaxWidth().padding(vertical = EchoTheme.spacing.s3),
-        horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Mascot(size = 32.dp, mood = MascotMood.Still)
-        Text(text = text, style = EchoTheme.typography.bodySm, color = EchoTheme.colors.textTertiary)
     }
 }
 

@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -29,6 +31,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import dev.andrej.echo.R
 import dev.andrej.echo.ui.theme.EchoTheme
+import kotlin.math.roundToInt
 
 @Composable
 fun ConfirmSheet(
@@ -103,6 +106,39 @@ fun <T> PickerSheet(
                 }
             }
         }
+    }
+}
+
+@Composable
+fun IntSliderSheet(
+    visible: Boolean,
+    title: String,
+    value: Int,
+    range: IntRange,
+    valueLabel: (Int) -> String,
+    onValueChange: (Int) -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Sheet(visible = visible, onDismiss = onDismiss, modifier = modifier) {
+        Text(text = title, style = EchoTheme.typography.heading, color = EchoTheme.colors.textPrimary)
+        Text(
+            text = valueLabel(value),
+            style = EchoTheme.typography.monoTimer,
+            color = EchoTheme.colors.textAccent,
+            modifier = Modifier.align(Alignment.CenterHorizontally),
+        )
+        Slider(
+            value = value.toFloat(),
+            onValueChange = { onValueChange(it.roundToInt()) },
+            valueRange = range.first.toFloat()..range.last.toFloat(),
+            steps = range.last - range.first - 1,
+            colors = SliderDefaults.colors(
+                thumbColor = EchoTheme.colors.textAccent,
+                activeTrackColor = EchoTheme.colors.textAccent,
+            ),
+        )
+        EchoButton(text = "Done", onClick = onDismiss, fullWidth = true)
     }
 }
 

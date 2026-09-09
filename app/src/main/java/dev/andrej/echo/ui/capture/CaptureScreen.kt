@@ -17,8 +17,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -76,7 +74,6 @@ import kotlinx.coroutines.delay
 const val TAG_RECORD_BUTTON = "record_button"
 const val TAG_TRANSCRIPT = "transcript_text"
 const val TAG_ERROR = "record_error"
-const val TAG_LANGUAGE_ROW = "language_row"
 
 @Composable
 fun CaptureScreen(
@@ -143,7 +140,6 @@ fun CaptureScreen(
                 onClose = {
                     viewModel.stopRecording()
                 },
-                onSelectLanguage = viewModel::setLanguage,
                 onDismissError = viewModel::dismissError,
             )
         }
@@ -169,7 +165,6 @@ private fun ListeningState(
     onStop: () -> Unit,
     onDiscard: () -> Unit,
     onClose: () -> Unit,
-    onSelectLanguage: (String) -> Unit,
     onDismissError: () -> Unit,
 ) {
     var elapsed by remember { mutableStateOf(0L) }
@@ -234,10 +229,6 @@ private fun ListeningState(
             style = EchoTheme.typography.bodySm,
             color = EchoTheme.colors.textSecondary,
         )
-
-        Spacer(Modifier.height(10.dp))
-
-        LanguagePicker(state = state, onSelect = onSelectLanguage)
 
         Spacer(Modifier.height(28.dp))
 
@@ -400,55 +391,6 @@ private fun UnavailableState(onDone: () -> Unit) {
     }
 }
 
-@Composable
-private fun LanguagePicker(
-    state: RecordUiState,
-    onSelect: (String) -> Unit,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    val colors = EchoTheme.colors
-
-    Box(modifier = Modifier.testTag(TAG_LANGUAGE_ROW)) {
-        Row(
-            modifier = Modifier
-                .clip(EchoTheme.radii.pill)
-                .background(colors.statusNeutralBg)
-                .clickable { expanded = true }
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = state.language?.label ?: "No language",
-                style = EchoTheme.typography.caption,
-                color = colors.textSecondary,
-            )
-            Icon(
-                painter = painterResource(R.drawable.ic_chevron_down),
-                contentDescription = null,
-                tint = colors.textTertiary,
-                modifier = Modifier.size(14.dp),
-            )
-        }
-
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            state.languages.forEach { option ->
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            text = if (option.installed) option.label else "${option.label} ↓",
-                            style = EchoTheme.typography.bodySm,
-                        )
-                    },
-                    onClick = {
-                        expanded = false
-                        onSelect(option.tag)
-                    },
-                )
-            }
-        }
-    }
-}
 
 @Composable
 private fun ErrorCard(reason: FailureReason, onDismiss: () -> Unit) {

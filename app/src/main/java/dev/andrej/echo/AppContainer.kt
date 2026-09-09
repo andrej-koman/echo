@@ -12,6 +12,7 @@ import dev.andrej.echo.ai.AiCardState
 import dev.andrej.echo.ai.HttpModelDownloader
 import dev.andrej.echo.ai.LiteRtLlmRunner
 import dev.andrej.echo.ai.LlmAvailability
+import dev.andrej.echo.ai.LlmBackend
 import dev.andrej.echo.ai.LlmRunnerProvider
 import dev.andrej.echo.ai.MlKitLlmRunner
 import dev.andrej.echo.ai.ModelStore
@@ -43,12 +44,15 @@ import dev.andrej.echo.ui.notes.NotesViewModel
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.map
@@ -94,17 +98,43 @@ class AppContainer(context: Context) {
         activityManager = applicationContext.getSystemService(ActivityManager::class.java),
     )
 
-    private val llmRunners = LlmRunnerProvider(listOf(mlKitRunner, liteRtRunner))
+    private val preferredBackend = MutableStateFlow(LlmBackend.fromId(settings.preferredLlmBackend))
+
+    private val llmRunners = LlmRunnerProvider(
+        candidates = mapOf(LlmBackend.NANO to mlKitRunner, LlmBackend.LITERT to liteRtRunner),
+        preferredBackend = { preferredBackend.value },
+    )
 
     val analyzer = TranscriptAnalyzer(llmRunners::runner)
 
-    val aiCardState: Flow<AiCardState> = flow {
-        emit(AiCardState.Checking)
+    private fun aiCardStateFor(backend: LlmBackend): Flow<AiCardState> = when (backend) {
+        LlmBackend.NANO -> flow { emit(mlKitRunner.availability().toCardState()) }
+        LlmBackend.LITERT -> modelStore.state.map { liteRtRunner.availability().toCardState() }
+    }
+
+    private val autoAiCardState: Flow<AiCardState> = flow {
         if (mlKitRunner.availability() is LlmAvailability.Ready) {
             emit(AiCardState.NanoReady)
         } else {
             emitAll(modelStore.state.map { liteRtRunner.availability().toCardState() })
         }
+    }
+
+    /** The backend actually driving analysis right now: the user's explicit pick, or whichever wins automatically. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val aiCardState: Flow<AiCardState> = preferredBackend.flatMapLatest { pref ->
+        val live = pref?.let(::aiCardStateFor) ?: autoAiCardState
+        flow {
+            emit(AiCardState.Checking)
+            emitAll(live)
+        }
+    }
+
+    fun setPreferredLlmBackend(backend: LlmBackend?) {
+        settings.preferredLlmBackend = backend?.id
+        preferredBackend.value = backend
+        llmRunners.invalidate()
+        pendingAnalysisWorker.requestDrain()
     }
 
     /**
@@ -219,9 +249,12 @@ class AppContainer(context: Context) {
             modelClass.isAssignableFrom(SettingsViewModel::class.java) ->
                 SettingsViewModel(
                     settings = settings,
+                    engine = engine,
                     transcripts = repository,
                     derived = derived,
                     aiCardState = aiCardState,
+                    onSetLlmBackend = ::setPreferredLlmBackend,
+                    litertModelBytes = modelStore.spec.bytes,
                     onDownloadModel = ::downloadModel,
                     onCancelDownload = ::cancelDownload,
                     onDeleteModel = ::deleteModel,

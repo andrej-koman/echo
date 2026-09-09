@@ -20,9 +20,14 @@ class NoLlmRunner(private val reason: String) : LlmRunner {
  * Picks the first backend the device can actually run, in the order given, and remembers the
  * answer: probing AICore costs an IPC. A runner that only needs a download still wins over one
  * further down the list — the download is the user's decision to make, not ours.
+ *
+ * [preferredBackend], when non-null, forces that specific backend instead: no fallback to the
+ * next candidate if it turns out unsupported, since a manual pick is the user overriding the
+ * automatic choice on purpose.
  */
 class LlmRunnerProvider(
-    private val candidates: List<LlmRunner>,
+    private val candidates: Map<LlmBackend, LlmRunner>,
+    private val preferredBackend: () -> LlmBackend? = { null },
     private val log: (String) -> Unit = { Log.i(TAG, it) },
 ) {
 
@@ -51,15 +56,29 @@ class LlmRunnerProvider(
     }
 
     private suspend fun resolve(): LlmRunner {
+        val preferred = preferredBackend()
+        if (preferred != null) {
+            val candidate = candidates[preferred]
+                ?: return NoLlmRunner("no backend registered for $preferred")
+            val availability = candidate.availability()
+            return if (availability !is LlmAvailability.Unsupported) {
+                log("using $preferred (forced, $availability)")
+                candidate
+            } else {
+                log("$preferred forced but unsupported: ${availability.reason}")
+                NoLlmRunner(availability.reason)
+            }
+        }
+
         val reasons = mutableListOf<String>()
 
-        for (candidate in candidates) {
+        for ((backend, candidate) in candidates) {
             val availability = candidate.availability()
             if (availability !is LlmAvailability.Unsupported) {
-                log("using ${candidate.javaClass.simpleName} ($availability)")
+                log("using $backend ($availability)")
                 return candidate
             }
-            reasons += "${candidate.javaClass.simpleName}: ${availability.reason}"
+            reasons += "$backend: ${availability.reason}"
         }
 
         log("no language model available — ${reasons.joinToString("; ")}")

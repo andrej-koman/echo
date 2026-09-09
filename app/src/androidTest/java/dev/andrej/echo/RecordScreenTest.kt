@@ -14,7 +14,6 @@ import dev.andrej.echo.speech.TranscriptionEngine
 import dev.andrej.echo.speech.TranscriptionEvent
 import dev.andrej.echo.ui.record.RecordScreen
 import dev.andrej.echo.ui.record.RecordViewModel
-import dev.andrej.echo.ui.record.TAG_LANGUAGE_ROW
 import dev.andrej.echo.ui.record.TAG_RECORD_BUTTON
 import dev.andrej.echo.ui.record.TAG_TRANSCRIPT
 import kotlinx.coroutines.flow.Flow
@@ -80,19 +79,6 @@ class RecordScreenTest {
             composeRule.onAllNodesWithTag(TAG_TRANSCRIPT).fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithText("hello from the test").assertIsDisplayed()
-    }
-
-    @Test
-    fun offersOnlyLanguagesTheDeviceKnows() {
-        val engine = ScriptedEngine(
-            support = LanguageSupport(installed = listOf("en-GB"), supported = listOf("en-US")),
-        )
-        composeRule.setContent { EchoTheme { RecordScreen(viewModel(engine)) } }
-
-        composeRule.waitUntil(timeoutMillis = 3_000) {
-            composeRule.onAllNodesWithTag(TAG_LANGUAGE_ROW).fetchSemanticsNodes().isNotEmpty()
-        }
-        composeRule.onNodeWithTag(TAG_LANGUAGE_ROW).assertIsDisplayed()
     }
 
     @Test

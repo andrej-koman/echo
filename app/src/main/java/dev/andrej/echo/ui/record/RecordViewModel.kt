@@ -91,18 +91,6 @@ class RecordViewModel(
         }
     }
 
-    fun setLanguage(tag: String) {
-        val option = _uiState.value.languages.firstOrNull { it.tag == tag } ?: return
-
-        settings.languageTag = tag
-        _uiState.value = _uiState.value.copy(language = option, error = null)
-
-        if (!option.installed) {
-            engine.requestModelDownload(tag)
-            _uiState.value = _uiState.value.copy(downloadingLanguage = tag)
-        }
-    }
-
     fun startRecording() {
         if (listenJob?.isActive == true) return
 
@@ -202,5 +190,5 @@ class RecordViewModel(
         if (existing.isBlank()) addition.trim() else "${existing.trim()} ${addition.trim()}"
 }
 
-private fun String.displayName(): String =
+internal fun String.displayName(): String =
     Locale.forLanguageTag(this).getDisplayName(Locale.getDefault()).ifBlank { this }

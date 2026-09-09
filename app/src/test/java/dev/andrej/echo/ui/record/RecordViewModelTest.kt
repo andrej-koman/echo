@@ -126,25 +126,11 @@ class RecordViewModelTest {
     }
 
     @Test
-    fun `choosing a language that needs downloading requests the model`() = runTest {
-        val engine = engine(installed = listOf("en-GB"), supported = listOf("en-US"))
-        val viewModel = viewModel(engine)
-        advanceUntilIdle()
-
-        viewModel.setLanguage("en-US")
-        advanceUntilIdle()
-
-        assertEquals(listOf("en-US"), engine.downloadRequests)
-        assertTrue(viewModel.uiState.value.downloadingLanguage == "en-US")
-    }
-
-    @Test
     fun `recording does not start while the model is missing`() = runTest {
         val engine = engine(installed = listOf("en-GB"), supported = listOf("en-US"))
-        val viewModel = viewModel(engine)
+        val viewModel = viewModel(engine, settings = FakeSettingsStore("en-US"))
         advanceUntilIdle()
 
-        viewModel.setLanguage("en-US")
         viewModel.startRecording()
         advanceUntilIdle()
 
@@ -155,9 +141,9 @@ class RecordViewModelTest {
     @Test
     fun `a finished download makes the language usable`() = runTest {
         val engine = engine(installed = listOf("en-GB"), supported = listOf("en-US"))
-        val viewModel = viewModel(engine)
+        val viewModel = viewModel(engine, settings = FakeSettingsStore("en-US"))
         advanceUntilIdle()
-        viewModel.setLanguage("en-US")
+        viewModel.startRecording()
         advanceUntilIdle()
 
         engine.completeDownload("en-US")
@@ -192,21 +178,6 @@ class RecordViewModelTest {
         advanceUntilIdle()
 
         assertEquals("en-GB", viewModel.uiState.value.language?.tag)
-    }
-
-    @Test
-    fun `chosen language is persisted`() = runTest {
-        val settings = FakeSettingsStore()
-        val viewModel = viewModel(
-            engine = engine(installed = listOf("en-GB", "de-DE")),
-            settings = settings,
-        )
-        advanceUntilIdle()
-
-        viewModel.setLanguage("de-DE")
-        advanceUntilIdle()
-
-        assertEquals("de-DE", settings.languageTag)
     }
 
     @Test

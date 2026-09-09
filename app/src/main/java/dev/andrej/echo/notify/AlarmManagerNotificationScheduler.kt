@@ -31,6 +31,7 @@ class AlarmManagerNotificationScheduler(
             ZoneId.systemDefault(),
             leadMinutes = settings.reminderLeadMinutes,
             morningHour = settings.reminderMorningHour,
+            morningMinute = settings.reminderMorningMinute,
         )
         if (fireAt <= System.currentTimeMillis()) return
 

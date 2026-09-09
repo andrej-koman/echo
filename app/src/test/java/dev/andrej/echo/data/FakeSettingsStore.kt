@@ -6,4 +6,6 @@ class FakeSettingsStore(initial: String? = null) : SettingsStore {
     override var wifiOnlyDownload: Boolean = false
     override var reminderLeadMinutes: Int = 15
     override var reminderMorningHour: Int = 9
+    override var reminderMorningMinute: Int = 0
+    override var preferredLlmBackend: String? = null
 }

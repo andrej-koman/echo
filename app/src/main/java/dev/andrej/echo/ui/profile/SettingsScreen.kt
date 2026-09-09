@@ -1,10 +1,13 @@
 package dev.andrej.echo.ui.profile
 
+import android.app.TimePickerDialog
 import android.content.Intent
 import android.provider.Settings as AndroidSettings
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,7 +16,9 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
@@ -24,12 +29,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import dev.andrej.echo.R
 import dev.andrej.echo.ai.AiCardState
+import dev.andrej.echo.ai.LlmBackend
+import dev.andrej.echo.ui.components.BadgeTone
 import dev.andrej.echo.ui.components.ButtonSize
 import dev.andrej.echo.ui.components.ButtonVariant
 import dev.andrej.echo.ui.components.CardPadding
@@ -40,6 +49,7 @@ import dev.andrej.echo.ui.components.EchoCard
 import dev.andrej.echo.ui.components.EchoIconButton
 import dev.andrej.echo.ui.components.EchoSwitch
 import dev.andrej.echo.ui.components.EchoTopBar
+import dev.andrej.echo.ui.components.IntSliderSheet
 import dev.andrej.echo.ui.components.PickerSheet
 import dev.andrej.echo.ui.theme.EchoTheme
 
@@ -48,10 +58,12 @@ fun SettingsScreen(
     state: SettingsUiState,
     aiState: AiCardState,
     onBack: () -> Unit,
+    onLanguageChange: (String) -> Unit,
+    onLlmBackendChange: (LlmBackend) -> Unit,
     onAutoAnalyzeChange: (Boolean) -> Unit,
     onWifiOnlyDownloadChange: (Boolean) -> Unit,
     onReminderLeadMinutesChange: (Int) -> Unit,
-    onReminderMorningHourChange: (Int) -> Unit,
+    onReminderMorningTimeChange: (Int, Int) -> Unit,
     onDownloadModel: () -> Unit,
     onCancelDownload: () -> Unit,
     onDeleteModel: () -> Unit,
@@ -59,14 +71,17 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    var pickingLanguage by remember { mutableStateOf(false) }
+    var pickingModel by remember { mutableStateOf(false) }
     var pickingLead by remember { mutableStateOf(false) }
-    var pickingHour by remember { mutableStateOf(false) }
     var confirmingDeleteAll by remember { mutableStateOf(false) }
     val notificationsAllowed = remember { NotificationManagerCompat.from(context).areNotificationsEnabled() }
     val versionName = remember {
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }
             .getOrNull() ?: "?"
     }
+    val llmBackend = LlmBackend.fromId(state.preferredLlmBackendId)
+        ?: if (aiState is AiCardState.NanoReady) LlmBackend.NANO else LlmBackend.LITERT
 
     Column(modifier = modifier.fillMaxSize()) {
         EchoTopBar(
@@ -84,149 +99,214 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(EchoTheme.spacing.gutterScreen),
+                .padding(EchoTheme.spacing.gutterScreen)
+                .navigationBarsPadding(),
             verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.gapSection),
         ) {
-            Section(title = "RECORDING") {
-                DisclosureRow(
-                    iconRes = R.drawable.ic_mic,
-                    label = "Language",
-                    value = state.languageLabel,
-                    onClick = {},
-                )
-                SwitchRow(
-                    iconRes = R.drawable.ic_audio_waveform,
-                    label = "Sort new notes with AI",
-                    subtitle = "Pull tasks and reminders out automatically after recording",
-                    checked = state.autoAnalyze,
-                    onCheckedChange = onAutoAnalyzeChange,
-                )
-            }
+            Section(
+                title = "RECORDING",
+                rows = listOf(
+                    {
+                        DisclosureRow(
+                            iconRes = R.drawable.ic_mic,
+                            label = "Language",
+                            value = state.languageLabel,
+                            onClick = { pickingLanguage = true },
+                        )
+                    },
+                    {
+                        SwitchRow(
+                            iconRes = R.drawable.ic_audio_waveform,
+                            label = "Sort new notes with AI",
+                            subtitle = "Pull tasks and reminders out automatically after recording",
+                            checked = state.autoAnalyze,
+                            onCheckedChange = onAutoAnalyzeChange,
+                        )
+                    },
+                ),
+            )
 
-            Section(title = "ON-DEVICE AI") {
-                AiCard(state = aiState, onDownload = onDownloadModel, onCancel = onCancelDownload, onDelete = onDeleteModel)
-                SwitchRow(
-                    iconRes = R.drawable.ic_settings,
-                    label = "Download on Wi-Fi only",
-                    subtitle = null,
-                    checked = state.wifiOnlyDownload,
-                    onCheckedChange = onWifiOnlyDownloadChange,
-                )
-            }
+            Section(
+                title = "ON-DEVICE AI",
+                rows = listOf(
+                    {
+                        DisclosureRow(
+                            iconRes = R.drawable.ic_audio_waveform,
+                            label = "Model",
+                            value = llmBackend.displayName,
+                            onClick = { pickingModel = true },
+                        )
+                    },
+                    {
+                        ModelCard(
+                            backend = llmBackend,
+                            aiState = aiState,
+                            modelBytes = state.litertModelBytes,
+                            wifiOnly = state.wifiOnlyDownload,
+                            onWifiOnlyChange = onWifiOnlyDownloadChange,
+                            onDownload = onDownloadModel,
+                            onCancel = onCancelDownload,
+                            onDelete = onDeleteModel,
+                        )
+                    },
+                ),
+            )
 
-            Section(title = "REMINDERS") {
-                DisclosureRow(
-                    iconRes = R.drawable.ic_bell,
-                    label = "Ring before timed task",
-                    value = "${state.reminderLeadMinutes} min",
-                    onClick = { pickingLead = true },
-                )
-                DisclosureRow(
-                    iconRes = R.drawable.ic_clock,
-                    label = "Day without time",
-                    value = "%d:00 %s".format(
-                        if (state.reminderMorningHour % 12 == 0) 12 else state.reminderMorningHour % 12,
-                        if (state.reminderMorningHour < 12) "AM" else "PM",
-                    ),
-                    onClick = { pickingHour = true },
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = EchoTheme.spacing.s3),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(text = "Notifications", style = EchoTheme.typography.body, color = EchoTheme.colors.textPrimary)
-                    if (notificationsAllowed) {
-                        EchoBadge(text = "Allowed")
-                    } else {
-                        EchoButton(
-                            text = "Turn on",
-                            size = ButtonSize.Sm,
-                            variant = ButtonVariant.Secondary,
+            Section(
+                title = "REMINDERS",
+                rows = listOf(
+                    {
+                        DisclosureRow(
+                            iconRes = R.drawable.ic_bell,
+                            label = "Ring before timed task",
+                            value = "${state.reminderLeadMinutes} min",
+                            onClick = { pickingLead = true },
+                        )
+                    },
+                    {
+                        DisclosureRow(
+                            iconRes = R.drawable.ic_clock,
+                            label = "Day without time",
+                            value = formatMorningTime(state.reminderMorningHour, state.reminderMorningMinute),
                             onClick = {
-                                context.startActivity(
-                                    Intent(AndroidSettings.ACTION_APP_NOTIFICATION_SETTINGS)
-                                        .putExtra(AndroidSettings.EXTRA_APP_PACKAGE, context.packageName),
+                                showTimePicker(
+                                    context = context,
+                                    hour = state.reminderMorningHour,
+                                    minute = state.reminderMorningMinute,
+                                    onPick = onReminderMorningTimeChange,
                                 )
                             },
                         )
-                    }
-                }
-            }
+                    },
+                    {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = EchoTheme.spacing.s5),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(text = "Notifications", style = EchoTheme.typography.body, color = EchoTheme.colors.textPrimary)
+                            if (notificationsAllowed) {
+                                EchoBadge(text = "Allowed")
+                            } else {
+                                EchoButton(
+                                    text = "Turn on",
+                                    size = ButtonSize.Sm,
+                                    variant = ButtonVariant.Secondary,
+                                    onClick = {
+                                        context.startActivity(
+                                            Intent(AndroidSettings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                                .putExtra(AndroidSettings.EXTRA_APP_PACKAGE, context.packageName),
+                                        )
+                                    },
+                                )
+                            }
+                        }
+                    },
+                ),
+            )
 
-            Section(title = "FEEL") {
-                SwitchRow(
-                    iconRes = R.drawable.ic_audio_waveform,
-                    label = "Haptics",
-                    subtitle = "Following your phone right now",
-                    checked = true,
-                    onCheckedChange = {},
-                    enabled = false,
-                )
-                SwitchRow(
-                    iconRes = R.drawable.ic_audio_waveform,
-                    label = "Reduce motion",
-                    subtitle = "Following your phone right now",
-                    checked = false,
-                    onCheckedChange = {},
-                    enabled = false,
-                )
-            }
+            Section(
+                title = "FEEL",
+                rows = listOf(
+                    {
+                        SwitchRow(
+                            iconRes = R.drawable.ic_audio_waveform,
+                            label = "Haptics",
+                            subtitle = "Following your phone right now",
+                            checked = true,
+                            onCheckedChange = {},
+                            enabled = false,
+                        )
+                    },
+                    {
+                        SwitchRow(
+                            iconRes = R.drawable.ic_audio_waveform,
+                            label = "Reduce motion",
+                            subtitle = "Following your phone right now",
+                            checked = false,
+                            onCheckedChange = {},
+                            enabled = false,
+                        )
+                    },
+                ),
+            )
 
-            Section(title = "DATA") {
-                DisclosureRow(
-                    iconRes = R.drawable.ic_file_text,
-                    label = "On this device",
-                    value = formatBytes(state.storageBytes),
-                    onClick = null,
-                )
-                DisclosureRow(
-                    iconRes = R.drawable.ic_file_text,
-                    label = "Export notes and tasks",
-                    value = "",
-                    onClick = {},
-                )
-                EchoButton(
-                    text = "Delete all recordings",
-                    onClick = { confirmingDeleteAll = true },
-                    variant = ButtonVariant.Danger,
-                    fullWidth = true,
-                )
-            }
+            Section(
+                title = "DATA",
+                rows = listOf(
+                    {
+                        DisclosureRow(
+                            iconRes = R.drawable.ic_file_text,
+                            label = "On this device",
+                            value = formatBytes(state.storageBytes),
+                            onClick = null,
+                        )
+                    },
+                    {
+                        DisclosureRow(
+                            iconRes = R.drawable.ic_file_text,
+                            label = "Export notes and tasks",
+                            value = "",
+                            onClick = {},
+                        )
+                    },
+                    {
+                        Box(modifier = Modifier.fillMaxWidth().padding(vertical = EchoTheme.spacing.s5)) {
+                            EchoButton(
+                                text = "Delete all recordings",
+                                onClick = { confirmingDeleteAll = true },
+                                variant = ButtonVariant.Danger,
+                                fullWidth = true,
+                            )
+                        }
+                    },
+                ),
+            )
 
             Text(
                 text = "ECHO $versionName",
                 style = EchoTheme.typography.microCaps,
                 color = EchoTheme.colors.textTertiary,
+                textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )
-
-            Column(Modifier.navigationBarsPadding()) {}
         }
     }
 
     PickerSheet(
-        visible = pickingLead,
-        title = "Ring before timed task",
-        options = listOf("5 min" to 5, "10 min" to 10, "15 min" to 15, "30 min" to 30, "60 min" to 60),
-        selected = state.reminderLeadMinutes,
-        onPick = {
-            onReminderLeadMinutesChange(it)
-            pickingLead = false
+        visible = pickingLanguage,
+        title = "Language",
+        options = state.languages.map { option ->
+            (if (option.installed) option.label else "${option.label} ↓") to option.tag
         },
-        onDismiss = { pickingLead = false },
+        selected = state.languageTag.orEmpty(),
+        onPick = {
+            onLanguageChange(it)
+            pickingLanguage = false
+        },
+        onDismiss = { pickingLanguage = false },
     )
 
     PickerSheet(
-        visible = pickingHour,
-        title = "Day without time",
-        options = listOf("7 AM" to 7, "8 AM" to 8, "9 AM" to 9, "10 AM" to 10),
-        selected = state.reminderMorningHour,
+        visible = pickingModel,
+        title = "Model",
+        options = listOf(LlmBackend.NANO, LlmBackend.LITERT).map { it.displayName to it },
+        selected = llmBackend,
         onPick = {
-            onReminderMorningHourChange(it)
-            pickingHour = false
+            onLlmBackendChange(it)
+            pickingModel = false
         },
-        onDismiss = { pickingHour = false },
+        onDismiss = { pickingModel = false },
+    )
+
+    IntSliderSheet(
+        visible = pickingLead,
+        title = "Ring before timed task",
+        value = state.reminderLeadMinutes,
+        range = 0..60,
+        valueLabel = { "$it min" },
+        onValueChange = onReminderLeadMinutesChange,
+        onDismiss = { pickingLead = false },
     )
 
     ConfirmSheet(
@@ -243,17 +323,38 @@ fun SettingsScreen(
     )
 }
 
+private fun formatMorningTime(hour: Int, minute: Int): String = "%d:%02d %s".format(
+    if (hour % 12 == 0) 12 else hour % 12,
+    minute,
+    if (hour < 12) "AM" else "PM",
+)
+
+private fun showTimePicker(context: android.content.Context, hour: Int, minute: Int, onPick: (Int, Int) -> Unit) {
+    TimePickerDialog(
+        context,
+        { _, pickedHour, pickedMinute -> onPick(pickedHour, pickedMinute) },
+        hour,
+        minute,
+        false,
+    ).show()
+}
+
 @Composable
-private fun Section(title: String, content: @Composable () -> Unit) {
+private fun Section(title: String, rows: List<@Composable () -> Unit>) {
     Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3)) {
         Text(
             text = title,
             style = EchoTheme.typography.microCaps,
             color = EchoTheme.colors.textTertiary,
         )
-        EchoCard(modifier = Modifier.fillMaxWidth(), padding = CardPadding.Md) {
-            Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s2)) {
-                content()
+        EchoCard(modifier = Modifier.fillMaxWidth(), padding = CardPadding.None) {
+            Column(modifier = Modifier.padding(horizontal = EchoTheme.spacing.s5)) {
+                rows.forEachIndexed { index, row ->
+                    row()
+                    if (index != rows.lastIndex) {
+                        HorizontalDivider(color = EchoTheme.colors.borderSubtle)
+                    }
+                }
             }
         }
     }
@@ -275,7 +376,7 @@ private fun DisclosureRow(iconRes: Int, label: String, value: String, onClick: (
                     Modifier
                 },
             )
-            .padding(vertical = EchoTheme.spacing.s3),
+            .padding(vertical = EchoTheme.spacing.s5),
         horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -317,7 +418,7 @@ private fun SwitchRow(
     enabled: Boolean = true,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = EchoTheme.spacing.s3),
+        modifier = Modifier.fillMaxWidth().padding(vertical = EchoTheme.spacing.s5),
         horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -338,51 +439,113 @@ private fun SwitchRow(
 }
 
 @Composable
-private fun AiCard(
-    state: AiCardState,
+private fun ModelCard(
+    backend: LlmBackend,
+    aiState: AiCardState,
+    modelBytes: Long,
+    wifiOnly: Boolean,
+    onWifiOnlyChange: (Boolean) -> Unit,
     onDownload: () -> Unit,
     onCancel: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    if (state is AiCardState.Checking) return
+    if (aiState is AiCardState.Checking) return
 
-    Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3)) {
-        Text(
-            text = when (state) {
-                AiCardState.NanoReady -> "Using your phone's built-in AI"
-                is AiCardState.NeedsDownload ->
-                    "Pull tasks and reminders out of your recordings. " +
-                        "~${state.bytes / 1_000_000}MB, Wi-Fi recommended."
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = EchoTheme.spacing.s5),
+            horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(EchoTheme.colors.surfaceAccentSoft),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_audio_waveform),
+                    contentDescription = null,
+                    tint = EchoTheme.colors.textAccent,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = backend.displayName, style = EchoTheme.typography.body, color = EchoTheme.colors.textPrimary)
+                Text(
+                    text = modelMeta(backend, aiState, modelBytes),
+                    style = EchoTheme.typography.caption,
+                    color = EchoTheme.colors.textTertiary,
+                )
+            }
+            modelBadge(aiState)?.let { (text, tone) -> EchoBadge(text = text, tone = tone) }
+        }
 
-                is AiCardState.Downloading -> "Downloading…"
-                AiCardState.LiteRtReady -> "Ready · on this device"
-                is AiCardState.Unsupported -> "This phone can't run on-device AI."
-                AiCardState.Checking -> ""
-            },
-            style = EchoTheme.typography.bodySm,
-            color = EchoTheme.colors.textPrimary,
-        )
-
-        if (state is AiCardState.Downloading) {
+        if (aiState is AiCardState.Downloading) {
             LinearProgressIndicator(
-                progress = { state.fraction },
-                modifier = Modifier.fillMaxWidth(),
+                progress = { aiState.fraction },
+                modifier = Modifier.fillMaxWidth().padding(bottom = EchoTheme.spacing.s4),
                 color = EchoTheme.colors.textAccent,
                 trackColor = EchoTheme.colors.surfaceAccentSoft,
             )
         }
 
-        when (state) {
-            is AiCardState.NeedsDownload ->
-                EchoButton(text = "Download", onClick = onDownload, variant = ButtonVariant.Secondary, fullWidth = true)
+        if (backend == LlmBackend.LITERT) {
+            HorizontalDivider(color = EchoTheme.colors.borderSubtle)
+            SwitchRow(
+                iconRes = R.drawable.ic_settings,
+                label = "Download on Wi-Fi only",
+                subtitle = "Model updates wait for Wi-Fi",
+                checked = wifiOnly,
+                onCheckedChange = onWifiOnlyChange,
+            )
 
-            is AiCardState.Downloading ->
-                EchoButton(text = "Cancel", onClick = onCancel, variant = ButtonVariant.Secondary, fullWidth = true)
+            when (aiState) {
+                is AiCardState.NeedsDownload, is AiCardState.Downloading, AiCardState.LiteRtReady -> {
+                    HorizontalDivider(color = EchoTheme.colors.borderSubtle)
+                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = EchoTheme.spacing.s5)) {
+                        when (aiState) {
+                            is AiCardState.NeedsDownload ->
+                                EchoButton(text = "Download", onClick = onDownload, variant = ButtonVariant.Secondary, fullWidth = true)
 
-            AiCardState.LiteRtReady ->
-                EchoButton(text = "Remove", onClick = onDelete, variant = ButtonVariant.Secondary, fullWidth = true)
+                            is AiCardState.Downloading ->
+                                EchoButton(text = "Cancel", onClick = onCancel, variant = ButtonVariant.Secondary, fullWidth = true)
 
-            else -> Unit
+                            AiCardState.LiteRtReady ->
+                                EchoButton(text = "Remove model", onClick = onDelete, variant = ButtonVariant.Danger, fullWidth = true)
+
+                            else -> Unit
+                        }
+                    }
+                }
+
+                else -> Unit
+            }
         }
     }
+}
+
+private fun modelMeta(backend: LlmBackend, state: AiCardState, modelBytes: Long): String = when (backend) {
+    LlmBackend.NANO -> when (state) {
+        AiCardState.NanoReady -> "Uses your phone's built-in AI"
+        is AiCardState.Unsupported -> state.reason
+        else -> ""
+    }
+
+    LlmBackend.LITERT -> when (state) {
+        AiCardState.LiteRtReady -> "${formatBytes(modelBytes)} · on this device"
+        is AiCardState.NeedsDownload -> "${formatBytes(state.bytes)} · not downloaded"
+        is AiCardState.Downloading -> "Downloading… ${(state.fraction * 100).toInt()}%"
+        is AiCardState.Unsupported -> state.reason
+        else -> ""
+    }
+}
+
+private fun modelBadge(state: AiCardState): Pair<String, BadgeTone>? = when (state) {
+    AiCardState.NanoReady, AiCardState.LiteRtReady -> "Ready" to BadgeTone.Success
+    is AiCardState.NeedsDownload -> "Download" to BadgeTone.Neutral
+    is AiCardState.Downloading -> "Downloading" to BadgeTone.Info
+    is AiCardState.Unsupported -> "Unsupported" to BadgeTone.Warning
+    AiCardState.Checking -> null
 }

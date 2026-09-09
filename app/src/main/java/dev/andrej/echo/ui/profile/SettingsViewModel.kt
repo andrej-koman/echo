@@ -3,9 +3,13 @@ package dev.andrej.echo.ui.profile
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.andrej.echo.ai.AiCardState
+import dev.andrej.echo.ai.LlmBackend
 import dev.andrej.echo.data.DerivedRepository
 import dev.andrej.echo.data.SettingsStore
 import dev.andrej.echo.data.TranscriptRepository
+import dev.andrej.echo.speech.TranscriptionEngine
+import dev.andrej.echo.ui.record.LanguageOption
+import dev.andrej.echo.ui.record.displayName
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,11 +18,16 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 data class SettingsUiState(
+    val languageTag: String? = null,
     val languageLabel: String = "",
+    val languages: List<LanguageOption> = emptyList(),
+    val preferredLlmBackendId: String? = null,
+    val litertModelBytes: Long = 0,
     val autoAnalyze: Boolean = true,
     val wifiOnlyDownload: Boolean = false,
     val reminderLeadMinutes: Int = 15,
     val reminderMorningHour: Int = 9,
+    val reminderMorningMinute: Int = 0,
     val storageBytes: Long = 0,
     val notesCount: Int = 0,
     val tasksCount: Int = 0,
@@ -26,9 +35,12 @@ data class SettingsUiState(
 
 class SettingsViewModel(
     private val settings: SettingsStore,
+    private val engine: TranscriptionEngine,
     transcripts: TranscriptRepository,
     derived: DerivedRepository,
     val aiCardState: Flow<AiCardState>,
+    private val onSetLlmBackend: (LlmBackend) -> Unit,
+    private val litertModelBytes: Long,
     val onDownloadModel: () -> Unit,
     val onCancelDownload: () -> Unit,
     val onDeleteModel: () -> Unit,
@@ -43,21 +55,50 @@ class SettingsViewModel(
         viewModelScope.launch {
             combine(transcripts.transcripts, derived.items) { t, d -> t.size to d.size }
                 .collect { (notesCount, tasksCount) ->
-                    _state.value = fromSettings(notesCount, tasksCount)
+                    _state.value = fromSettings(notesCount, tasksCount).copy(languages = _state.value.languages)
                 }
         }
+        refreshLanguages()
     }
 
     private fun fromSettings(notesCount: Int, tasksCount: Int) = SettingsUiState(
+        languageTag = settings.languageTag,
         languageLabel = settings.languageTag?.let(::displayLanguage) ?: "Not set",
+        preferredLlmBackendId = settings.preferredLlmBackend,
+        litertModelBytes = litertModelBytes,
         autoAnalyze = settings.autoAnalyze,
         wifiOnlyDownload = settings.wifiOnlyDownload,
         reminderLeadMinutes = settings.reminderLeadMinutes,
         reminderMorningHour = settings.reminderMorningHour,
+        reminderMorningMinute = settings.reminderMorningMinute,
         storageBytes = storageUsedBytes(),
         notesCount = notesCount,
         tasksCount = tasksCount,
     )
+
+    private fun refreshLanguages() {
+        viewModelScope.launch {
+            val support = engine.languageSupport()
+            val options = support.all.map { tag ->
+                LanguageOption(tag = tag, label = tag.displayName(), installed = tag in support.installed)
+            }
+            _state.value = _state.value.copy(languages = options)
+        }
+    }
+
+    fun setLanguage(tag: String) {
+        val option = _state.value.languages.firstOrNull { it.tag == tag } ?: return
+        settings.languageTag = tag
+        _state.value = _state.value.copy(languageTag = tag, languageLabel = displayLanguage(tag))
+        if (!option.installed) {
+            engine.requestModelDownload(tag)
+        }
+    }
+
+    fun setLlmBackend(backend: LlmBackend) {
+        onSetLlmBackend(backend)
+        _state.value = _state.value.copy(preferredLlmBackendId = backend.id)
+    }
 
     fun setAutoAnalyze(value: Boolean) {
         settings.autoAnalyze = value
@@ -74,9 +115,10 @@ class SettingsViewModel(
         _state.value = _state.value.copy(reminderLeadMinutes = value)
     }
 
-    fun setReminderMorningHour(value: Int) {
-        settings.reminderMorningHour = value
-        _state.value = _state.value.copy(reminderMorningHour = value)
+    fun setReminderMorningTime(hour: Int, minute: Int) {
+        settings.reminderMorningHour = hour
+        settings.reminderMorningMinute = minute
+        _state.value = _state.value.copy(reminderMorningHour = hour, reminderMorningMinute = minute)
     }
 
     fun deleteAllRecordingsNow() {

@@ -123,7 +123,7 @@ internal fun group(
             NoteGroup(label, items.map { it.asRow(pending[it.id], taskCounts[it.id] ?: 0) })
         }
 
-private fun Transcript.asRow(pending: PendingCopy?, taskCount: Int) = NoteRow(
+internal fun Transcript.asRow(pending: PendingCopy?, taskCount: Int) = NoteRow(
     id = id,
     title = title ?: title(text),
     excerpt = summary ?: text.trim(),

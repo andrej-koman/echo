@@ -37,6 +37,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -319,7 +320,7 @@ internal fun TaskGroupCard(
 }
 
 @Composable
-private fun TaskRow(
+internal fun TaskRow(
     task: TodoItem,
     onToggle: () -> Unit,
     onEdit: () -> Unit,
@@ -409,15 +410,16 @@ private fun TaskRow(
 }
 
 @Composable
-private fun TaskCheckbox(
+internal fun TaskCheckbox(
     done: Boolean,
     onToggle: () -> Unit,
     modifier: Modifier = Modifier,
     overdue: Boolean = false,
+    size: Dp = 24.dp,
 ) {
     Box(
         modifier = modifier
-            .size(24.dp)
+            .size(size)
             .clip(CircleShape)
             .then(
                 if (done) {

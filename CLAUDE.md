@@ -34,7 +34,7 @@ data/         Transcript, TranscriptRepository (JSON file), TodoItem + DerivedRe
 auth/         AuthRepository interface + GoogleAuthRepository (Credential Manager)
 ui/theme/     OutLoud design tokens (Color, Type, Shape, Spacing, Elevation, Motion, Theme)
 ui/components/ the ported design system kit
-ui/home/      HomeScreen + HomeViewModel — up next, recent notes
+ui/home/      HomeScreen + HomeViewModel — hero task, then/coming-up strip, latest note
 ui/tasks/     TasksScreen + TasksViewModel — grouped by source transcript, done checkbox
 ui/capture/   CaptureScreen — Listening and Processing
 ui/record/    RecordViewModel (still named for its old screen)
@@ -129,9 +129,31 @@ NavHost, so signing out drops the whole graph rather than unwinding a back stack
   field, and a re-Analyze regenerates. `derivedId` no longer takes a `kind` — one entity, one
   id — but keeps the null-byte separator between transcript id and text: a plain
   concatenation would let `"t1"` + `"x"` collide with `"t"` + `"1x"`.
-- Home's "Up next" is undone `TodoItem`s sorted by `(dueAt, hasTime descending)`, capped at
-  three (`HomeViewModel.buildUpNext`). The section disappears rather than rendering an empty
-  card when there is nothing due.
+- **Home ("1b reworked")** puts one task in a hero slot rather than a list. `HomeViewModel.buildState`
+  reuses `ui.tasks.groupByDue`/`isOverdue` (both `internal`, not `private`, for this reuse): the hero
+  is the first item of the "Today" group (overdue items sort first, so an overdue task always wins
+  the slot over a same-day timed one; a timed item wins over an untimed one). Its action pill is
+  context-dependent: `Snooze to tonight` (bg `surfaceAccentSoft`) when overdue — `HomeViewModel.snooze`
+  moves `dueAt` to 20:00 local time today via `DerivedRepository.update`, nothing fancier — or `Add a
+  time` (solid `actionPrimaryBg`, the bell icon, "the one thing that makes the task ring") when the
+  hero has no time set, navigating to `EditTaskScreen` like every other "no time set" affordance.
+  When the Today group is empty, the hero slot becomes a mascot "Today is clear" card instead
+  (`HeroState.Clear`) and the strip below relabels itself "Coming up" (next `Tomorrow`+`Upcoming`
+  items, dated rather than timed) instead of "Then". The "Then"/"Coming up" strip below the hero
+  reuses `ui.tasks.TaskRow`/`TaskCheckbox` directly (both loosened to `internal`, `TaskCheckbox` given
+  a `size` param for the hero's larger 28dp circle) — same checkbox, same icon/colour rules, so ticking
+  a task behaves identically whether it's tapped from Home or Tasks. The strip caps at two rows,
+  timed items prioritized; any additional untimed items collapse into a single "+N more today with no
+  time set" row rather than being shown individually — `HomeUiState.thenMoreUntimed`/`thenTotalCount`
+  reconcile against the "See all N" link. A "N notes still need analyzing" pill (only counting
+  `PendingSeverity.Parked`, not `Failed`, entries — those already say "failed" in the badge) sits above
+  the hero when the queue has any. The "Latest note" card at the bottom reuses
+  `Transcript.asRow` from `ui.notes.NotesViewModel` (loosened to `internal`) but replaces its
+  absolute `HH:mm` with a relative stamp ("12 MIN AGO", "YESTERDAY, 18:04") computed in
+  `HomeViewModel` — that reformatting only makes sense for the single most-recent note, not the
+  Notes list, so it stays local rather than changing `NoteRow` itself. Home dropped its own search
+  field with this rework (nothing left on the screen is a list to filter); the header's search icon
+  and the "Coming up"/"See all"/"All notes" links all just switch tabs.
 - Rows carry `updatedAt` and transcripts carry a `deletedAt` tombstone — `delete()` marks, the
   `transcripts` flow filters. Both default off `createdAt`/null, so files written before them still
   parse. Sync is not built and is not planned yet; these exist so a delete and a last-write-wins
@@ -244,13 +266,10 @@ tokens and kit, not ported from a design.
   content, and a searchable one (`title`/`query`/`onQueryChange`/`searchPlaceholder`) that
   delegates to the other two depending on whether its search icon has been tapped. All three draw
   the same bar chrome, so every screen header keeps one surface, hairline and height.
-- Home reads its recent notes from `TranscriptsViewModel`; it has no view model of its own. With no
-  transcripts it shows only the mascot empty state (its "Upload audio" / "Type a note" buttons are
-  inert); with data it is two sections, "Up next" then "Recent notes" — no greeting, no action cards.
-  "Up next" is real (`HomeViewModel.buildUpNext`), not stubbed. Recent note cards carry no tag
-  pill: `Transcript` has no tag field.
-- The two content tabs (Tasks / Notes) are still stubs, but the data behind them
-  is real: `RecordViewModel.stopRecording` now saves the transcript and then runs
+- Home has its own `HomeViewModel` now (see "Home (1b reworked)" above); with no transcripts at
+  all it still falls back to the mascot empty state (its "Upload audio" / "Type a note" buttons
+  are inert).
+- `RecordViewModel.stopRecording` saves the transcript and then runs
   `TranscriptAnalyzer`, writing `TodoItem` rows and a title and summary back onto the
   transcript. The Processing screen holds for that work — `STUB_PROCESSING_DELAY_MS` is gone.
   The transcript is saved *before* analysis, so no model failure can cost a recording.

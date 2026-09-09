@@ -143,9 +143,11 @@ private fun SignedInApp(
                 val homeViewModel: HomeViewModel = viewModel(factory = viewModelFactory)
                 HomeScreen(
                     viewModel = homeViewModel,
+                    userName = (authState as? AuthState.SignedIn)?.account?.displayName,
                     onSeeTasks = { navController.selectTab(Routes.TASKS) },
                     onSeeAll = { navController.selectTab(Routes.NOTES) },
                     onOpen = { navController.navigate(Routes.detail(it)) },
+                    onEditTask = { navController.navigate(Routes.editTask(it)) },
                 )
             }
 

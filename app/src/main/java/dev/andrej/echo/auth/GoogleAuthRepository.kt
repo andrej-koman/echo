@@ -102,4 +102,8 @@ class GoogleAuthRepository(
         }
         _state.value = AuthState.SignedOut
     }
+
+    override suspend fun deleteAccount() {
+        signOut()
+    }
 }

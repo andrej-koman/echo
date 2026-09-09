@@ -38,7 +38,9 @@ ui/home/      HomeScreen + HomeViewModel — hero task, then/coming-up strip, la
 ui/tasks/     TasksScreen + TasksViewModel — grouped by source transcript, done checkbox
 ui/capture/   CaptureScreen — Listening and Processing
 ui/record/    RecordViewModel (still named for its old screen)
-ui/auth/      SignInScreen, AccountScreen (the Profile tab), AuthViewModel, AiViewModel
+ui/auth/      SignInScreen, AuthViewModel
+ui/profile/   ProfileScreen (the Profile tab) + ProfileViewModel, SettingsScreen +
+              SettingsViewModel, HistoryScreen + HistoryViewModel
 ui/transcripts/, ui/detail/    NotesScreen (the merged Notes tab — one shared card per day,
               hairline dividers, same rhythm as Tasks; search; TranscriptRow, PendingBadge),
               TranscriptDetailScreen (NOTE + tasks-from-this-note + raw TRANSCRIPT, bar-icon
@@ -51,8 +53,9 @@ Engine sits behind an interface so a different backend (e.g. Whisper) can replac
 
 Four tabs: Home / Tasks — record button — Notes / Profile, Home the start destination. There is no
 separate Transcripts tab — Notes is the one browsable list (former Transcripts content merged into it,
-`ui/transcripts/NotesScreen.kt`), and raw transcript text lives only in Profile's read-only
-"RAW TRANSCRIPTS" section (`AccountScreen.kt`), not as a tab of its own. No header account icon
+`ui/transcripts/NotesScreen.kt`), and raw transcript text lives only in each note's detail screen
+("WHAT WAS SAID" in `TranscriptDetailScreen`), not as a tab of its own or anywhere in Profile.
+No header account icon
 button anywhere — Profile is reached only via its tab (Tasks' empty-state "Turn on AI" button also
 tab-switches there, via `onOpenProfile`). The record
 button sits in the bar's middle slot (`TabBar(centerGap = true)` leaves the gap, `EchoApp` overlays the
@@ -216,6 +219,41 @@ NavHost, so signing out drops the whole graph rather than unwinding a back stack
   `BadgeTone.Warning`. `EmptyTranscript` never renders — it's never enqueued. No dedicated
   first-run modal; the badge is the only affordance, on transcript rows (Home and Notes),
   recent-note cards, and the detail screen, which already has the Analyze button to retry with.
+- **Profile, Settings, History** implement the OutLoud design's three-screen exploration
+  (Claude Design project `582866bc-4d0a-4f8f-a6bc-dbb7efb86455`). `ProfileScreen` replaced the old
+  `AccountScreen` stub: identity card, a NOTES/TASKS DONE/CAPTURED stats grid, a "This week"
+  bar-chart card (tap opens History) with a streak, and an ACCOUNT rail (Sign out, Delete account
+  behind `ConfirmSheet`). Signed-out (`AuthState.Guest`, reached only inside the signed-in graph —
+  the top-level `AuthState.SignedOut` still gets its own full `SignInScreen`) swaps the stats for a
+  mascot empty state and a "Sign in with Google" button. `ProfileViewModel.buildState` computes the
+  week bars and streak by walking backward from today over `Transcript.createdAt` grouped by
+  calendar day (zone-aware) — the first empty day stops the streak. `AiViewModel` is gone: its
+  Download/Cancel/Remove UI moved into `SettingsScreen`'s ON-DEVICE AI card, and `SettingsViewModel`
+  now takes the same `aiCardState`/`onDownloadModel`/`onCancelDownload`/`onDeleteModel` shape
+  directly from `AppContainer`. `SettingsStore` grew four fields beyond `languageTag`:
+  `autoAnalyze` (gates the enqueue in `RecordViewModel.stopRecording()` — off means every note
+  waits for a manual Analyze), `wifiOnlyDownload` (checked in `AppContainer.downloadModel()` via
+  `ConnectivityManager`, download is skipped rather than queued if off Wi-Fi), and
+  `reminderLeadMinutes`/`reminderMorningHour`, which `fireTimeFor` (`data/NotificationScheduler.kt`)
+  now takes as parameters instead of hardcoded constants — `AlarmManagerNotificationScheduler`
+  reads them from `SettingsStore` on every `schedule()` call, so a change takes effect on the next
+  write without needing to reschedule existing alarms. Settings' FEEL section (Haptics, Reduce
+  motion) stays read-only by design — threading the setting through `rememberEchoHaptics()`/
+  `LocalReducedMotion` would need a new CompositionLocal reaching every call site, out of scope for
+  this pass; the switches render "on" but ignore taps. `AppContainer.storageUsedBytes()` and
+  `deleteAllRecordings()` back Settings' DATA section; "Export notes and tasks" is UI-shell-only,
+  no real exporter exists. `AuthRepository.deleteAccount()` is a new method with the same body as
+  `signOut()` — kept separate because it is a distinct user intent, even though there is no server
+  account to actually delete. `HistoryScreen`/`HistoryViewModel` render a month calendar
+  (`YearMonth`/`LocalDate` state, not persisted) with a 4-level heat grid (0/1/2/3+ notes that
+  day), month totals, and a selected-day detail list; `nextMonth()` refuses to advance past the
+  current month. `EchoSwitch` (44×24 pill, 20dp thumb) moved from a private composable in
+  `EditTaskScreen.kt` to `ui/components/EchoSwitch.kt` now that Settings needs it too, gaining an
+  `enabled` flag for the read-only FEEL rows. `ui/components/BottomSheet.kt` is new and generic:
+  `ConfirmSheet` (destructive confirmation) and `PickerSheet` (single-choice list with a check
+  mark) are both hand-rolled `Box`/`AnimatedVisibility` scrim+sheet overlays, not Material's
+  `ModalBottomSheet` — nothing else in the app uses one, and the design's plain white sheet with no
+  system scrim animation is simpler to hand-roll consistently with `echoShadow`/`hairline`.
 
 ## Design system
 

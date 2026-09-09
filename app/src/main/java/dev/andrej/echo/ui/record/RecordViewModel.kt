@@ -164,8 +164,10 @@ class RecordViewModel(
                     language = state.language?.tag.orEmpty(),
                     durationMs = clock() - startedAt,
                 )
-                queue.enqueue(transcript.id)
-                worker.requestDrainAndAwait()
+                if (settings.autoAnalyze) {
+                    queue.enqueue(transcript.id)
+                    worker.requestDrainAndAwait()
+                }
             }
             _uiState.value = _uiState.value.copy(isProcessing = false)
         }

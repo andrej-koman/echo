@@ -8,14 +8,16 @@ interface NotificationScheduler {
     fun cancel(itemId: String)
 }
 
-private const val LEAD_MS = 15 * 60 * 1000L
-private const val MORNING_HOUR = 9
-
-/** Exact-time items warn 15 minutes ahead; date-only items get a 9am nudge on the day. */
-fun fireTimeFor(item: TodoItem, zone: ZoneId = ZoneId.systemDefault()): Long =
+/** Exact-time items warn [leadMinutes] ahead; date-only items get a nudge at [morningHour] on the day. */
+fun fireTimeFor(
+    item: TodoItem,
+    zone: ZoneId = ZoneId.systemDefault(),
+    leadMinutes: Int = 15,
+    morningHour: Int = 9,
+): Long =
     if (item.hasTime) {
-        item.dueAt - LEAD_MS
+        item.dueAt - leadMinutes * 60 * 1000L
     } else {
         Instant.ofEpochMilli(item.dueAt).atZone(zone).toLocalDate()
-            .atTime(MORNING_HOUR, 0).atZone(zone).toInstant().toEpochMilli()
+            .atTime(morningHour, 0).atZone(zone).toInstant().toEpochMilli()
     }

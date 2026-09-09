@@ -2,6 +2,8 @@ package dev.andrej.echo
 
 import android.app.ActivityManager
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import dev.andrej.echo.auth.AuthRepository
@@ -30,9 +32,11 @@ import dev.andrej.echo.data.TranscriptRepository
 import dev.andrej.echo.notify.AlarmManagerNotificationScheduler
 import dev.andrej.echo.speech.AndroidSpeechEngine
 import dev.andrej.echo.speech.TranscriptionEngine
-import dev.andrej.echo.ui.auth.AiViewModel
 import dev.andrej.echo.ui.auth.AuthViewModel
 import dev.andrej.echo.ui.home.HomeViewModel
+import dev.andrej.echo.ui.profile.HistoryViewModel
+import dev.andrej.echo.ui.profile.ProfileViewModel
+import dev.andrej.echo.ui.profile.SettingsViewModel
 import dev.andrej.echo.ui.record.RecordViewModel
 import dev.andrej.echo.ui.tasks.TasksViewModel
 import dev.andrej.echo.ui.notes.NotesViewModel
@@ -69,7 +73,7 @@ class AppContainer(context: Context) {
     val engine: TranscriptionEngine =
         AndroidSpeechEngine(applicationContext)
 
-    private val notificationScheduler = AlarmManagerNotificationScheduler(applicationContext)
+    private val notificationScheduler = AlarmManagerNotificationScheduler(applicationContext, settings)
 
     val derived: DerivedRepository =
         JsonDerivedRepository(applicationContext.filesDir, notificationScheduler)
@@ -155,7 +159,14 @@ class AppContainer(context: Context) {
 
     fun downloadModel() {
         if (downloadJob?.isActive == true) return
+        if (settings.wifiOnlyDownload && !onWifi()) return
         downloadJob = appScope.launch { modelStore.download() }
+    }
+
+    private fun onWifi(): Boolean {
+        val connectivity = applicationContext.getSystemService(ConnectivityManager::class.java)
+        val capabilities = connectivity?.getNetworkCapabilities(connectivity.activeNetwork)
+        return capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
     }
 
     fun cancelDownload() {
@@ -164,6 +175,17 @@ class AppContainer(context: Context) {
 
     fun deleteModel() {
         appScope.launch { modelStore.delete() }
+    }
+
+    fun storageUsedBytes(): Long =
+        applicationContext.filesDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+
+    suspend fun deleteAllRecordings() {
+        repository.transcripts.first().forEach { transcript ->
+            derived.deleteFor(transcript.id)
+            analysisQueue.remove(transcript.id)
+            repository.delete(transcript.id)
+        }
     }
 
     val viewModelFactory: ViewModelProvider.Factory = object : ViewModelProvider.Factory {
@@ -185,19 +207,30 @@ class AppContainer(context: Context) {
             modelClass.isAssignableFrom(AuthViewModel::class.java) ->
                 AuthViewModel(auth) as T
 
-            modelClass.isAssignableFrom(AiViewModel::class.java) ->
-                AiViewModel(
-                    aiCardState = aiCardState,
-                    onDownloadModel = ::downloadModel,
-                    onCancelDownload = ::cancelDownload,
-                    onDeleteModel = ::deleteModel,
-                ) as T
-
             modelClass.isAssignableFrom(HomeViewModel::class.java) ->
                 HomeViewModel(repository, derived, analysisQueue) as T
 
             modelClass.isAssignableFrom(TasksViewModel::class.java) ->
                 TasksViewModel(derived, repository, aiCardState) as T
+
+            modelClass.isAssignableFrom(ProfileViewModel::class.java) ->
+                ProfileViewModel(repository, derived) as T
+
+            modelClass.isAssignableFrom(SettingsViewModel::class.java) ->
+                SettingsViewModel(
+                    settings = settings,
+                    transcripts = repository,
+                    derived = derived,
+                    aiCardState = aiCardState,
+                    onDownloadModel = ::downloadModel,
+                    onCancelDownload = ::cancelDownload,
+                    onDeleteModel = ::deleteModel,
+                    storageUsedBytes = ::storageUsedBytes,
+                    deleteAllRecordings = ::deleteAllRecordings,
+                ) as T
+
+            modelClass.isAssignableFrom(HistoryViewModel::class.java) ->
+                HistoryViewModel(repository, derived) as T
 
             else -> error("Unknown ViewModel: ${modelClass.name}")
         }

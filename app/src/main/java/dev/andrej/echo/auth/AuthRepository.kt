@@ -39,4 +39,7 @@ interface AuthRepository {
     fun continueAsGuest()
 
     suspend fun signOut()
+
+    /** Same effect as [signOut] today — no server exists to actually delete an account against. */
+    suspend fun deleteAccount()
 }

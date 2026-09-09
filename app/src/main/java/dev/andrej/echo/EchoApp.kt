@@ -28,9 +28,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import dev.andrej.echo.ai.AiCardState
 import dev.andrej.echo.auth.AuthState
-import dev.andrej.echo.ui.auth.AccountScreen
-import dev.andrej.echo.ui.auth.AiViewModel
 import dev.andrej.echo.ui.auth.AuthViewModel
 import dev.andrej.echo.ui.auth.SignInScreen
 import dev.andrej.echo.ui.capture.CaptureScreen
@@ -45,6 +44,12 @@ import dev.andrej.echo.ui.home.HomeScreen
 import dev.andrej.echo.ui.home.HomeViewModel
 import dev.andrej.echo.ui.notes.NotesScreen
 import dev.andrej.echo.ui.notes.NotesViewModel
+import dev.andrej.echo.ui.profile.HistoryScreen
+import dev.andrej.echo.ui.profile.HistoryViewModel
+import dev.andrej.echo.ui.profile.ProfileScreen
+import dev.andrej.echo.ui.profile.ProfileViewModel
+import dev.andrej.echo.ui.profile.SettingsScreen
+import dev.andrej.echo.ui.profile.SettingsViewModel
 import dev.andrej.echo.ui.record.RecordViewModel
 import dev.andrej.echo.ui.tasks.EditTaskScreen
 import dev.andrej.echo.ui.tasks.TasksScreen
@@ -57,6 +62,8 @@ private object Routes {
     const val NOTES = "notes"
     const val CAPTURE = "capture"
     const val PROFILE = "profile"
+    const val SETTINGS = "settings"
+    const val HISTORY = "history"
     const val DETAIL = "detail/{id}"
     const val EDIT_TASK = "tasks/{id}/edit"
 
@@ -100,7 +107,9 @@ fun EchoApp(
             else -> SignedInApp(
                 viewModelFactory = viewModelFactory,
                 authState = authState,
+                onSignIn = { activity?.let(authViewModel::signIn) },
                 onSignOut = authViewModel::signOut,
+                onDeleteAccount = authViewModel::deleteAccount,
                 pendingOpenTranscriptId = pendingOpenTranscriptId,
                 onOpenTranscriptHandled = onOpenTranscriptHandled,
             )
@@ -112,7 +121,9 @@ fun EchoApp(
 private fun SignedInApp(
     viewModelFactory: ViewModelProvider.Factory,
     authState: AuthState,
+    onSignIn: () -> Unit,
     onSignOut: () -> Unit,
+    onDeleteAccount: () -> Unit,
     pendingOpenTranscriptId: String? = null,
     onOpenTranscriptHandled: () -> Unit = {},
 ) {
@@ -177,15 +188,52 @@ private fun SignedInApp(
             }
 
             composable(Routes.PROFILE) {
-                val aiViewModel: AiViewModel = viewModel(factory = viewModelFactory)
-                val aiState by aiViewModel.state.collectAsStateWithLifecycle()
-                AccountScreen(
-                    state = authState,
-                    aiState = aiState,
+                val profileViewModel: ProfileViewModel = viewModel(factory = viewModelFactory)
+                val profileState by profileViewModel.state.collectAsStateWithLifecycle()
+                ProfileScreen(
+                    state = profileState,
+                    authState = authState,
+                    onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                    onOpenHistory = { navController.navigate(Routes.HISTORY) },
+                    onSignIn = onSignIn,
                     onSignOut = onSignOut,
-                    onDownloadModel = aiViewModel.onDownloadModel,
-                    onCancelDownload = aiViewModel.onCancelDownload,
-                    onDeleteModel = aiViewModel.onDeleteModel,
+                    onDeleteAccount = onDeleteAccount,
+                )
+            }
+
+            composable(Routes.SETTINGS) {
+                val settingsViewModel: SettingsViewModel = viewModel(factory = viewModelFactory)
+                val settingsState by settingsViewModel.state.collectAsStateWithLifecycle()
+                val aiState by settingsViewModel.aiCardState.collectAsStateWithLifecycle(
+                    initialValue = AiCardState.Checking,
+                )
+                SettingsScreen(
+                    state = settingsState,
+                    aiState = aiState,
+                    onBack = { navController.popBackStack() },
+                    onAutoAnalyzeChange = settingsViewModel::setAutoAnalyze,
+                    onWifiOnlyDownloadChange = settingsViewModel::setWifiOnlyDownload,
+                    onReminderLeadMinutesChange = settingsViewModel::setReminderLeadMinutes,
+                    onReminderMorningHourChange = settingsViewModel::setReminderMorningHour,
+                    onDownloadModel = settingsViewModel.onDownloadModel,
+                    onCancelDownload = settingsViewModel.onCancelDownload,
+                    onDeleteModel = settingsViewModel.onDeleteModel,
+                    onDeleteAllRecordings = {
+                        settingsViewModel.deleteAllRecordingsNow()
+                        navController.popBackStack()
+                    },
+                )
+            }
+
+            composable(Routes.HISTORY) {
+                val historyViewModel: HistoryViewModel = viewModel(factory = viewModelFactory)
+                val historyState by historyViewModel.state.collectAsStateWithLifecycle()
+                HistoryScreen(
+                    state = historyState,
+                    onBack = { navController.popBackStack() },
+                    onPrevMonth = historyViewModel::prevMonth,
+                    onNextMonth = historyViewModel::nextMonth,
+                    onPickDay = historyViewModel::pick,
                 )
             }
 

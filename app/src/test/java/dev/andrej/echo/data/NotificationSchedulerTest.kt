@@ -32,4 +32,20 @@ class FireTimeForTest {
 
         assertEquals(expected, fireTimeFor(item(dueAt, hasTime = false), UTC))
     }
+
+    @Test
+    fun `a custom lead time and morning hour override the defaults`() {
+        val timedDueAt = LocalDate.of(2026, 9, 4).atTime(10, 0).atZone(UTC).toInstant().toEpochMilli()
+        assertEquals(
+            timedDueAt - 30 * 60 * 1000L,
+            fireTimeFor(item(timedDueAt, hasTime = true), UTC, leadMinutes = 30),
+        )
+
+        val dateOnlyDueAt = LocalDate.of(2026, 9, 4).atStartOfDay(UTC).toInstant().toEpochMilli()
+        val expected = LocalDate.of(2026, 9, 4).atTime(7, 0).atZone(UTC).toInstant().toEpochMilli()
+        assertEquals(
+            expected,
+            fireTimeFor(item(dateOnlyDueAt, hasTime = false), UTC, morningHour = 7),
+        )
+    }
 }

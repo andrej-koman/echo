@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import dev.andrej.echo.data.NotificationScheduler
+import dev.andrej.echo.data.SettingsStore
 import dev.andrej.echo.data.TodoItem
 import dev.andrej.echo.data.fireTimeFor
 import java.time.ZoneId
@@ -16,13 +17,21 @@ import java.time.ZoneId
  * goes through [Intent.filterEquals], which ignores extras, so `requestCode = itemId.hashCode()`
  * alone would be a 32-bit collision lottery where one item's alarm silently overwrites another's.
  */
-class AlarmManagerNotificationScheduler(private val context: Context) : NotificationScheduler {
+class AlarmManagerNotificationScheduler(
+    private val context: Context,
+    private val settings: SettingsStore,
+) : NotificationScheduler {
 
     private val alarmManager = context.getSystemService(AlarmManager::class.java)
     private val notificationManager = context.getSystemService(NotificationManager::class.java)
 
     override fun schedule(item: TodoItem) {
-        val fireAt = fireTimeFor(item, ZoneId.systemDefault())
+        val fireAt = fireTimeFor(
+            item,
+            ZoneId.systemDefault(),
+            leadMinutes = settings.reminderLeadMinutes,
+            morningHour = settings.reminderMorningHour,
+        )
         if (fireAt <= System.currentTimeMillis()) return
 
         val intent = Intent(context, ReminderAlarmReceiver::class.java).apply {

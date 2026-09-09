@@ -43,4 +43,8 @@ class AuthViewModel(
     fun signOut() {
         viewModelScope.launch { repository.signOut() }
     }
+
+    fun deleteAccount() {
+        viewModelScope.launch { repository.deleteAccount() }
+    }
 }

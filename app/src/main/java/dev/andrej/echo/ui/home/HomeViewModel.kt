@@ -101,7 +101,7 @@ class HomeViewModel(
     }
 }
 
-private fun snoozeTime(now: Long, zone: ZoneId): Long =
+internal fun snoozeTime(now: Long, zone: ZoneId): Long =
     java.time.Instant.ofEpochMilli(now).atZone(zone)
         .withHour(20).withMinute(0).withSecond(0).withNano(0)
         .toInstant().toEpochMilli()

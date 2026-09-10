@@ -45,6 +45,9 @@ class SettingsViewModel(
     val onCancelDownload: () -> Unit,
     val onDeleteModel: () -> Unit,
     private val storageUsedBytes: () -> Long,
+    val onTestReminderNotification: () -> Unit = {},
+    val onTestDailyBriefNotification: () -> Unit = {},
+    val onTestModelDownloadNotification: () -> Unit = {},
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(fromSettings(notesCount = 0, tasksCount = 0))

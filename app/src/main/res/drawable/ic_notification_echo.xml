@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Solid ghost, eyes knocked out via evenOdd fill — the launcher's stroked ghost closes up into
+     a grey blob at 12px, so notifications get their own flattened silhouette instead. Only the
+     alpha channel is used by the system, so fill color is arbitrary. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="88"
+    android:viewportHeight="86">
+    <group android:translateX="-6" android:translateY="-3">
+        <path
+            android:pathData="M14 47C14 25.5 30.1 9 50 9C69.9 9 86 25.5 86 47L86 74C86 77.6 82.1 79.9 79 78.1L74.5 75.5C72.3 74.2 69.5 74.6 67.7 76.5L64.6 79.8C62.2 82.3 58.2 82.3 55.8 79.8L53 76.9C51 74.8 47.6 74.8 45.6 76.9L42.8 79.8C40.4 82.3 36.4 82.3 34 79.8L30.9 76.5C29.1 74.6 26.3 74.2 24.1 75.5L19.6 78.1C16.5 79.9 14 77.6 14 74Z M33.1 45a5.4 7 0 1 0 10.8 0a5.4 7 0 1 0 -10.8 0z M56.1 45a5.4 7 0 1 0 10.8 0a5.4 7 0 1 0 -10.8 0z"
+            android:fillColor="#FFFFFF"
+            android:fillType="evenOdd" />
+    </group>
+</vector>

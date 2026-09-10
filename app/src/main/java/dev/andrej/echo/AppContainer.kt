@@ -2,8 +2,11 @@ package dev.andrej.echo
 
 import android.app.ActivityManager
 import android.content.Context
+import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.Uri
+import java.time.ZoneId
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import dev.andrej.echo.auth.AuthRepository
@@ -30,11 +33,17 @@ import dev.andrej.echo.data.SettingsStore
 import dev.andrej.echo.data.SharedPreferencesAuthStore
 import dev.andrej.echo.data.SharedPreferencesSettingsStore
 import dev.andrej.echo.data.TranscriptRepository
+import dev.andrej.echo.ai.ModelState
 import dev.andrej.echo.notify.AlarmManagerNotificationScheduler
+import dev.andrej.echo.notify.DailyBriefReceiver
+import dev.andrej.echo.notify.DailyBriefScheduler
+import dev.andrej.echo.notify.ModelDownloadNotifier
+import dev.andrej.echo.notify.ReminderAlarmReceiver
 import dev.andrej.echo.speech.AndroidSpeechEngine
 import dev.andrej.echo.speech.TranscriptionEngine
 import dev.andrej.echo.ui.auth.AuthViewModel
 import dev.andrej.echo.ui.home.HomeViewModel
+import dev.andrej.echo.ui.home.snoozeTime
 import dev.andrej.echo.ui.profile.HistoryViewModel
 import dev.andrej.echo.ui.profile.ProfileViewModel
 import dev.andrej.echo.ui.profile.SettingsViewModel
@@ -78,6 +87,10 @@ class AppContainer(context: Context) {
         AndroidSpeechEngine(applicationContext)
 
     private val notificationScheduler = AlarmManagerNotificationScheduler(applicationContext, settings)
+
+    private val dailyBriefScheduler = DailyBriefScheduler(applicationContext, settings)
+
+    private val modelDownloadNotifier = ModelDownloadNotifier(applicationContext)
 
     val derived: DerivedRepository =
         JsonDerivedRepository(applicationContext.filesDir, notificationScheduler)
@@ -172,6 +185,12 @@ class AppContainer(context: Context) {
                     pendingAnalysisWorker.requestDrain()
                 }
         }
+
+        appScope.launch {
+            modelStore.state.collect(modelDownloadNotifier::update)
+        }
+
+        dailyBriefScheduler.scheduleNext()
     }
 
     /** Called from Activity.onStart — a capable backend may have appeared while backgrounded. */
@@ -183,6 +202,47 @@ class AppContainer(context: Context) {
     /** Exact alarms do not survive a reboot or an app update — [dev.andrej.echo.notify.BootReceiver] calls this. */
     suspend fun rescheduleNotifications() {
         derived.items.first().forEach { if (!it.done) notificationScheduler.schedule(it) }
+    }
+
+    /** [dev.andrej.echo.notify.DailyBriefReceiver] calls this after every fire, and [dev.andrej.echo.notify.BootReceiver] after a reboot. */
+    fun rescheduleDailyBrief() {
+        dailyBriefScheduler.scheduleNext()
+    }
+
+    /** Debug-only: fires each notification once, with fake data where the real path needs an alarm or a download in progress. */
+    fun sendTestReminderNotification() {
+        if (!BuildConfig.DEBUG) return
+        val intent = Intent(applicationContext, ReminderAlarmReceiver::class.java).apply {
+            data = Uri.parse("echo://item/test-reminder")
+            putExtra(ReminderAlarmReceiver.EXTRA_ITEM_ID, "test-reminder")
+            putExtra(ReminderAlarmReceiver.EXTRA_TRANSCRIPT_ID, "test-transcript")
+            putExtra(ReminderAlarmReceiver.EXTRA_TEXT, "Call the landlord")
+            putExtra(ReminderAlarmReceiver.EXTRA_DUE_AT, System.currentTimeMillis())
+            putExtra(ReminderAlarmReceiver.EXTRA_HAS_TIME, true)
+        }
+        applicationContext.sendBroadcast(intent)
+    }
+
+    fun sendTestDailyBrief() {
+        if (!BuildConfig.DEBUG) return
+        applicationContext.sendBroadcast(Intent(applicationContext, DailyBriefReceiver::class.java))
+    }
+
+    fun sendTestModelDownloadNotification() {
+        if (!BuildConfig.DEBUG) return
+        modelDownloadNotifier.update(ModelState.Downloading(bytesDownloaded = 412_000_000L, totalBytes = 1_100_000_000L))
+    }
+
+    /** "Snooze to tonight" from the reminder notification — the same 20:00 rule Home's overdue pill uses. */
+    suspend fun snoozeReminder(itemId: String) {
+        val item = derived.items.first().firstOrNull { it.id == itemId } ?: return
+        derived.update(
+            item.id,
+            item.text,
+            snoozeTime(System.currentTimeMillis(), ZoneId.systemDefault()),
+            hasTime = true,
+            notify = item.notify,
+        )
     }
 
     private var downloadJob: Job? = null
@@ -251,6 +311,9 @@ class AppContainer(context: Context) {
                     onCancelDownload = ::cancelDownload,
                     onDeleteModel = ::deleteModel,
                     storageUsedBytes = ::storageUsedBytes,
+                    onTestReminderNotification = ::sendTestReminderNotification,
+                    onTestDailyBriefNotification = ::sendTestDailyBrief,
+                    onTestModelDownloadNotification = ::sendTestModelDownloadNotification,
                 ) as T
 
             modelClass.isAssignableFrom(HistoryViewModel::class.java) ->

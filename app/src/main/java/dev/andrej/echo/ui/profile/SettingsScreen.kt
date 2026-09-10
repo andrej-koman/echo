@@ -3,6 +3,7 @@ package dev.andrej.echo.ui.profile
 import android.app.TimePickerDialog
 import android.content.Intent
 import android.provider.Settings as AndroidSettings
+import dev.andrej.echo.BuildConfig
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -66,6 +67,9 @@ fun SettingsScreen(
     onDownloadModel: () -> Unit,
     onCancelDownload: () -> Unit,
     onDeleteModel: () -> Unit,
+    onTestReminderNotification: () -> Unit = {},
+    onTestDailyBriefNotification: () -> Unit = {},
+    onTestModelDownloadNotification: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -249,6 +253,38 @@ fun SettingsScreen(
                     },
                 ),
             )
+
+            if (BuildConfig.DEBUG) {
+                Section(
+                    title = "DEBUG",
+                    rows = listOf(
+                        {
+                            DisclosureRow(
+                                iconRes = R.drawable.ic_bell,
+                                label = "Test: task reminder",
+                                value = "",
+                                onClick = onTestReminderNotification,
+                            )
+                        },
+                        {
+                            DisclosureRow(
+                                iconRes = R.drawable.ic_bell,
+                                label = "Test: daily brief",
+                                value = "",
+                                onClick = onTestDailyBriefNotification,
+                            )
+                        },
+                        {
+                            DisclosureRow(
+                                iconRes = R.drawable.ic_bell,
+                                label = "Test: model download",
+                                value = "",
+                                onClick = onTestModelDownloadNotification,
+                            )
+                        },
+                    ),
+                )
+            }
 
             Text(
                 text = "ECHO $versionName",

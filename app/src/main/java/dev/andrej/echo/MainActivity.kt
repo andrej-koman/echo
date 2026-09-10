@@ -15,13 +15,15 @@ class MainActivity : ComponentActivity() {
     private lateinit var container: AppContainer
 
     private var pendingOpenTranscriptId by mutableStateOf<String?>(null)
+    private var pendingOpenTaskId by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
         container = (application as EchoApplication).container
-        pendingOpenTranscriptId = consumeTranscriptExtra(intent)
+        pendingOpenTranscriptId = consumeExtra(intent, EXTRA_TRANSCRIPT_ID)
+        pendingOpenTaskId = consumeExtra(intent, EXTRA_TASK_ID)
 
         setContent {
             EchoTheme {
@@ -29,6 +31,8 @@ class MainActivity : ComponentActivity() {
                     viewModelFactory = container.viewModelFactory,
                     pendingOpenTranscriptId = pendingOpenTranscriptId,
                     onOpenTranscriptHandled = { pendingOpenTranscriptId = null },
+                    pendingOpenTaskId = pendingOpenTaskId,
+                    onOpenTaskHandled = { pendingOpenTaskId = null },
                 )
             }
         }
@@ -36,14 +40,15 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        pendingOpenTranscriptId = consumeTranscriptExtra(intent)
+        pendingOpenTranscriptId = consumeExtra(intent, EXTRA_TRANSCRIPT_ID)
+        pendingOpenTaskId = consumeExtra(intent, EXTRA_TASK_ID)
     }
 
     /** Removes the extra so a config change, which recreates the Activity from the same Intent, does not navigate twice. */
-    private fun consumeTranscriptExtra(intent: Intent): String? {
-        val id = intent.getStringExtra(EXTRA_TRANSCRIPT_ID)
-        intent.removeExtra(EXTRA_TRANSCRIPT_ID)
-        return id
+    private fun consumeExtra(intent: Intent, key: String): String? {
+        val value = intent.getStringExtra(key)
+        intent.removeExtra(key)
+        return value
     }
 
     override fun onStart() {
@@ -53,5 +58,6 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_TRANSCRIPT_ID = "transcript_id"
+        const val EXTRA_TASK_ID = "task_id"
     }
 }

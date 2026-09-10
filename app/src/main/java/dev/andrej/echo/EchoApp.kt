@@ -84,6 +84,8 @@ fun EchoApp(
     modifier: Modifier = Modifier,
     pendingOpenTranscriptId: String? = null,
     onOpenTranscriptHandled: () -> Unit = {},
+    pendingOpenTaskId: String? = null,
+    onOpenTaskHandled: () -> Unit = {},
 ) {
     val authViewModel: AuthViewModel = viewModel(factory = viewModelFactory)
     val authState by authViewModel.state.collectAsStateWithLifecycle()
@@ -112,6 +114,8 @@ fun EchoApp(
                 onDeleteAccount = authViewModel::deleteAccount,
                 pendingOpenTranscriptId = pendingOpenTranscriptId,
                 onOpenTranscriptHandled = onOpenTranscriptHandled,
+                pendingOpenTaskId = pendingOpenTaskId,
+                onOpenTaskHandled = onOpenTaskHandled,
             )
         }
     }
@@ -126,6 +130,8 @@ private fun SignedInApp(
     onDeleteAccount: () -> Unit,
     pendingOpenTranscriptId: String? = null,
     onOpenTranscriptHandled: () -> Unit = {},
+    pendingOpenTaskId: String? = null,
+    onOpenTaskHandled: () -> Unit = {},
 ) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -142,6 +148,13 @@ private fun SignedInApp(
         if (pendingOpenTranscriptId != null) {
             navController.navigate(Routes.detail(pendingOpenTranscriptId))
             onOpenTranscriptHandled()
+        }
+    }
+
+    LaunchedEffect(pendingOpenTaskId) {
+        if (pendingOpenTaskId != null) {
+            navController.navigate(Routes.editTask(pendingOpenTaskId))
+            onOpenTaskHandled()
         }
     }
 
@@ -221,6 +234,9 @@ private fun SignedInApp(
                     onDownloadModel = settingsViewModel.onDownloadModel,
                     onCancelDownload = settingsViewModel.onCancelDownload,
                     onDeleteModel = settingsViewModel.onDeleteModel,
+                    onTestReminderNotification = settingsViewModel.onTestReminderNotification,
+                    onTestDailyBriefNotification = settingsViewModel.onTestDailyBriefNotification,
+                    onTestModelDownloadNotification = settingsViewModel.onTestModelDownloadNotification,
                 )
             }
 

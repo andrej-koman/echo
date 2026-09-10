@@ -353,6 +353,47 @@ constructor param, not a defaulted no-op, so a build can't silently ship without
   non-empty, guarded by a file-scoped `askedForNotifications` so it fires once per process. If
   denied, scheduling still runs — alarms fire — but `NotificationManager.notify()` silently
   no-ops; no crash, no retry, no re-prompt.
+- **Ported from the OutLoud "Echo Notifications & Widgets" design** (Claude Design project
+  `e17770fa-3b8d-43f1-b85d-c74c647c4e70`). Widgets (that doc's 1h) are not built — out of scope
+  for that pass. What is: a dedicated tray icon, the reminder redesign, a daily brief digest, and
+  a silent download-progress notification. The design's persistent "quick capture" ongoing
+  notification (record straight from the tray, 1c/1d) is deferred too — it needs a foreground
+  `Service` hosting recording independent of any Activity/ViewModel, a bigger, separate piece of
+  work than the rest of this pass.
+- **`R.drawable.ic_notification_echo`** is the one icon on every notification channel — the
+  launcher's stroked ghost closes into a grey blob at 12–24dp, so this is the same silhouette
+  flattened to a solid shape with the eyes cut out via `fillType="evenOdd"`, reusing the mascot's
+  own path data. It replaces `ic_bell` only as a notification `smallIcon`; `ic_bell` keeps its
+  unrelated in-app meaning (the "has a time set" glyph on `TaskRow`/Home) and is untouched.
+- **Task reminder** (`ReminderAlarmReceiver`) now carries the due label and source note title in
+  its body (`"Today, 9:00 AM · Monday admin dump"`), and two actions: **Done** (broadcasts to
+  `ReminderActionReceiver`, which calls `derived.setDone` and cancels the notification) and
+  **Snooze to tonight** (same receiver, calls `AppContainer.snoozeReminder` — the 20:00 rule
+  factored out of `HomeViewModel` as `internal fun snoozeTime` so both surfaces mean the same
+  thing). The source title comes from a one-shot `repository.transcripts.first()` lookup inside
+  `goAsync()`, falling back to `ui.notes.title(text)` same as everywhere else a transcript lacks
+  an AI title yet. Tap goes to `EditTaskScreen`, not the transcript — a second `pendingOpenTaskId`
+  extra (`MainActivity.EXTRA_TASK_ID`) threaded through `EchoApp`/`SignedInApp` the same way
+  `pendingOpenTranscriptId` already was, navigating to `Routes.editTask(id)`.
+- **Daily brief** (`notify/DailyBriefReceiver` + `DailyBriefScheduler`) fires once at
+  `reminderMorningHour:reminderMorningMinute` and is suppressed outright when `groupByDue`'s
+  "Today" group is empty — Home already says "Today is clear" better than a notification can.
+  There is no exact *repeating* alarm on Android, so the receiver reschedules itself for tomorrow
+  (`AppContainer.rescheduleDailyBrief`) every time it fires, in a `finally` block so a crash mid-post
+  can't silently kill tomorrow's brief; `AppContainer`'s `init` schedules the first one, so a fresh
+  process (including after `BootReceiver`, which already touches `container`) always has one
+  queued. Deliberately not rescheduled the moment the user changes `reminderMorningHour` in
+  Settings — same precedent as per-item reminders, which also only pick up a settings change on
+  their *next* write, not retroactively.
+- **Model download** (`notify/ModelDownloadNotifier`) is wired into the same `modelStore.state`
+  collector in `AppContainer` that already drives `llmRunners.invalidate()`, posting/updating a
+  silent (`IMPORTANCE_LOW`, no sound, `setSilent(true)`), ongoing progress notification while
+  `ModelState.Downloading` and cancelling it on any other state — including `Failed`, so a failed
+  download doesn't leave a stuck progress bar. No "finished" notification is ever posted, matching
+  the design. **Pause** and **Cancel** are the same underlying call
+  (`AppContainer.cancelDownload`, which just cancels the coroutine — the `.part` file survives so
+  the next `downloadModel()` resumes) except Cancel also calls `deleteModel()` to drop the partial
+  file.
 
 ## On-device AI
 

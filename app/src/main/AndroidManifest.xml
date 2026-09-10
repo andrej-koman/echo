@@ -45,6 +45,18 @@
             android:exported="false" />
 
         <receiver
+            android:name=".notify.ReminderActionReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".notify.DailyBriefReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".notify.ModelDownloadActionReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".notify.BootReceiver"
             android:exported="true">
             <intent-filter>

@@ -40,6 +40,8 @@ class AlarmManagerNotificationScheduler(
             putExtra(ReminderAlarmReceiver.EXTRA_ITEM_ID, item.id)
             putExtra(ReminderAlarmReceiver.EXTRA_TRANSCRIPT_ID, item.sourceTranscriptId)
             putExtra(ReminderAlarmReceiver.EXTRA_TEXT, item.text)
+            putExtra(ReminderAlarmReceiver.EXTRA_DUE_AT, item.dueAt)
+            putExtra(ReminderAlarmReceiver.EXTRA_HAS_TIME, item.hasTime)
         }
         val pendingIntent = PendingIntent.getBroadcast(
             context,

@@ -13,9 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -120,13 +117,15 @@ private fun WeekdayHeader(labels: List<String>) {
 
 @Composable
 private fun DayGrid(days: List<HistoryDay>, selected: LocalDate, onPick: (LocalDate) -> Unit) {
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(7),
-        modifier = Modifier.fillMaxWidth().padding(top = EchoTheme.spacing.s3),
-        userScrollEnabled = false,
-    ) {
-        items(days) { day ->
-            DayCell(day, isSelected = day.date == selected, onClick = { onPick(day.date) })
+    Column(modifier = Modifier.fillMaxWidth().padding(top = EchoTheme.spacing.s3)) {
+        days.chunked(7).forEach { week ->
+            Row(modifier = Modifier.fillMaxWidth()) {
+                week.forEach { day ->
+                    Box(modifier = Modifier.weight(1f)) {
+                        DayCell(day, isSelected = day.date == selected, onClick = { onPick(day.date) })
+                    }
+                }
+            }
         }
     }
 }

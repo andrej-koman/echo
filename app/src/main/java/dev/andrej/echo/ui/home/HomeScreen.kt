@@ -64,7 +64,7 @@ fun HomeScreen(
         ) {
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 Text(
-                    text = if (userName != null) "${state.greeting}, $userName" else state.greeting,
+                    text = userName?.substringBefore(' ')?.let { "${state.greeting}, $it" } ?: state.greeting,
                     style = EchoTheme.typography.titleSm,
                     color = EchoTheme.colors.textPrimary,
                     maxLines = 1,

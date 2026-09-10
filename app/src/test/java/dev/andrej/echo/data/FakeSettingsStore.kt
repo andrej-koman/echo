@@ -8,4 +8,5 @@ class FakeSettingsStore(initial: String? = null) : SettingsStore {
     override var reminderMorningHour: Int = 9
     override var reminderMorningMinute: Int = 0
     override var preferredLlmBackend: String? = null
+    override var snoozeMinutes: Int = 60
 }

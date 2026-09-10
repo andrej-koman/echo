@@ -23,6 +23,9 @@ interface SettingsStore {
 
     /** LlmBackend.id the user explicitly picked, null means auto (first usable backend wins). */
     var preferredLlmBackend: String?
+
+    /** Minutes a "Snooze" tap pushes an item's dueAt forward by. */
+    var snoozeMinutes: Int
 }
 
 class SharedPreferencesSettingsStore(context: Context) : SettingsStore {
@@ -57,6 +60,10 @@ class SharedPreferencesSettingsStore(context: Context) : SettingsStore {
         get() = preferences.getString(KEY_PREFERRED_LLM_BACKEND, null)
         set(value) = preferences.edit().putString(KEY_PREFERRED_LLM_BACKEND, value).apply()
 
+    override var snoozeMinutes: Int
+        get() = preferences.getInt(KEY_SNOOZE_MINUTES, 60)
+        set(value) = preferences.edit().putInt(KEY_SNOOZE_MINUTES, value).apply()
+
     private companion object {
         const val KEY_LANGUAGE = "language"
         const val KEY_AUTO_ANALYZE = "auto_analyze"
@@ -65,5 +72,6 @@ class SharedPreferencesSettingsStore(context: Context) : SettingsStore {
         const val KEY_REMINDER_MORNING_HOUR = "reminder_morning_hour"
         const val KEY_REMINDER_MORNING_MINUTE = "reminder_morning_minute"
         const val KEY_PREFERRED_LLM_BACKEND = "preferred_llm_backend"
+        const val KEY_SNOOZE_MINUTES = "snooze_minutes"
     }
 }

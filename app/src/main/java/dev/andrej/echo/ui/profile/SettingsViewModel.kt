@@ -28,6 +28,7 @@ data class SettingsUiState(
     val reminderLeadMinutes: Int = 15,
     val reminderMorningHour: Int = 9,
     val reminderMorningMinute: Int = 0,
+    val snoozeMinutes: Int = 60,
     val storageBytes: Long = 0,
     val notesCount: Int = 0,
     val tasksCount: Int = 0,
@@ -73,6 +74,7 @@ class SettingsViewModel(
         reminderLeadMinutes = settings.reminderLeadMinutes,
         reminderMorningHour = settings.reminderMorningHour,
         reminderMorningMinute = settings.reminderMorningMinute,
+        snoozeMinutes = settings.snoozeMinutes,
         storageBytes = storageUsedBytes(),
         notesCount = notesCount,
         tasksCount = tasksCount,
@@ -121,6 +123,11 @@ class SettingsViewModel(
         settings.reminderMorningHour = hour
         settings.reminderMorningMinute = minute
         _state.value = _state.value.copy(reminderMorningHour = hour, reminderMorningMinute = minute)
+    }
+
+    fun setSnoozeMinutes(value: Int) {
+        settings.snoozeMinutes = value
+        _state.value = _state.value.copy(snoozeMinutes = value)
     }
 
 }

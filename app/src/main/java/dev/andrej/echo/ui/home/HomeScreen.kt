@@ -273,7 +273,7 @@ private fun HeroCard(
                 modifier = Modifier.padding(top = EchoTheme.spacing.s5, bottom = EchoTheme.spacing.s4),
             )
             if (hero.overdue) {
-                HeroActionPill(text = "Snooze to tonight", iconRes = R.drawable.ic_clock, primary = false, onClick = onSnooze)
+                HeroActionPill(text = "Snooze", iconRes = R.drawable.ic_clock, primary = false, onClick = onSnooze)
             } else {
                 HeroActionPill(text = "Add a time", iconRes = R.drawable.ic_bell, primary = true, onClick = onAddTime)
             }

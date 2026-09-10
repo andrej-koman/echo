@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import dev.andrej.echo.data.AnalysisQueueRepository
 import dev.andrej.echo.data.DerivedRepository
 import dev.andrej.echo.data.PendingAnalysis
+import dev.andrej.echo.data.SettingsStore
 import dev.andrej.echo.data.TodoItem
 import dev.andrej.echo.data.Transcript
 import dev.andrej.echo.data.TranscriptRepository
@@ -80,6 +81,7 @@ class HomeViewModel(
     private val repository: TranscriptRepository,
     private val derived: DerivedRepository,
     private val queue: AnalysisQueueRepository,
+    private val settings: SettingsStore,
     private val zone: ZoneId = ZoneId.systemDefault(),
     private val now: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
@@ -93,18 +95,16 @@ class HomeViewModel(
         viewModelScope.launch { derived.setDone(itemId, done) }
     }
 
-    /** Pushes an overdue item to a fixed evening slot today rather than opening the full editor. */
+    /** Pushes an overdue item forward by the user's configured snooze duration rather than opening the full editor. */
     fun snooze(item: TodoItem) {
         viewModelScope.launch {
-            derived.update(item.id, item.text, snoozeTime(now(), zone), hasTime = true, notify = item.notify)
+            derived.update(item.id, item.text, snoozeTime(now(), settings.snoozeMinutes), hasTime = true, notify = item.notify)
         }
     }
 }
 
-internal fun snoozeTime(now: Long, zone: ZoneId): Long =
-    java.time.Instant.ofEpochMilli(now).atZone(zone)
-        .withHour(20).withMinute(0).withSecond(0).withNano(0)
-        .toInstant().toEpochMilli()
+internal fun snoozeTime(now: Long, minutes: Int): Long =
+    now + TimeUnit.MINUTES.toMillis(minutes.toLong())
 
 internal fun buildState(
     transcripts: List<Transcript>,

@@ -64,6 +64,7 @@ fun SettingsScreen(
     onWifiOnlyDownloadChange: (Boolean) -> Unit,
     onReminderLeadMinutesChange: (Int) -> Unit,
     onReminderMorningTimeChange: (Int, Int) -> Unit,
+    onSnoozeMinutesChange: (Int) -> Unit,
     onDownloadModel: () -> Unit,
     onCancelDownload: () -> Unit,
     onDeleteModel: () -> Unit,
@@ -76,6 +77,7 @@ fun SettingsScreen(
     var pickingLanguage by remember { mutableStateOf(false) }
     var pickingModel by remember { mutableStateOf(false) }
     var pickingLead by remember { mutableStateOf(false) }
+    var pickingSnooze by remember { mutableStateOf(false) }
     val notificationsAllowed = remember { NotificationManagerCompat.from(context).areNotificationsEnabled() }
     val versionName = remember {
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }
@@ -177,6 +179,14 @@ fun SettingsScreen(
                                     onPick = onReminderMorningTimeChange,
                                 )
                             },
+                        )
+                    },
+                    {
+                        DisclosureRow(
+                            iconRes = R.drawable.ic_clock,
+                            label = "Snooze",
+                            value = "${state.snoozeMinutes} min",
+                            onClick = { pickingSnooze = true },
                         )
                     },
                     {
@@ -330,6 +340,16 @@ fun SettingsScreen(
         valueLabel = { "$it min" },
         onValueChange = onReminderLeadMinutesChange,
         onDismiss = { pickingLead = false },
+    )
+
+    IntSliderSheet(
+        visible = pickingSnooze,
+        title = "Snooze",
+        value = state.snoozeMinutes,
+        range = 5..180,
+        valueLabel = { "$it min" },
+        onValueChange = onSnoozeMinutesChange,
+        onDismiss = { pickingSnooze = false },
     )
 
 }

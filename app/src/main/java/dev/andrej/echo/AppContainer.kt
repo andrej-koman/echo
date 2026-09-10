@@ -233,13 +233,13 @@ class AppContainer(context: Context) {
         modelDownloadNotifier.update(ModelState.Downloading(bytesDownloaded = 412_000_000L, totalBytes = 1_100_000_000L))
     }
 
-    /** "Snooze to tonight" from the reminder notification — the same 20:00 rule Home's overdue pill uses. */
+    /** "Snooze" from the reminder notification — the same configurable-duration rule Home's overdue pill uses. */
     suspend fun snoozeReminder(itemId: String) {
         val item = derived.items.first().firstOrNull { it.id == itemId } ?: return
         derived.update(
             item.id,
             item.text,
-            snoozeTime(System.currentTimeMillis(), ZoneId.systemDefault()),
+            snoozeTime(System.currentTimeMillis(), settings.snoozeMinutes),
             hasTime = true,
             notify = item.notify,
         )
@@ -290,7 +290,7 @@ class AppContainer(context: Context) {
                 AuthViewModel(auth) as T
 
             modelClass.isAssignableFrom(HomeViewModel::class.java) ->
-                HomeViewModel(repository, derived, analysisQueue) as T
+                HomeViewModel(repository, derived, analysisQueue, settings) as T
 
             modelClass.isAssignableFrom(TasksViewModel::class.java) ->
                 TasksViewModel(derived, repository, aiCardState) as T

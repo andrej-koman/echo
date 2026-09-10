@@ -102,7 +102,7 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
             .addAction(R.drawable.ic_check, "Done", actionPendingIntent(context, itemId, ReminderActionReceiver.ACTION_DONE, 1))
             .addAction(
                 R.drawable.ic_clock,
-                "Snooze to tonight",
+                "Snooze",
                 actionPendingIntent(context, itemId, ReminderActionReceiver.ACTION_SNOOZE, 2),
             )
             .build()

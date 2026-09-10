@@ -231,6 +231,7 @@ private fun SignedInApp(
                     onWifiOnlyDownloadChange = settingsViewModel::setWifiOnlyDownload,
                     onReminderLeadMinutesChange = settingsViewModel::setReminderLeadMinutes,
                     onReminderMorningTimeChange = settingsViewModel::setReminderMorningTime,
+                    onSnoozeMinutesChange = settingsViewModel::setSnoozeMinutes,
                     onDownloadModel = settingsViewModel.onDownloadModel,
                     onCancelDownload = settingsViewModel.onCancelDownload,
                     onDeleteModel = settingsViewModel.onDeleteModel,

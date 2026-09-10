@@ -1,14 +1,17 @@
 package dev.andrej.echo.ai
 
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 private val UTC = ZoneId.of("UTC")
 private val TODAY = LocalDate.of(2026, 9, 4)
+private val RECORDED_AT = TODAY.atTime(11, 5)
 
 class AnalysisPromptTest {
 
@@ -17,7 +20,7 @@ class AnalysisPromptTest {
          "items":[{"text":"Call the plumber","due":"2026-09-04T10:00"},{"text":"Buy a washer","due":null}]}
     """.trimIndent()
 
-    private fun parse(raw: String) = parseAnalysis(raw, UTC, TODAY)
+    private fun parse(raw: String) = parseAnalysis(raw, UTC, TODAY, RECORDED_AT)
 
     @Test
     fun `clean json is parsed`() {
@@ -85,6 +88,25 @@ class AnalysisPromptTest {
     }
 
     @Test
+    fun `due_relative_minutes flows through to a real due time and date`() {
+        val raw = """{"items":[{"text":"water plants","due":null,"due_relative_minutes":20}]}"""
+        val item = parse(raw)!!.items.single()
+
+        assertEquals(RECORDED_AT.plusMinutes(20).atZone(UTC).toInstant().toEpochMilli(), item.dueAt)
+        assertTrue(item.hasTime)
+        assertTrue(item.hasDate)
+    }
+
+    @Test
+    fun `an item with nothing stated has no date`() {
+        val raw = """{"items":[{"text":"buy milk"}]}"""
+        val item = parse(raw)!!.items.single()
+
+        assertFalse(item.hasTime)
+        assertFalse(item.hasDate)
+    }
+
+    @Test
     fun `a missing brace before the closing array bracket is repaired`() {
         // Observed on-device: the model drops the item object's closing brace before ']'.
         val raw = """{"title":"take out the trash","summary":"...",""" +
@@ -125,6 +147,21 @@ class AnalysisPromptTest {
     }
 
     @Test
+    fun `prompt asks the model to compute relative minutes, not resolve them itself`() {
+        val prompt = buildAnalysisPrompt("call the plumber", LocalDate.of(2026, 9, 3).atTime(11, 5))
+
+        assertTrue(prompt.contains("due_relative_minutes"))
+    }
+
+    @Test
+    fun `prompt asks for capitalization, punctuation and list formatting fixes`() {
+        val prompt = buildAnalysisPrompt("call the plumber", LocalDate.of(2026, 9, 3).atTime(11, 5))
+
+        assertTrue(prompt.contains("capitalization"))
+        assertTrue(prompt.contains("- \" bulleted list"))
+    }
+
+    @Test
     fun `long transcripts are truncated`() {
         val long = (1..MAX_PROMPT_WORDS + 500).joinToString(" ") { "word$it" }
 
@@ -137,20 +174,22 @@ class AnalysisPromptTest {
 
 class ResolveDueTest {
 
-    private fun due(value: String?) = resolveDue(value, UTC, TODAY)
+    private fun due(value: String?, minutes: Int? = null) = resolveDue(value, minutes, UTC, TODAY, RECORDED_AT)
 
     @Test
-    fun `date and time resolves with a time`() {
+    fun `date and time resolves with a time and a date`() {
         val result = due("2026-09-04T10:00")
         assertEquals(LocalDate.of(2026, 9, 4).atTime(10, 0).atZone(UTC).toInstant().toEpochMilli(), result.at)
         assertTrue(result.hasTime)
+        assertTrue(result.hasDate)
     }
 
     @Test
-    fun `bare date resolves to midnight with no time`() {
+    fun `bare date resolves to midnight with no time but a date`() {
         val result = due("2026-09-04")
         assertEquals(LocalDate.of(2026, 9, 4).atStartOfDay(UTC).toInstant().toEpochMilli(), result.at)
-        assertTrue(!result.hasTime)
+        assertFalse(result.hasTime)
+        assertTrue(result.hasDate)
     }
 
     @Test
@@ -159,32 +198,43 @@ class ResolveDueTest {
     }
 
     @Test
-    fun `unresolved relative phrases fall back to today, untimed`() {
-        val expected = TODAY.atStartOfDay(UTC).toInstant().toEpochMilli()
+    fun `relative minutes are computed in Kotlin against the recorded time, not parsed from the model`() {
+        val result = due(value = null, minutes = 15)
+        assertEquals(RECORDED_AT.plusMinutes(15).atZone(UTC).toInstant().toEpochMilli(), result.at)
+        assertTrue(result.hasTime)
+        assertTrue(result.hasDate)
+    }
+
+    @Test
+    fun `relative minutes win over a conflicting due string`() {
+        val result = due("2026-09-04T10:00", minutes = 15)
+        assertEquals(RECORDED_AT.plusMinutes(15).atZone(UTC).toInstant().toEpochMilli(), result.at)
+    }
+
+    @Test
+    fun `unresolved relative phrases fall back to no date`() {
         for (value in listOf("next Tuesday", "tomorrow at ten", "soon")) {
             val result = due(value)
-            assertEquals(expected, result.at)
-            assertTrue(!result.hasTime)
+            assertFalse(result.hasTime)
+            assertFalse(result.hasDate)
         }
     }
 
     @Test
-    fun `absent and literal null fall back to today, untimed`() {
-        val expected = TODAY.atStartOfDay(UTC).toInstant().toEpochMilli()
+    fun `absent and literal null fall back to no date`() {
         for (value in listOf(null, "", "   ", "null", "NULL")) {
             val result = due(value)
-            assertEquals(expected, result.at)
-            assertTrue(!result.hasTime)
+            assertFalse(result.hasTime)
+            assertFalse(result.hasDate)
         }
     }
 
     @Test
-    fun `nonsense date falls back to today, untimed`() {
-        val expected = TODAY.atStartOfDay(UTC).toInstant().toEpochMilli()
+    fun `nonsense date falls back to no date`() {
         for (value in listOf("2026-13-45", "not a date")) {
             val result = due(value)
-            assertEquals(expected, result.at)
-            assertTrue(!result.hasTime)
+            assertFalse(result.hasTime)
+            assertFalse(result.hasDate)
         }
     }
 }

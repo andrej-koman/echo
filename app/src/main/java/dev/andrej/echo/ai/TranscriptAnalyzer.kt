@@ -55,9 +55,9 @@ class TranscriptAnalyzer(
         // but an item where nobody named a date is due now, not a month ago.
         val today = LocalDate.now(zone)
 
-        val first = attempt(runner, prompt, LlmRunner.DEFAULT_TEMPERATURE, today)
+        val first = attempt(runner, prompt, LlmRunner.DEFAULT_TEMPERATURE, today, transcriptNow)
         if (first is AnalysisOutcome.Success) return first
-        return attempt(runner, prompt, temperature = 0f, today)
+        return attempt(runner, prompt, temperature = 0f, today, transcriptNow)
     }
 
     private suspend fun attempt(
@@ -65,6 +65,7 @@ class TranscriptAnalyzer(
         prompt: String,
         temperature: Float,
         today: LocalDate,
+        recordedAt: LocalDateTime,
     ): AnalysisOutcome {
         val raw = try {
             runner.generate(prompt, temperature)
@@ -74,7 +75,7 @@ class TranscriptAnalyzer(
         }
         logDebug("raw output (temperature=$temperature): $raw")
 
-        val analysis = parseAnalysis(raw, zone, today)
+        val analysis = parseAnalysis(raw, zone, today, recordedAt)
         if (analysis == null) {
             logWarn("could not parse a JSON object out of the raw output above")
             return AnalysisOutcome.Blocked(AnalysisBlock.EmptyResult)

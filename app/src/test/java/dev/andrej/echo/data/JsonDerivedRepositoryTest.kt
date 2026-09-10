@@ -17,8 +17,8 @@ class JsonDerivedRepositoryTest {
 
     private fun repository() = JsonDerivedRepository(tempFolder.newFolder(), notifications)
 
-    private fun item(text: String, dueAt: Long = 1_000L, hasTime: Boolean = false) =
-        NewTodo(text, dueAt, hasTime)
+    private fun item(text: String, dueAt: Long = 1_000L, hasTime: Boolean = false, hasDate: Boolean = true) =
+        NewTodo(text, dueAt, hasTime, hasDate)
 
     @Test
     fun `items are stored against their transcript`() = runTest {
@@ -234,7 +234,7 @@ class JsonDerivedRepositoryTest {
         repository.replaceFor("t1", listOf(item("old text", dueAt = 1_000L, hasTime = false)))
         val id = repository.items.first().single().id
 
-        repository.update(id, text = "new text", dueAt = 5_000L, hasTime = true, notify = true)
+        repository.update(id, text = "new text", dueAt = 5_000L, hasTime = true, hasDate = true, notify = true)
 
         val updated = repository.items.first().single()
         assertEquals("new text", updated.text)
@@ -250,9 +250,30 @@ class JsonDerivedRepositoryTest {
         val id = repository.items.first().single().id
         notifications.scheduled.clear()
 
-        repository.update(id, text = "a", dueAt = 5_000L, hasTime = true, notify = true)
+        repository.update(id, text = "a", dueAt = 5_000L, hasTime = true, hasDate = true, notify = true)
 
         assertTrue(id in notifications.scheduled)
+    }
+
+    @Test
+    fun `a dateless item never schedules a notification`() = runTest {
+        val repository = repository()
+
+        repository.replaceFor("t1", listOf(item("buy milk", hasDate = false)))
+
+        val id = repository.items.first().single().id
+        assertTrue(id !in notifications.scheduled)
+    }
+
+    @Test
+    fun `update to hasDate false cancels any scheduled notification`() = runTest {
+        val repository = repository()
+        repository.replaceFor("t1", listOf(item("a", dueAt = 1_000L, hasTime = true)))
+        val id = repository.items.first().single().id
+
+        repository.update(id, text = "a", dueAt = 1_000L, hasTime = false, hasDate = false, notify = true)
+
+        assertTrue(id in notifications.cancelled)
     }
 
     @Test
@@ -263,7 +284,7 @@ class JsonDerivedRepositoryTest {
         repository.setDone(id, done = true)
         notifications.scheduled.clear()
 
-        repository.update(id, text = "b", dueAt = 5_000L, hasTime = true, notify = true)
+        repository.update(id, text = "b", dueAt = 5_000L, hasTime = true, hasDate = true, notify = true)
 
         assertTrue(repository.items.first().single().done)
         assertTrue(id !in notifications.scheduled)

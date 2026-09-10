@@ -27,12 +27,14 @@ class TasksViewModelTest {
         hasTime: Boolean,
         createdAt: Long = 0,
         done: Boolean = false,
+        hasDate: Boolean = true,
     ) = TodoItem(
         id = id,
         sourceTranscriptId = "t1",
         text = id,
         dueAt = dueAt,
         hasTime = hasTime,
+        hasDate = hasDate,
         done = done,
         createdAt = createdAt,
     )
@@ -48,6 +50,12 @@ class TasksViewModelTest {
     fun `a date-only item is not overdue until the next day`() {
         assertFalse(isOverdue(item("a", TODAY_START, hasTime = false), NOW, UTC))
         assertTrue(isOverdue(item("a", YESTERDAY_START, hasTime = false), NOW, UTC))
+    }
+
+    @Test
+    fun `a dateless item is never overdue regardless of its placeholder dueAt`() {
+        assertFalse(isOverdue(item("a", YESTERDAY_9AM, hasTime = true, hasDate = false), NOW, UTC))
+        assertFalse(isOverdue(item("a", YESTERDAY_START, hasTime = false, hasDate = false), NOW, UTC))
     }
 
     @Test
@@ -72,6 +80,32 @@ class TasksViewModelTest {
         assertFalse(groups.single { it.label == "Today" }.showDate)
         assertFalse(groups.single { it.label == "Tomorrow" }.showDate)
         assertTrue(groups.single { it.label == "Upcoming" }.showDate)
+    }
+
+    @Test
+    fun `dateless items fold into Today, after dated items, sorted by creation, regardless of their placeholder dueAt`() {
+        val items = listOf(
+            item("dateless-old", NEXT_WEEK_START, hasTime = false, createdAt = 1, hasDate = false),
+            item("dateless-new", YESTERDAY_START, hasTime = false, createdAt = 2, hasDate = false),
+            item("today-timed", TODAY_9AM, hasTime = true),
+        )
+
+        val groups = groupByDue(items, NOW, UTC)
+
+        assertEquals(listOf("Today"), groups.map { it.label })
+        assertEquals(
+            listOf("today-timed", "dateless-old", "dateless-new"),
+            groups.single { it.label == "Today" }.items.map { it.id },
+        )
+    }
+
+    @Test
+    fun `a dateless item alone still produces a Today group`() {
+        val items = listOf(item("dateless", TODAY_START, hasTime = false, hasDate = false))
+
+        val groups = groupByDue(items, NOW, UTC)
+
+        assertEquals(listOf("Today"), groups.map { it.label })
     }
 
     @Test

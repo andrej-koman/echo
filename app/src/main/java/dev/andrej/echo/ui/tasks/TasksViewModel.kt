@@ -67,8 +67,8 @@ class TasksViewModel(
         query.value = text
     }
 
-    fun update(itemId: String, text: String, dueAt: Long, hasTime: Boolean, notify: Boolean) {
-        viewModelScope.launch { derived.update(itemId, text, dueAt, hasTime, notify) }
+    fun update(itemId: String, text: String, dueAt: Long, hasTime: Boolean, hasDate: Boolean, notify: Boolean) {
+        viewModelScope.launch { derived.update(itemId, text, dueAt, hasTime, hasDate, notify) }
     }
 
     fun delete(itemId: String) {
@@ -82,29 +82,34 @@ internal fun filterByQuery(items: List<TodoItem>, query: String): List<TodoItem>
 private fun dayOf(epochMilli: Long, zone: ZoneId): LocalDate =
     Instant.ofEpochMilli(epochMilli).atZone(zone).toLocalDate()
 
-/** An exact-time item is overdue once its clock time passes; a date-only item, only the next day. */
+/** An exact-time item is overdue once its clock time passes; a date-only item, only the next day. A dateless item is never overdue — there's no date to have passed. */
 internal fun isOverdue(item: TodoItem, now: Long, zone: ZoneId): Boolean =
-    if (item.hasTime) item.dueAt < now else dayOf(item.dueAt, zone) < dayOf(now, zone)
+    if (!item.hasDate) false else if (item.hasTime) item.dueAt < now else dayOf(item.dueAt, zone) < dayOf(now, zone)
 
 /**
- * Three buckets only: Today (includes every overdue item, sorted ahead of the rest of today's),
- * Tomorrow, and one flat Upcoming group for everything later. Done items never appear here —
- * they collapse into [completedByRecency] instead.
+ * Three buckets: Today (includes every overdue item, sorted ahead of the rest of today's, plus
+ * every dateless item — a task with no stated date/time reads as a plain pending to-do for today,
+ * every day, until done), Tomorrow, and one flat Upcoming group for everything later. Done items
+ * never appear here — they collapse into [completedByRecency] instead.
  */
 internal fun groupByDue(items: List<TodoItem>, now: Long, zone: ZoneId): List<DueGroup> {
     val today = dayOf(now, zone)
     val tomorrow = today.plusDays(1)
 
     val undone = items.filterNot { it.done }
-    val todayItems = undone.filter { dayOf(it.dueAt, zone) <= today }
-    val tomorrowItems = undone.filter { dayOf(it.dueAt, zone) == tomorrow }
-    val upcomingItems = undone.filter { dayOf(it.dueAt, zone) > tomorrow }
+    val (dated, undated) = undone.partition { it.hasDate }
+    val todayItems = dated.filter { dayOf(it.dueAt, zone) <= today }
+    val tomorrowItems = dated.filter { dayOf(it.dueAt, zone) == tomorrow }
+    val upcomingItems = dated.filter { dayOf(it.dueAt, zone) > tomorrow }
 
     val (overdue, dueToday) = todayItems.partition { isOverdue(it, now, zone) }
 
     val groups = mutableListOf<DueGroup>()
-    if (todayItems.isNotEmpty()) {
-        groups += DueGroup("Today", sortWithinGroup(overdue) + sortWithinGroup(dueToday))
+    if (todayItems.isNotEmpty() || undated.isNotEmpty()) {
+        groups += DueGroup(
+            "Today",
+            sortWithinGroup(overdue) + sortWithinGroup(dueToday) + undated.sortedBy { it.createdAt },
+        )
     }
     if (tomorrowItems.isNotEmpty()) {
         groups += DueGroup("Tomorrow", sortWithinGroup(tomorrowItems))

@@ -65,7 +65,7 @@ class NotesViewModelTest {
             scope = CoroutineScope(dispatcher),
         )
         val saved = repository.save(text = "call the plumber", language = "en-GB", durationMs = 0)
-        derived.replaceFor(saved.id, listOf(NewTodo("call the plumber", 1_000L, false)))
+        derived.replaceFor(saved.id, listOf(NewTodo("call the plumber", 1_000L, false, true)))
         val viewModel = NotesViewModel(repository, queue, worker, derived)
 
         viewModel.delete(saved.id)

@@ -98,7 +98,14 @@ class HomeViewModel(
     /** Pushes an overdue item forward by the user's configured snooze duration rather than opening the full editor. */
     fun snooze(item: TodoItem) {
         viewModelScope.launch {
-            derived.update(item.id, item.text, snoozeTime(now(), settings.snoozeMinutes), hasTime = true, notify = item.notify)
+            derived.update(
+                item.id,
+                item.text,
+                snoozeTime(now(), settings.snoozeMinutes),
+                hasTime = true,
+                hasDate = true,
+                notify = item.notify,
+            )
         }
     }
 }

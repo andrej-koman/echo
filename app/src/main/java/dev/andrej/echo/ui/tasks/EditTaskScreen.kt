@@ -72,6 +72,7 @@ fun EditTaskScreen(
     var editedText by remember { mutableStateOf("") }
     var editedDueAt by remember { mutableStateOf(0L) }
     var editedHasTime by remember { mutableStateOf(false) }
+    var editedHasDate by remember { mutableStateOf(true) }
     var editedNotify by remember { mutableStateOf(true) }
     var loadedFor by remember { mutableStateOf<String?>(null) }
 
@@ -79,6 +80,7 @@ fun EditTaskScreen(
         editedText = task.text
         editedDueAt = task.dueAt
         editedHasTime = task.hasTime
+        editedHasDate = task.hasDate
         editedNotify = task.notify
         loadedFor = taskId
     }
@@ -112,7 +114,7 @@ fun EditTaskScreen(
                     variant = IconButtonVariant.Soft,
                     onClick = {
                         if (task != null) {
-                            viewModel.update(task.id, editedText, editedDueAt, editedHasTime, editedNotify)
+                            viewModel.update(task.id, editedText, editedDueAt, editedHasTime, editedHasDate, editedNotify)
                             onBack()
                         }
                     },
@@ -182,15 +184,6 @@ fun EditTaskScreen(
             SectionDivider("WHEN")
 
             EchoCard(modifier = Modifier.fillMaxWidth(), padding = CardPadding.None) {
-                DayRow(dueAt = editedDueAt, onPick = { editedDueAt = it })
-                HorizontalDivider(color = EchoTheme.colors.borderSubtle)
-                TimeRow(
-                    dueAt = editedDueAt,
-                    hasTime = editedHasTime,
-                    onPick = { editedDueAt = it },
-                    onEnable = { editedHasTime = true },
-                )
-                HorizontalDivider(color = EchoTheme.colors.borderSubtle)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -200,35 +193,76 @@ fun EditTaskScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Notify me",
+                            text = "Has a date",
                             style = EchoTheme.typography.bodySm,
                             color = EchoTheme.colors.textPrimary,
                         )
                         Text(
-                            text = "A time always rings",
+                            text = "Off shows as a plain to-do, due today until done",
                             style = EchoTheme.typography.micro,
                             color = EchoTheme.colors.textTertiary,
                         )
                     }
                     EchoSwitch(
-                        checked = editedNotify,
-                        onCheckedChange = { checked -> editedNotify = checked },
+                        checked = editedHasDate,
+                        onCheckedChange = { checked ->
+                            editedHasDate = checked
+                            if (!checked) editedHasTime = false
+                        },
                     )
+                }
+                if (editedHasDate) {
+                    HorizontalDivider(color = EchoTheme.colors.borderSubtle)
+                    DayRow(dueAt = editedDueAt, onPick = { editedDueAt = it })
+                    HorizontalDivider(color = EchoTheme.colors.borderSubtle)
+                    TimeRow(
+                        dueAt = editedDueAt,
+                        hasTime = editedHasTime,
+                        onPick = { editedDueAt = it },
+                        onEnable = { editedHasTime = true },
+                    )
+                    HorizontalDivider(color = EchoTheme.colors.borderSubtle)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(EchoTheme.spacing.s5),
+                        horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Notify me",
+                                style = EchoTheme.typography.bodySm,
+                                color = EchoTheme.colors.textPrimary,
+                            )
+                            Text(
+                                text = "A time always rings",
+                                style = EchoTheme.typography.micro,
+                                color = EchoTheme.colors.textTertiary,
+                            )
+                        }
+                        EchoSwitch(
+                            checked = editedNotify,
+                            onCheckedChange = { checked -> editedNotify = checked },
+                        )
+                    }
                 }
             }
 
-            QuickChipRow(
-                dueAt = editedDueAt,
-                hasTime = editedHasTime,
-                onToday = { editedDueAt = withDate(editedDueAt, System.currentTimeMillis()) },
-                onTomorrow = {
-                    editedDueAt = withDate(editedDueAt, System.currentTimeMillis() + DAY_MILLIS)
-                },
-                onTime = { hourOfDay ->
-                    editedHasTime = true
-                    editedDueAt = editedDueAt.withHour(hourOfDay)
-                },
-            )
+            if (editedHasDate) {
+                QuickChipRow(
+                    dueAt = editedDueAt,
+                    hasTime = editedHasTime,
+                    onToday = { editedDueAt = withDate(editedDueAt, System.currentTimeMillis()) },
+                    onTomorrow = {
+                        editedDueAt = withDate(editedDueAt, System.currentTimeMillis() + DAY_MILLIS)
+                    },
+                    onTime = { hourOfDay ->
+                        editedHasTime = true
+                        editedDueAt = editedDueAt.withHour(hourOfDay)
+                    },
+                )
+            }
 
             transcripts.firstOrNull { it.id == task.sourceTranscriptId }?.let { transcript ->
                 SectionDivider("HEARD IN")

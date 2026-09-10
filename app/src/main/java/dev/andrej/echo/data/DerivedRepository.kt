@@ -17,7 +17,7 @@ interface DerivedRepository {
 
     suspend fun setDone(itemId: String, done: Boolean)
 
-    suspend fun update(itemId: String, text: String, dueAt: Long, hasTime: Boolean, notify: Boolean)
+    suspend fun update(itemId: String, text: String, dueAt: Long, hasTime: Boolean, hasDate: Boolean, notify: Boolean)
 
     /** Tombstones rather than removing, so the delete can sync to other devices. */
     suspend fun delete(itemId: String)

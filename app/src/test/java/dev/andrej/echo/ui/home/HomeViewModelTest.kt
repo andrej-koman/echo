@@ -13,12 +13,13 @@ class HomeViewModelTest {
     private val now = 1_700_000_000_000L
     private val dayMs = TimeUnit.DAYS.toMillis(1)
 
-    private fun item(id: String, dueAt: Long, hasTime: Boolean, done: Boolean = false) = TodoItem(
+    private fun item(id: String, dueAt: Long, hasTime: Boolean, done: Boolean = false, hasDate: Boolean = true) = TodoItem(
         id = id,
         sourceTranscriptId = "t1",
         text = id,
         dueAt = dueAt,
         hasTime = hasTime,
+        hasDate = hasDate,
         done = done,
         createdAt = 0,
     )
@@ -45,6 +46,27 @@ class HomeViewModelTest {
         val state = buildState(emptyList(), items, emptyList(), now, zone)
 
         assertEquals("not done", (state.hero as HeroState.NextUp).item.id)
+    }
+
+    @Test
+    fun `a dated item wins the hero slot over a dateless one`() {
+        val items = listOf(
+            item("dateless", dueAt = now, hasTime = false, hasDate = false),
+            item("dated", dueAt = now, hasTime = true),
+        )
+
+        val state = buildState(emptyList(), items, emptyList(), now, zone)
+
+        assertEquals("dated", (state.hero as HeroState.NextUp).item.id)
+    }
+
+    @Test
+    fun `a dateless item becomes hero when it is the only one left`() {
+        val items = listOf(item("dateless", dueAt = now, hasTime = false, hasDate = false))
+
+        val state = buildState(emptyList(), items, emptyList(), now, zone)
+
+        assertEquals("dateless", (state.hero as HeroState.NextUp).item.id)
     }
 
     @Test

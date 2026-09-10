@@ -288,6 +288,7 @@ class AppContainer(context: Context) {
             item.text,
             snoozeTime(System.currentTimeMillis(), settings.snoozeMinutes),
             hasTime = true,
+            hasDate = true,
             notify = item.notify,
         )
     }

@@ -52,7 +52,6 @@ class SettingsViewModelTest {
         onCancelDownload = {},
         onDeleteModel = {},
         storageUsedBytes = { 0L },
-        deleteAllRecordings = {},
     )
 
     @Test

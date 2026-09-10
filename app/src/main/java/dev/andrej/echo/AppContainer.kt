@@ -10,9 +10,12 @@ import java.time.ZoneId
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import dev.andrej.echo.auth.AuthRepository
+import dev.andrej.echo.auth.AuthState
 import dev.andrej.echo.auth.SupabaseAuthRepository
 import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.createSupabaseClient
+import io.github.jan.supabase.postgrest.Postgrest
+import io.github.jan.supabase.postgrest.postgrest
 import dev.andrej.echo.ai.AiCardState
 import dev.andrej.echo.ai.HttpModelDownloader
 import dev.andrej.echo.ai.LiteRtLlmRunner
@@ -43,6 +46,8 @@ import dev.andrej.echo.notify.ModelDownloadNotifier
 import dev.andrej.echo.notify.ReminderAlarmReceiver
 import dev.andrej.echo.speech.AndroidSpeechEngine
 import dev.andrej.echo.speech.TranscriptionEngine
+import dev.andrej.echo.sync.SharedPreferencesSyncStateStore
+import dev.andrej.echo.sync.SyncEngine
 import dev.andrej.echo.ui.auth.AuthViewModel
 import dev.andrej.echo.ui.home.HomeViewModel
 import dev.andrej.echo.ui.home.snoozeTime
@@ -73,8 +78,10 @@ class AppContainer(context: Context) {
 
     private val applicationContext = context.applicationContext
 
+    private var syncEngineRef: SyncEngine? = null
+
     val repository: TranscriptRepository =
-        JsonTranscriptRepository(applicationContext.filesDir)
+        JsonTranscriptRepository(applicationContext.filesDir, onChanged = { syncEngineRef?.requestSync() })
 
     val settings: SettingsStore =
         SharedPreferencesSettingsStore(applicationContext)
@@ -95,6 +102,7 @@ class AppContainer(context: Context) {
         supabaseKey = applicationContext.getString(R.string.supabase_anon_key),
     ) {
         install(Auth)
+        install(Postgrest)
     }
 
     val auth: AuthRepository =
@@ -110,10 +118,29 @@ class AppContainer(context: Context) {
     private val modelDownloadNotifier = ModelDownloadNotifier(applicationContext)
 
     val derived: DerivedRepository =
-        JsonDerivedRepository(applicationContext.filesDir, notificationScheduler)
+        JsonDerivedRepository(
+            applicationContext.filesDir,
+            notificationScheduler,
+            onChanged = { syncEngineRef?.requestSync() },
+        )
 
     val analysisQueue: AnalysisQueueRepository =
         JsonAnalysisQueueRepository(applicationContext.filesDir)
+
+    private val syncEngine = SyncEngine(
+        transcripts = repository,
+        derived = derived,
+        postgrest = supabaseClient.postgrest,
+        auth = auth,
+        settings = settings,
+        cursors = SharedPreferencesSyncStateStore(applicationContext),
+        scope = appScope,
+    ).also { syncEngineRef = it }
+
+    fun setSyncEnabled(enabled: Boolean) {
+        settings.syncEnabled = enabled
+        if (enabled) syncEngine.requestSync()
+    }
 
     val modelStore = ModelStore(
         directory = File(applicationContext.filesDir, "models"),
@@ -200,6 +227,15 @@ class AppContainer(context: Context) {
             modelStore.state.collect(modelDownloadNotifier::update)
         }
 
+        appScope.launch {
+            var wasSignedIn = false
+            auth.state.collect { state ->
+                val signedIn = state is AuthState.SignedIn
+                if (signedIn && !wasSignedIn) syncEngine.requestSync()
+                wasSignedIn = signedIn
+            }
+        }
+
         dailyBriefScheduler.scheduleNext()
     }
 
@@ -207,6 +243,7 @@ class AppContainer(context: Context) {
     fun onAppForegrounded() {
         llmRunners.invalidate()
         pendingAnalysisWorker.requestDrain()
+        syncEngine.requestSync()
     }
 
     /** Exact alarms do not survive a reboot or an app update — [dev.andrej.echo.notify.BootReceiver] calls this. */
@@ -324,6 +361,10 @@ class AppContainer(context: Context) {
                     onTestReminderNotification = ::sendTestReminderNotification,
                     onTestDailyBriefNotification = ::sendTestDailyBrief,
                     onTestModelDownloadNotification = ::sendTestModelDownloadNotification,
+                    isSignedIn = auth.state.map { it is AuthState.SignedIn },
+                    onSetSyncEnabled = ::setSyncEnabled,
+                    syncStatus = syncEngine.status,
+                    onSyncNow = syncEngine::requestSync,
                 ) as T
 
             modelClass.isAssignableFrom(HistoryViewModel::class.java) ->

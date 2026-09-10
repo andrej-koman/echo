@@ -26,6 +26,9 @@ interface SettingsStore {
 
     /** Minutes a "Snooze" tap pushes an item's dueAt forward by. */
     var snoozeMinutes: Int
+
+    /** Signed-in-only. Off by default, and never itself synced — device-specific opt-in. */
+    var syncEnabled: Boolean
 }
 
 class SharedPreferencesSettingsStore(context: Context) : SettingsStore {
@@ -64,6 +67,10 @@ class SharedPreferencesSettingsStore(context: Context) : SettingsStore {
         get() = preferences.getInt(KEY_SNOOZE_MINUTES, 60)
         set(value) = preferences.edit().putInt(KEY_SNOOZE_MINUTES, value).apply()
 
+    override var syncEnabled: Boolean
+        get() = preferences.getBoolean(KEY_SYNC_ENABLED, false)
+        set(value) = preferences.edit().putBoolean(KEY_SYNC_ENABLED, value).apply()
+
     private companion object {
         const val KEY_LANGUAGE = "language"
         const val KEY_AUTO_ANALYZE = "auto_analyze"
@@ -73,5 +80,6 @@ class SharedPreferencesSettingsStore(context: Context) : SettingsStore {
         const val KEY_REMINDER_MORNING_MINUTE = "reminder_morning_minute"
         const val KEY_PREFERRED_LLM_BACKEND = "preferred_llm_backend"
         const val KEY_SNOOZE_MINUTES = "snooze_minutes"
+        const val KEY_SYNC_ENABLED = "sync_enabled"
     }
 }

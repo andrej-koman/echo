@@ -19,7 +19,14 @@ interface DerivedRepository {
 
     suspend fun update(itemId: String, text: String, dueAt: Long, hasTime: Boolean, notify: Boolean)
 
+    /** Tombstones rather than removing, so the delete can sync to other devices. */
     suspend fun delete(itemId: String)
 
     suspend fun deleteFor(transcriptId: String)
+
+    /** All rows including tombstones — for sync only, never for UI. */
+    suspend fun allForSync(): List<TodoItem>
+
+    /** Raw write from a remote pull: writes the row's fields as given, no id minting. */
+    suspend fun upsertFromSync(item: TodoItem)
 }

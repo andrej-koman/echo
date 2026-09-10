@@ -31,7 +31,10 @@ ai/           LlmRunner interface + MlKitLlmRunner (Gemini Nano) and LiteRtLlmRu
 data/         Transcript, TranscriptRepository (JSON file), TodoItem + DerivedRepository
               (derived.json), PendingAnalysis + AnalysisQueueRepository (pending_analysis.json),
               SettingsStore, AuthStore
-auth/         AuthRepository interface + GoogleAuthRepository (Credential Manager)
+auth/         AuthRepository interface + SupabaseAuthRepository (Google via Credential Manager,
+              session/identity owned by Supabase Auth)
+sync/         SyncEngine (Transcripts + TodoItems <-> Supabase Postgrest, triggered pull, LWW),
+              SyncStateStore (per-table pull/push cursors), TranscriptDto/TodoItemDto
 ui/theme/     OutLoud design tokens (Color, Type, Shape, Spacing, Elevation, Motion, Theme)
 ui/components/ the ported design system kit
 ui/home/      HomeScreen + HomeViewModel — hero task, then/coming-up strip, latest note
@@ -73,9 +76,10 @@ NavHost, so signing out drops the whole graph rather than unwinding a back stack
 - `SpeechRecognizer` ends on silence; `AndroidSpeechEngine` restarts sessions to stay continuous. `ERROR_NO_MATCH` is silence, not failure.
 - No raw audio is ever written to disk — `SpeechRecognizer` streams straight to text, there is no `MediaRecorder`/file step to remove. Only the transcript text is persisted.
 - No Room: KSP has no release matching Kotlin 2.4.10.
-- Sign-in needs `google_web_client_id` in `res/values/auth.xml` — the OAuth **web** client ID,
-  plus an Android client ID registered with this package and signing SHA-1. Left blank in the
-  repo: `GoogleAuthRepository` then reports itself unconfigured instead of failing opaquely.
+- Sign-in needs `google_web_client_id`, `supabase_url` and `supabase_anon_key` in
+  `res/values/auth.xml` — the OAuth **web** client ID (plus an Android client ID registered with
+  this package and signing SHA-1) and the Supabase project's URL/anon key. Left blank in the
+  repo: `SupabaseAuthRepository` then reports itself unconfigured instead of failing opaquely.
 - `AuthState.Guest` (from "Continue without account" on the initial `SignInScreen`) is the only
   way to reach the signed-in graph without an account, and Profile's `SignedOutBody` is the only
   way back to sign-in from there — it reuses the same `AuthViewModel.busy`/`error` that
@@ -424,3 +428,41 @@ call). One prompt and one parser serve both, so a new backend costs one class.
 - `ModelStore.delete()` sweeps every file prefixed with the model's name: LiteRT-LM writes a
   `..._mldrift_weight_cache.bin` beside the weights that is dead without them.
 - MediaPipe LLM Inference is maintenance-only; LiteRT-LM replaces it.
+
+## Sync
+
+Signed-in only, opt-in per device (`SettingsStore.syncEnabled`, default off, itself never
+synced — Settings are device-specific and out of scope). Syncs `Transcript`/`TodoItem` only —
+notes and tasks. Client-driven, triggered-pull, no Realtime, no server process: `SyncEngine`
+pulls remote rows newer than a local cursor, then pushes local rows newer than another local
+cursor, against two Supabase tables (`transcripts`, `todo_items`, schema in
+`supabase/migrations/`, RLS scoped to `auth.uid()`). Conflict resolution is last-write-wins by
+`updatedAt`, whole-row — no field-level merge; a tie (remote `updatedAt` not strictly greater
+than local) is a no-op, which is what stops a synced row from ping-ponging between devices.
+
+- `TranscriptRepository`/`DerivedRepository` both grew `allForSync()` (all rows including
+  tombstones, sync-only, never for UI) and `upsertFromSync()` (raw write of a remote row's
+  fields as given — no id minting, no derivation). `TodoItem` gained a `deletedAt` tombstone to
+  match `Transcript`'s (mirrors its "delete can outlive one device" reasoning exactly) —
+  `DerivedRepository.delete()`/`deleteFor()` now tombstone instead of dropping the row, and
+  `items` filters `deletedAt == null` like `transcripts` already did. Before this, a delete had
+  no way to propagate to another device at all.
+- `JsonTranscriptRepository`/`JsonDerivedRepository` both take an `onChanged: () -> Unit = {}`
+  constructor param, called after every successful disk write — `AppContainer` wires it to
+  `syncEngine.requestSync()` (via a `syncEngineRef` holder, since the repos are built before
+  `SyncEngine` exists and need the callback first). This means every local mutation, from any
+  call site present or future, triggers a sync attempt without any ViewModel needing to know
+  sync exists — same shape as the pre-existing `NotificationScheduler` hook in
+  `JsonDerivedRepository`.
+- `SyncEngine.requestSync()` is debounced (1s) into one coroutine at a time (`Mutex`-guarded);
+  it no-ops unless `AuthState.SignedIn && settings.syncEnabled`, and swallows network/Postgrest
+  errors via `runCatching` — a failed sync just waits for the next trigger, never crashes.
+  Called from: the `onChanged` hook above, `AppContainer.onAppForegrounded()`, and the
+  transition into `AuthState.SignedIn` (not on every emission — `wasSignedIn` tracks the edge so
+  re-collecting `Guest`/`SignedOut` states doesn't resync).
+- **Known, accepted gap: local JSON files are not account-scoped.** Signing into a different
+  Google account on a device that already has local data would push that old data into the new
+  account on first sync. Not handled — this app is used across one person's own devices under
+  one account, so it wasn't worth the complexity.
+- Schema changes go through `supabase/migrations/` (`supabase migration new <name>`, then
+  `supabase db push` against the already-linked project) — not a manual dashboard edit.

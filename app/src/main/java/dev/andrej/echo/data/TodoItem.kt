@@ -13,6 +13,8 @@ data class TodoItem(
     val done: Boolean = false,
     val createdAt: Long,
     val updatedAt: Long = createdAt,
+    /** Tombstone. Set instead of dropping the row, so a delete can outlive one device. */
+    val deletedAt: Long? = null,
 )
 
 /** What the analyzer produces, before the repository gives it an id. */

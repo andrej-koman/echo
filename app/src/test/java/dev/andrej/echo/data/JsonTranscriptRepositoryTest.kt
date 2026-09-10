@@ -126,6 +126,36 @@ class JsonTranscriptRepositoryTest {
     }
 
     @Test
+    fun `allForSync includes tombstoned rows`() = runTest {
+        val repository = repository()
+        val doomed = repository.save(text = "remove", language = "en-US", durationMs = 0)
+
+        repository.delete(doomed.id)
+
+        val stored = repository.allForSync().single { it.id == doomed.id }
+        assertTrue(stored.deletedAt != null)
+        assertTrue(repository.transcripts.first().none { it.id == doomed.id })
+    }
+
+    @Test
+    fun `upsertFromSync writes the row as given`() = runTest {
+        val repository = repository()
+        val remote = Transcript(
+            id = "remote-1",
+            text = "From another device",
+            language = "en-GB",
+            createdAt = 1_000,
+            durationMs = 2_000,
+            updatedAt = 3_000,
+        )
+
+        repository.upsertFromSync(remote)
+
+        assertEquals(remote, repository.transcripts.first().single())
+        assertEquals(remote, repository.allForSync().single())
+    }
+
+    @Test
     fun `saving into a corrupt store still works`() = runTest {
         val directory = tempFolder.newFolder()
         directory.resolve("transcripts.json").writeText("garbage")

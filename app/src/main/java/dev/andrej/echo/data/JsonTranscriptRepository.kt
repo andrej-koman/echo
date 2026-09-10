@@ -15,6 +15,7 @@ import kotlinx.serialization.json.Json
 class JsonTranscriptRepository(
     private val directory: File,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val onChanged: () -> Unit = {},
 ) : TranscriptRepository {
 
     private val file = File(directory, FILE_NAME)
@@ -79,11 +80,18 @@ class JsonTranscriptRepository(
         }
     }
 
+    override suspend fun allForSync(): List<Transcript> = state.value
+
+    override suspend fun upsertFromSync(transcript: Transcript) {
+        update { current -> current.filterNot { it.id == transcript.id } + transcript }
+    }
+
     private suspend fun update(transform: (List<Transcript>) -> List<Transcript>) {
         writeLock.withLock {
             val updated = transform(state.value).sortedByDescending { it.createdAt }
             withContext(ioDispatcher) { writeToDisk(updated) }
             state.value = updated
+            onChanged()
         }
     }
 

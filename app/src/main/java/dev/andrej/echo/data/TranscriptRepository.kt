@@ -4,7 +4,6 @@ import kotlinx.coroutines.flow.Flow
 
 interface TranscriptRepository {
 
-    /** Newest first. Emits again whenever the set changes. */
     val transcripts: Flow<List<Transcript>>
 
     suspend fun save(
@@ -14,7 +13,6 @@ interface TranscriptRepository {
         createdAt: Long = System.currentTimeMillis(),
     ): Transcript
 
-    /** No-op when the id is unknown. */
     suspend fun attachAnalysis(
         id: String,
         title: String?,
@@ -23,4 +21,8 @@ interface TranscriptRepository {
     )
 
     suspend fun delete(id: String)
+
+    suspend fun allForSync(): List<Transcript>
+
+    suspend fun upsertFromSync(transcript: Transcript)
 }

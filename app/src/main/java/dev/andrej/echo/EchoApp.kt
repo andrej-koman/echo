@@ -238,6 +238,8 @@ private fun SignedInApp(
                     onReminderLeadMinutesChange = settingsViewModel::setReminderLeadMinutes,
                     onReminderMorningTimeChange = settingsViewModel::setReminderMorningTime,
                     onSnoozeMinutesChange = settingsViewModel::setSnoozeMinutes,
+                    onSyncEnabledChange = settingsViewModel::setSyncEnabled,
+                    onSyncNow = settingsViewModel::syncNow,
                     onDownloadModel = settingsViewModel.onDownloadModel,
                     onCancelDownload = settingsViewModel.onCancelDownload,
                     onDeleteModel = settingsViewModel.onDeleteModel,

@@ -76,6 +76,12 @@ NavHost, so signing out drops the whole graph rather than unwinding a back stack
 - Sign-in needs `google_web_client_id` in `res/values/auth.xml` — the OAuth **web** client ID,
   plus an Android client ID registered with this package and signing SHA-1. Left blank in the
   repo: `GoogleAuthRepository` then reports itself unconfigured instead of failing opaquely.
+- `AuthState.Guest` (from "Continue without account" on the initial `SignInScreen`) is the only
+  way to reach the signed-in graph without an account, and Profile's `SignedOutBody` is the only
+  way back to sign-in from there — it reuses the same `AuthViewModel.busy`/`error` that
+  `SignInScreen` shows, threaded down through `EchoApp` → `SignedInApp` → `ProfileScreen` as
+  `signInBusy`/`signInError`, so an unconfigured build or a cancelled/failed sign-in surfaces a
+  message on Profile too instead of the button silently doing nothing.
 - No server verifies the Google ID token; the account is a local label. `GoogleIdTokenCredential`
   has no email field of its own — `id` is the email address for Google accounts.
 - `TranscriptsViewModel.title()` derives a title from the opening of the text (first sentence, or

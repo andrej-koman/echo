@@ -32,7 +32,8 @@ import dev.andrej.echo.ui.components.EchoButton
 import dev.andrej.echo.ui.components.EchoCard
 import dev.andrej.echo.ui.components.EchoIconButton
 import dev.andrej.echo.ui.components.EchoTopBar
-import dev.andrej.echo.ui.components.EmptyState
+import dev.andrej.echo.ui.components.Mascot
+import dev.andrej.echo.ui.components.MascotMood
 import dev.andrej.echo.ui.components.MascotVariant
 import dev.andrej.echo.ui.theme.EchoTheme
 import dev.andrej.echo.ui.theme.SpaceMono
@@ -41,6 +42,8 @@ import dev.andrej.echo.ui.theme.SpaceMono
 fun ProfileScreen(
     state: ProfileUiState,
     authState: AuthState,
+    signInBusy: Boolean,
+    signInError: String?,
     onOpenSettings: () -> Unit,
     onOpenHistory: () -> Unit,
     onSignIn: () -> Unit,
@@ -80,7 +83,7 @@ fun ProfileScreen(
                     )
                 }
 
-                else -> SignedOutBody(onSignIn = onSignIn)
+                else -> SignedOutBody(busy = signInBusy, error = signInError, onSignIn = onSignIn)
             }
         }
     }
@@ -226,24 +229,44 @@ private fun AccountRail(onSignOut: () -> Unit, onDeleteAccount: () -> Unit) {
 }
 
 @Composable
-private fun SignedOutBody(onSignIn: () -> Unit) {
+private fun SignedOutBody(busy: Boolean, error: String?, onSignIn: () -> Unit) {
     Column(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.Center,
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = EchoTheme.spacing.s9, vertical = EchoTheme.spacing.s7),
+        verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5, Alignment.Top),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        EmptyState(
-            variant = MascotVariant.Plain,
-            title = "Sign in to sync your account",
-            body = "Recordings and transcripts already live on this device. Signing in just gives " +
-                "them a name and an email to remember.",
+        Mascot(size = 76.dp, mood = MascotMood.Breathing, variant = MascotVariant.Plain)
+        Text(
+            text = "Sign in to sync your account",
+            style = EchoTheme.typography.heading,
+            color = EchoTheme.colors.textPrimary,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
+        Text(
+            text = "Recordings and transcripts already live on this device. Signing in just gives " +
+                "them a name and an email to remember.",
+            style = EchoTheme.typography.bodySm,
+            color = EchoTheme.colors.textTertiary,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
+        if (error != null) {
+            Text(
+                text = error,
+                style = EchoTheme.typography.caption,
+                color = EchoTheme.colors.statusDangerFg,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+        }
         EchoButton(
             text = "Sign in with Google",
             onClick = onSignIn,
             variant = ButtonVariant.Primary,
             fullWidth = true,
-            modifier = Modifier.fillMaxWidth().padding(top = EchoTheme.spacing.s6),
+            loading = busy,
+            enabled = !busy,
+            modifier = Modifier.fillMaxWidth(),
         )
     }
 }

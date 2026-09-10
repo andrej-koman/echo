@@ -66,6 +66,10 @@ dependencies {
     implementation(libs.mlkit.genai.prompt)
     implementation(libs.litertlm.android)
 
+    implementation(platform(libs.supabase.bom))
+    implementation(libs.supabase.auth)
+    implementation(libs.ktor.client.okhttp)
+
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 

@@ -10,7 +10,9 @@ import java.time.ZoneId
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import dev.andrej.echo.auth.AuthRepository
-import dev.andrej.echo.auth.GoogleAuthRepository
+import dev.andrej.echo.auth.SupabaseAuthRepository
+import io.github.jan.supabase.auth.Auth
+import io.github.jan.supabase.createSupabaseClient
 import dev.andrej.echo.ai.AiCardState
 import dev.andrej.echo.ai.HttpModelDownloader
 import dev.andrej.echo.ai.LiteRtLlmRunner
@@ -77,11 +79,26 @@ class AppContainer(context: Context) {
     val settings: SettingsStore =
         SharedPreferencesSettingsStore(applicationContext)
 
+    /**
+     * Application-scoped on purpose: leaving Capture must not cancel a half-finished
+     * Engine.initialize(), which would throw away the wait and leak the partial engine. The same
+     * reasoning covers model download/delete, which must survive leaving AccountScreen, and the
+     * auth session flow, which must keep observing Supabase regardless of what screen is open.
+     */
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
     private val authStore: AuthStore =
         SharedPreferencesAuthStore(applicationContext)
 
+    private val supabaseClient = createSupabaseClient(
+        supabaseUrl = applicationContext.getString(R.string.supabase_url),
+        supabaseKey = applicationContext.getString(R.string.supabase_anon_key),
+    ) {
+        install(Auth)
+    }
+
     val auth: AuthRepository =
-        GoogleAuthRepository(applicationContext, authStore)
+        SupabaseAuthRepository(applicationContext, supabaseClient, authStore, appScope)
 
     val engine: TranscriptionEngine =
         AndroidSpeechEngine(applicationContext)
@@ -149,13 +166,6 @@ class AppContainer(context: Context) {
         llmRunners.invalidate()
         pendingAnalysisWorker.requestDrain()
     }
-
-    /**
-     * Application-scoped on purpose: leaving Capture must not cancel a half-finished
-     * Engine.initialize(), which would throw away the wait and leak the partial engine. The same
-     * reasoning covers model download/delete, which must survive leaving AccountScreen.
-     */
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private fun warmUpLlm() {
         appScope.launch { analyzer.warmup() }

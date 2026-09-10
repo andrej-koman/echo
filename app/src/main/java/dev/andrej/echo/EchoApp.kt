@@ -109,6 +109,8 @@ fun EchoApp(
             else -> SignedInApp(
                 viewModelFactory = viewModelFactory,
                 authState = authState,
+                signInBusy = authViewModel.busy,
+                signInError = authViewModel.error,
                 onSignIn = { activity?.let(authViewModel::signIn) },
                 onSignOut = authViewModel::signOut,
                 onDeleteAccount = authViewModel::deleteAccount,
@@ -125,6 +127,8 @@ fun EchoApp(
 private fun SignedInApp(
     viewModelFactory: ViewModelProvider.Factory,
     authState: AuthState,
+    signInBusy: Boolean,
+    signInError: String?,
     onSignIn: () -> Unit,
     onSignOut: () -> Unit,
     onDeleteAccount: () -> Unit,
@@ -207,6 +211,8 @@ private fun SignedInApp(
                 ProfileScreen(
                     state = profileState,
                     authState = authState,
+                    signInBusy = signInBusy,
+                    signInError = signInError,
                     onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                     onOpenHistory = { navController.navigate(Routes.HISTORY) },
                     onSignIn = onSignIn,

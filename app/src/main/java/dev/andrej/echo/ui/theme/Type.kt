@@ -17,12 +17,6 @@ val DmSans = FontFamily(
     Font(R.font.dm_sans_bold, FontWeight.Bold),
 )
 
-/** Durations, timers and counts only. */
-val SpaceMono = FontFamily(
-    Font(R.font.space_mono_regular, FontWeight.Normal),
-    Font(R.font.space_mono_bold, FontWeight.Bold),
-)
-
 /** The design system's own scale. Material's roles are mapped separately, below. */
 @Immutable
 data class EchoTypography(
@@ -89,24 +83,14 @@ data class EchoTypography(
         lineHeight = 13.6.sp,
     ),
     val microCaps: TextStyle = TextStyle(
-        fontFamily = SpaceMono,
+        fontFamily = DmSans,
         fontSize = 11.sp,
         fontWeight = FontWeight.Normal,
         lineHeight = 13.6.sp,
         letterSpacing = 0.10.em,
     ),
-    val monoMicro: TextStyle = TextStyle(
-        fontFamily = SpaceMono,
-        fontSize = 11.sp,
-        lineHeight = 13.6.sp,
-    ),
-    val monoCaption: TextStyle = TextStyle(
-        fontFamily = SpaceMono,
-        fontSize = 13.sp,
-        lineHeight = 16.1.sp,
-    ),
-    val monoTimer: TextStyle = TextStyle(
-        fontFamily = SpaceMono,
+    val timer: TextStyle = TextStyle(
+        fontFamily = DmSans,
         fontSize = 44.sp,
         fontWeight = FontWeight.Bold,
         lineHeight = 48.sp,

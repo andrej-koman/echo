@@ -32,6 +32,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -67,7 +68,6 @@ import dev.andrej.echo.ui.record.RecordUiState
 import dev.andrej.echo.ui.record.RecordViewModel
 import dev.andrej.echo.ui.theme.EchoTheme
 import dev.andrej.echo.ui.theme.LocalReducedMotion
-import dev.andrej.echo.ui.theme.Paper200
 import dev.andrej.echo.ui.theme.rememberEchoHaptics
 import kotlinx.coroutines.delay
 
@@ -125,7 +125,7 @@ fun CaptureScreen(
         modifier = modifier
             .fillMaxSize()
             .background(EchoTheme.colors.surfacePage)
-            .warmWash(),
+            .warmWash(EchoTheme.colors.aura),
     ) {
         when {
             state.availability is Availability.NoRecognizer -> UnavailableState(onDone)
@@ -146,12 +146,12 @@ fun CaptureScreen(
     }
 }
 
-/** The papaya-whip glow the board puts behind the top of every capture screen. */
-private fun Modifier.warmWash(): Modifier = drawBehind {
+/** The aura the board puts behind the top of every capture screen. */
+private fun Modifier.warmWash(aura: Color): Modifier = drawBehind {
     val radius = size.width * 0.9f
     drawRect(
         brush = Brush.radialGradient(
-            colors = listOf(Paper200, Paper200.copy(alpha = 0f)),
+            colors = listOf(aura, aura.copy(alpha = 0f)),
             center = Offset(size.width / 2f, size.height * 0.18f),
             radius = radius,
         ),

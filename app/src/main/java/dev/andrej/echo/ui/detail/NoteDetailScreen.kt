@@ -206,7 +206,7 @@ private fun SectionCaption(
         if (trailingCount != null) {
             Text(
                 text = trailingCount.toString(),
-                style = EchoTheme.typography.monoCaption,
+                style = EchoTheme.typography.caption,
                 color = EchoTheme.colors.textTertiary,
             )
         }

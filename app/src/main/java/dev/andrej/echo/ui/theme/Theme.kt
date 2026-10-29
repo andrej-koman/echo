@@ -2,7 +2,10 @@ package dev.andrej.echo.ui.theme
 
 import android.app.Activity
 import android.provider.Settings
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -42,39 +45,40 @@ object EchoTheme {
         @Composable @ReadOnlyComposable get() = LocalEchoMotion.current
 }
 
-private val colors = EchoColors()
-
-/**
- * Light only, no dynamic color: the design system defines a single warm-paper palette and has
- * no dark ramp, so a dark theme would be invented rather than implemented.
- */
-private val EchoColorScheme = lightColorScheme(
-    primary = colors.actionPrimaryBg,
-    onPrimary = colors.actionPrimaryFg,
-    primaryContainer = colors.surfaceAccentSoft,
-    onPrimaryContainer = colors.textAccent,
-    secondary = Sage500,
-    onSecondary = Color.White,
-    secondaryContainer = colors.surfaceSageSoft,
-    onSecondaryContainer = colors.textSuccess,
-    background = colors.surfacePage,
-    onBackground = colors.textPrimary,
-    surface = colors.surfacePage,
-    onSurface = colors.textPrimary,
-    surfaceVariant = colors.surfaceCard,
-    onSurfaceVariant = colors.textSecondary,
-    outline = colors.borderStrong,
-    outlineVariant = colors.borderDefault,
-    error = colors.recordLive,
-    onError = Color.White,
-    errorContainer = colors.statusDangerBg,
-    onErrorContainer = colors.statusDangerFg,
-    scrim = colors.surfaceScrim,
-)
+/** No dynamic color: the design system's warm palette is the brand, wallpaper colours would replace it. */
+private fun materialColorScheme(colors: EchoColors, dark: Boolean): ColorScheme {
+    val base = if (dark) darkColorScheme() else lightColorScheme()
+    return base.copy(
+        primary = colors.actionPrimaryBg,
+        onPrimary = colors.actionPrimaryFg,
+        primaryContainer = colors.surfaceAccentSoft,
+        onPrimaryContainer = colors.textAccent,
+        secondary = Sage500,
+        onSecondary = Color.White,
+        secondaryContainer = colors.surfaceSageSoft,
+        onSecondaryContainer = colors.textSuccess,
+        background = colors.surfacePage,
+        onBackground = colors.textPrimary,
+        surface = colors.surfacePage,
+        onSurface = colors.textPrimary,
+        surfaceVariant = colors.surfaceCard,
+        onSurfaceVariant = colors.textSecondary,
+        outline = colors.borderStrong,
+        outlineVariant = colors.borderDefault,
+        error = colors.recordLive,
+        onError = Color.White,
+        errorContainer = colors.statusDangerBg,
+        onErrorContainer = colors.statusDangerFg,
+        scrim = colors.surfaceScrim,
+    )
+}
 
 @Composable
 fun EchoTheme(content: @Composable () -> Unit) {
     val context = LocalContext.current
+    val dark = isSystemInDarkTheme()
+    val colors = if (dark) DarkEchoColors else EchoColors()
+    val colorScheme = remember(dark) { materialColorScheme(colors, dark) }
     val typography = remember { EchoTypography() }
 
     val reducedMotion = remember(context) {
@@ -88,11 +92,11 @@ fun EchoTheme(content: @Composable () -> Unit) {
     val activity = context as? Activity
     if (activity != null) {
         SideEffect {
-            // The screens paint their own warm background edge to edge, so the system bars
-            // need dark icons over it.
+            // The screens paint their own background edge to edge, so the system bar icons
+            // follow the theme rather than the window.
             WindowCompat.getInsetsController(activity.window, activity.window.decorView).apply {
-                isAppearanceLightStatusBars = true
-                isAppearanceLightNavigationBars = true
+                isAppearanceLightStatusBars = !dark
+                isAppearanceLightNavigationBars = !dark
             }
         }
     }
@@ -102,12 +106,12 @@ fun EchoTheme(content: @Composable () -> Unit) {
         LocalEchoTypography provides typography,
         LocalEchoSpacing provides EchoSpacing(),
         LocalEchoRadii provides EchoRadii(),
-        LocalEchoElevation provides EchoElevation(),
+        LocalEchoElevation provides if (dark) DarkEchoElevation else EchoElevation(),
         LocalEchoMotion provides EchoMotion(),
         LocalReducedMotion provides reducedMotion,
     ) {
         MaterialTheme(
-            colorScheme = EchoColorScheme,
+            colorScheme = colorScheme,
             typography = materialTypography(typography),
             content = content,
         )

@@ -3,7 +3,8 @@ package dev.andrej.echo.ui.theme
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 
-// Base ramps, transcribed from the OutLoud design system's tokens/colors.css.
+// Base ramps, transcribed from the Echo design system's tokens.css. They keep their light values
+// in both themes; only the semantic layer below changes.
 
 val Bronze50 = Color(0xFFFBF3EA)
 val Bronze100 = Color(0xFFF6E7D7)
@@ -71,13 +72,14 @@ data class EchoColors(
     val surfaceSageSoft: Color = Sage100,
     val surfaceScrim: Color = AlphaInk40,
     val surfaceBar: Color = Paper050,
+    val aura: Color = Paper200,
 
     val textPrimary: Color = Ink900,
     val textSecondary: Color = Ink600,
     val textTertiary: Color = Ink400,
     val textInverse: Color = Paper050,
     val textAccent: Color = Bronze700,
-    val textOnAccent: Color = Color.White,
+    val textOnAccent: Color = Ink900,
     val textDanger: Color = Clay600,
     val textSuccess: Color = Sage700,
 
@@ -87,7 +89,7 @@ data class EchoColors(
     val borderAccent: Color = Bronze400,
 
     val actionPrimaryBg: Color = Bronze400,
-    val actionPrimaryFg: Color = Color.White,
+    val actionPrimaryFg: Color = Ink900,
     val actionSecondaryBg: Color = Paper000,
     val actionSecondaryFg: Color = Ink800,
     val actionInverseBg: Color = Ink900,
@@ -99,7 +101,9 @@ data class EchoColors(
     val recordLiveSoft: Color = Clay100,
     val waveformActive: Color = Bronze500,
     val waveformIdle: Color = Ink200,
+    val indicatorIdle: Color = Ink300,
     val transcriptHighlight: Color = Sage200,
+    val skeleton: Color = Ink100,
 
     val statusSuccessBg: Color = Sage100,
     val statusSuccessFg: Color = Sage700,
@@ -111,4 +115,59 @@ data class EchoColors(
     val statusNeutralFg: Color = Ink600,
     val statusInfoBg: Color = Paper200,
     val statusInfoFg: Color = Bronze700,
+)
+
+/**
+ * Dark stays warm: deep browns, never charcoal, and surfaces get lighter as they come forward.
+ * The design's top/tab bar is 80% page over a blur; Android has no backdrop blur, so it is opaque.
+ */
+val DarkEchoColors = EchoColors(
+    surfacePage = Color(0xFF1C1810),
+    surfaceCard = Color(0xFF241F16),
+    surfaceRaised = Color(0xFF2D271C),
+    surfaceSunken = Color(0xFF16120B),
+    surfaceSheet = Color(0xFF2D271C),
+    surfaceInverse = Color(0xFFF3ECD9),
+    surfaceAccentSoft = Color(0xFF3A2C1D),
+    surfaceSageSoft = Color(0xFF2F3322),
+    surfaceScrim = Color(0x99080603),
+    surfaceBar = Color(0xFF1C1810),
+    aura = Color(0x24D4A373),
+
+    textPrimary = Color(0xFFF3ECD9),
+    textSecondary = Color(0xFFC9BEA6),
+    textTertiary = Color(0xFFA3967F),
+    textInverse = Ink900,
+    textAccent = Bronze300,
+    textDanger = Clay300,
+    textSuccess = Sage400,
+
+    borderSubtle = Color(0x0FFFF5DC),
+    borderDefault = Color(0x1AFFF5DC),
+    borderStrong = Ink700,
+
+    actionSecondaryBg = Color(0xFF2D271C),
+    actionSecondaryFg = Color(0xFFF3ECD9),
+    actionInverseBg = Color(0xFFF3ECD9),
+    actionDisabledBg = Color(0xFF2D271C),
+    actionDisabledFg = Ink500,
+
+    recordLive = Clay400,
+    recordLiveSoft = Color(0xFF3D2219),
+    waveformActive = Bronze400,
+    waveformIdle = Ink700,
+    indicatorIdle = Ink500,
+    transcriptHighlight = Color(0xFF3D4328),
+    skeleton = Ink800,
+
+    statusSuccessBg = Color(0xFF2F3322),
+    statusSuccessFg = Sage400,
+    statusWarningBg = Color(0xFF3A2E12),
+    statusWarningFg = Amber400,
+    statusDangerBg = Color(0xFF3D2219),
+    statusDangerFg = Clay300,
+    statusNeutralBg = Color(0xFF2D271C),
+    statusNeutralFg = Color(0xFFC9BEA6),
+    statusInfoBg = Color(0xFF33291A),
+    statusInfoFg = Bronze300,
 )

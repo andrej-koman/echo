@@ -18,7 +18,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.andrej.echo.ui.theme.EchoTheme
-import dev.andrej.echo.ui.theme.Ink100
 import dev.andrej.echo.ui.theme.LocalReducedMotion
 
 @Composable
@@ -55,6 +54,6 @@ fun SkeletonBar(
             .height(height)
             .alpha(alpha)
             .clip(EchoTheme.radii.pill)
-            .background(Ink100),
+            .background(EchoTheme.colors.skeleton),
     )
 }

@@ -124,7 +124,7 @@ fun IntSliderSheet(
         Text(text = title, style = EchoTheme.typography.heading, color = EchoTheme.colors.textPrimary)
         Text(
             text = valueLabel(value),
-            style = EchoTheme.typography.monoTimer,
+            style = EchoTheme.typography.timer,
             color = EchoTheme.colors.textAccent,
             modifier = Modifier.align(Alignment.CenterHorizontally),
         )

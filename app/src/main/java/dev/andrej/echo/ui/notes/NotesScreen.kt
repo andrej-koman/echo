@@ -147,7 +147,7 @@ private fun NotesGroupHeader(label: String, count: Int, modifier: Modifier = Mod
         Box(modifier = Modifier.weight(1f))
         Text(
             text = count.toString(),
-            style = EchoTheme.typography.monoCaption.copy(fontWeight = FontWeight.Bold),
+            style = EchoTheme.typography.caption.copy(fontWeight = FontWeight.Bold),
             color = EchoTheme.colors.textTertiary,
         )
     }
@@ -213,7 +213,7 @@ internal fun NoteRow(
             ) {
                 Text(
                     text = "${row.time} · ${row.duration}",
-                    style = EchoTheme.typography.monoMicro,
+                    style = EchoTheme.typography.micro,
                     color = EchoTheme.colors.textTertiary,
                 )
                 Box(modifier = Modifier.weight(1f))
@@ -228,7 +228,7 @@ internal fun NoteRow(
                     )
                     row.taskCount > 0 -> Text(
                         text = if (row.taskCount == 1) "1 task" else "${row.taskCount} tasks",
-                        style = EchoTheme.typography.monoMicro.copy(fontWeight = FontWeight.Bold),
+                        style = EchoTheme.typography.micro.copy(fontWeight = FontWeight.Bold),
                         color = EchoTheme.colors.textTertiary,
                     )
                 }

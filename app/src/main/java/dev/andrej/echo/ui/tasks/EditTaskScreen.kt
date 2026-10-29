@@ -412,7 +412,7 @@ private fun DayRow(dueAt: Long, onPick: (Long) -> Unit) {
     ) {
         Text(
             text = dayLabel(dueAt),
-            style = EchoTheme.typography.monoCaption.copy(fontWeight = FontWeight.Bold),
+            style = EchoTheme.typography.caption.copy(fontWeight = FontWeight.Bold),
             color = EchoTheme.colors.textAccent,
         )
     }
@@ -437,7 +437,7 @@ private fun TimeRow(dueAt: Long, hasTime: Boolean, onPick: (Long) -> Unit, onEna
                 overdue -> "${formatTime(dueAt)} · overdue"
                 else -> formatTime(dueAt)
             },
-            style = EchoTheme.typography.monoCaption.copy(fontWeight = FontWeight.Bold),
+            style = EchoTheme.typography.caption.copy(fontWeight = FontWeight.Bold),
             color = when {
                 !hasTime -> EchoTheme.colors.textTertiary
                 overdue -> EchoTheme.colors.textDanger

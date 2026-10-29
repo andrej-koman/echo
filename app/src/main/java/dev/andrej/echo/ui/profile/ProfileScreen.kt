@@ -36,7 +36,6 @@ import dev.andrej.echo.ui.components.Mascot
 import dev.andrej.echo.ui.components.MascotMood
 import dev.andrej.echo.ui.components.MascotVariant
 import dev.andrej.echo.ui.theme.EchoTheme
-import dev.andrej.echo.ui.theme.SpaceMono
 
 @Composable
 fun ProfileScreen(
@@ -147,7 +146,7 @@ private fun Stat(label: String, value: String, modifier: Modifier = Modifier) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(
             text = value,
-            style = EchoTheme.typography.title.copy(fontFamily = SpaceMono),
+            style = EchoTheme.typography.title,
             color = EchoTheme.colors.textPrimary,
         )
         Text(
@@ -173,7 +172,7 @@ private fun WeekCard(state: ProfileUiState, onClick: () -> Unit) {
             )
             Text(
                 text = "HISTORY",
-                style = EchoTheme.typography.monoCaption,
+                style = EchoTheme.typography.caption,
                 color = EchoTheme.colors.textAccent,
             )
             Icon(

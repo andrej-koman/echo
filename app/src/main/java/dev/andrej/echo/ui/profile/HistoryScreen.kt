@@ -30,7 +30,6 @@ import dev.andrej.echo.ui.components.EchoCard
 import dev.andrej.echo.ui.components.EchoIconButton
 import dev.andrej.echo.ui.components.EchoTopBar
 import dev.andrej.echo.ui.theme.EchoTheme
-import dev.andrej.echo.ui.theme.SpaceMono
 import dev.andrej.echo.ui.theme.hairline
 import java.time.LocalDate
 
@@ -162,11 +161,7 @@ private fun DayCell(day: HistoryDay, isSelected: Boolean, onClick: () -> Unit) {
     ) {
         Text(
             text = day.date.dayOfMonth.toString(),
-            style = if (isSelected) {
-                EchoTheme.typography.bodySm.copy(fontFamily = SpaceMono)
-            } else {
-                EchoTheme.typography.bodySm
-            },
+            style = EchoTheme.typography.bodySm,
             color = textColor,
         )
     }
@@ -223,7 +218,7 @@ private fun MonthStats(state: HistoryUiState) {
 @Composable
 private fun MonthStat(label: String, value: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(text = value, style = EchoTheme.typography.heading.copy(fontFamily = SpaceMono), color = EchoTheme.colors.textPrimary)
+        Text(text = value, style = EchoTheme.typography.heading, color = EchoTheme.colors.textPrimary)
         Text(text = label, style = EchoTheme.typography.microCaps, color = EchoTheme.colors.textTertiary)
     }
 }
@@ -255,7 +250,7 @@ private fun SelectedDayPanel(state: HistoryUiState) {
                         ) {
                             Text(
                                 text = row.time,
-                                style = EchoTheme.typography.monoCaption,
+                                style = EchoTheme.typography.caption,
                                 color = EchoTheme.colors.textAccent,
                             )
                             Text(

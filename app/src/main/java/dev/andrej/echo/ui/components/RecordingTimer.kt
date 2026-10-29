@@ -21,7 +21,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import dev.andrej.echo.ui.theme.EchoTheme
-import dev.andrej.echo.ui.theme.Ink300
 import dev.andrej.echo.ui.theme.LocalReducedMotion
 import java.util.Locale
 
@@ -30,7 +29,7 @@ fun RecordingTimer(
     seconds: Long,
     modifier: Modifier = Modifier,
     live: Boolean = true,
-    style: TextStyle = EchoTheme.typography.monoTimer,
+    style: TextStyle = EchoTheme.typography.timer,
     color: Color = EchoTheme.colors.textPrimary,
     showDot: Boolean = false,
 ) {
@@ -74,7 +73,7 @@ private fun LiveDot(live: Boolean) {
             .size(8.dp)
             .alpha(alpha)
             .clip(EchoTheme.radii.pill)
-            .background(if (live) EchoTheme.colors.recordLive else Ink300),
+            .background(if (live) EchoTheme.colors.recordLive else EchoTheme.colors.indicatorIdle),
     )
 }
 

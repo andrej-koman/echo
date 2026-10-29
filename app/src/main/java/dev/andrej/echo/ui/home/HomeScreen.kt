@@ -260,7 +260,7 @@ private fun HeroCard(
                     )
                     Text(
                         text = hero.whenLabel,
-                        style = EchoTheme.typography.monoCaption.copy(fontWeight = FontWeight.Bold),
+                        style = EchoTheme.typography.caption.copy(fontWeight = FontWeight.Bold),
                         color = whenColor,
                     )
                 }
@@ -365,7 +365,7 @@ private fun ThenHeader(
         } else {
             Text(
                 text = count.toString(),
-                style = EchoTheme.typography.monoCaption.copy(fontWeight = FontWeight.Bold),
+                style = EchoTheme.typography.caption.copy(fontWeight = FontWeight.Bold),
                 color = EchoTheme.colors.textTertiary,
             )
         }
@@ -456,7 +456,7 @@ private fun LatestNoteCard(note: LatestNote, onOpen: () -> Unit) {
                 val tasksLabel = if (note.taskCount > 0) "${note.taskCount} TASKS" else "NO TASKS"
                 Text(
                     text = "${note.relativeTime} · ${note.duration} · $tasksLabel",
-                    style = EchoTheme.typography.monoMicro,
+                    style = EchoTheme.typography.micro,
                     color = colors.textTertiary,
                 )
             }

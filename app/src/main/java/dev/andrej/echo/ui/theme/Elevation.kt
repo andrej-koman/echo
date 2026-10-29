@@ -50,6 +50,28 @@ data class EchoElevation(
     val haloSage: EchoShadow = EchoShadow(0.dp, 0.dp, 6.dp, Color(0x3394A56D)),
 )
 
+/** Dark shadows are warm near-black and do less of the work; depth comes from lighter surfaces. */
+val DarkEchoElevation = EchoElevation(
+    shadow1 = listOf(
+        EchoShadow(1.dp, 2.dp, 0.dp, Color(0x66080603)),
+    ),
+    shadow2 = listOf(
+        EchoShadow(2.dp, 6.dp, (-1).dp, Color(0x80080603)),
+        EchoShadow(1.dp, 2.dp, 0.dp, Color(0x66080603)),
+    ),
+    shadow3 = listOf(
+        EchoShadow(8.dp, 24.dp, (-6).dp, Color(0x99080603)),
+        EchoShadow(2.dp, 6.dp, (-3).dp, Color(0x66080603)),
+    ),
+    shadow4 = listOf(
+        EchoShadow(24.dp, 60.dp, (-18).dp, Color(0xB3080603)),
+        EchoShadow(6.dp, 16.dp, (-8).dp, Color(0x80080603)),
+    ),
+    haloBronze = EchoShadow(0.dp, 0.dp, 6.dp, Color(0x38D4A373)),
+    haloClay = EchoShadow(0.dp, 0.dp, 8.dp, Color(0x38D4795A)),
+    haloSage = EchoShadow(0.dp, 0.dp, 6.dp, Color(0x2EB3C08E)),
+)
+
 /** Draws the given shadow layers behind the content as a rounded rect. */
 fun Modifier.echoShadow(
     layers: List<EchoShadow>,

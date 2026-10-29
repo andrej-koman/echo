@@ -269,11 +269,12 @@ NavHost, so signing out drops the whole graph rather than unwinding a back stack
 
 ## Design system
 
-Screens follow the "OutLoud" design system, authored in Claude Design (project
-`2a9bb6ef-f934-49c1-847f-36e5231c11db`). Two design files: `Echo Screens.dc.html` (global
-modules, core screens, capture flow, detail, empty states) and `Echo Transcripts.dc.html`
-(the archive and the transcript detail). Read them with the claude_design MCP rather than
-guessing at values.
+Screens follow the "Echo" design system (formerly "OutLoud"), published as a Design System
+artifact: https://claude.ai/artifact/3VcQDGeoAbWCMknDg8WUV2 (Claude Design project
+`07874187-7a4b-4852-b91d-5f05af0973e4`). Token values live in its `project/tokens.css` /
+`tokens.json`; read them with the Artifact tool (`action: "read"`, `path`) rather than guessing.
+The older screen files (`Echo Screens.dc.html`, `Echo Transcripts.dc.html`, project
+`2a9bb6ef-…`) are no longer reachable.
 
 Neither file has a sign-in artboard — `SignInScreen` and `AccountScreen` are composed from the
 tokens and kit, not ported from a design.
@@ -281,12 +282,26 @@ tokens and kit, not ported from a design.
 - Tokens live in `ui/theme/` and are reached through the `EchoTheme` object
   (`EchoTheme.colors.recordLive`), not through `MaterialTheme`. Material's `ColorScheme` carries
   only the subset that maps cleanly, so stock M3 components don't clash.
-- **Light only, no dynamic color.** The system defines one warm-paper palette and has no dark
-  ramp, so a dark theme would be invented rather than implemented.
-- Shadows are ink-tinted, never black — black reads grey against cornsilk. Use
+- **Light and dark, following the system setting; no dynamic color.** `EchoTheme` picks
+  `EchoColors()` or `DarkEchoColors` (and `EchoElevation()` or `DarkEchoElevation`) from
+  `isSystemInDarkTheme()`; there is no in-app toggle. Dark stays warm browns, never charcoal.
+  The ramps (`Bronze400`, `Ink100`, …) keep their light values in both themes, so components use
+  semantic tokens only — raw ramp steps are left only where the design itself pins them in both
+  themes (the record button and processing spinner gradients, bronze-filled discs with white
+  glyphs). `aura` replaces raw papaya whip for the capture wash, `indicatorIdle` and `skeleton`
+  replace the raw ink steps that used to be hard-coded. The design's bars are 80% page over a
+  backdrop blur; Compose has no backdrop blur, so `surfaceBar` is opaque in both themes.
+  `res/values-night/` mirrors `themes.xml`/`colors.xml` so the cold-start window and system bar
+  icons match before Compose draws. Labels on bronze (`actionPrimaryFg`, `textOnAccent`) are dark
+  ink in both themes, not white.
+- Shadows are ink-tinted, never black — black reads grey against cornsilk (dark uses warm
+  near-black `#080603`, per the design). Use
   `Modifier.echoShadow(...)`, never `Modifier.shadow()`.
-- DM Sans (UI and display) and Space Mono (durations, timers, counts only) are bundled as static
-  TTFs in `res/font`. The mascot is a raster `drawable-xxxhdpi/mascot_echo.png` (the polished
+- DM Sans is the only typeface, bundled as static TTFs in `res/font`. Space Mono was dropped
+  with the design system's update; timers and counts now use DM Sans (`typography.timer` for the
+  big recording clock). The design asks for `tabular-nums`, but the bundled static DM Sans has no
+  `tnum` feature (nor does Google Fonts' variable DM Sans 4.004), so digits are proportional and
+  a ticking timer jitters slightly — `fontFeatureSettings = "tnum"` would silently do nothing. The mascot is a raster `drawable-xxxhdpi/mascot_echo.png` (the polished
   artwork) on a square 1024px canvas with the ghost centred in it — `Mascot` renders it with
   `ContentScale.Fit` into a square, so a non-square canvas both shrinks and offsets him. Three
   prop variants sit beside it (`mascot_tasks`, `mascot_notes`, `mascot_transcripts`) and are

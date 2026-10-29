@@ -209,7 +209,7 @@ private fun CompletedHeader(
         Spacer(modifier = Modifier.weight(1f))
         Text(
             text = count.toString(),
-            style = EchoTheme.typography.monoCaption.copy(fontWeight = FontWeight.Bold),
+            style = EchoTheme.typography.caption.copy(fontWeight = FontWeight.Bold),
             color = EchoTheme.colors.textTertiary,
         )
         Icon(
@@ -251,7 +251,7 @@ private fun SectionHeader(label: String, stamp: String?, count: Int, modifier: M
         Spacer(modifier = Modifier.weight(1f))
         Text(
             text = count.toString(),
-            style = EchoTheme.typography.monoCaption.copy(fontWeight = FontWeight.Bold),
+            style = EchoTheme.typography.caption.copy(fontWeight = FontWeight.Bold),
             color = EchoTheme.colors.textTertiary,
             modifier = Modifier.alignByBaseline(),
         )
@@ -345,7 +345,7 @@ internal fun TaskRow(
                         )
                         Text(
                             text = whenLabel,
-                            style = EchoTheme.typography.monoMicro.copy(fontWeight = FontWeight.Bold),
+                            style = EchoTheme.typography.micro.copy(fontWeight = FontWeight.Bold),
                             color = whenColor,
                         )
                     } else if (showPlaceholder) {

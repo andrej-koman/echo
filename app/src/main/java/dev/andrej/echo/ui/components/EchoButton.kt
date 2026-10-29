@@ -85,9 +85,9 @@ fun EchoButton(
     }
 
     val fontSize = when (size) {
-        ButtonSize.Sm -> EchoTheme.typography.caption
-        ButtonSize.Md -> EchoTheme.typography.bodySm
-        ButtonSize.Lg -> EchoTheme.typography.body
+        ButtonSize.Sm -> EchoTheme.typography.bodySm
+        ButtonSize.Md -> EchoTheme.typography.body
+        ButtonSize.Lg -> EchoTheme.typography.heading
     }
 
     val haptics = rememberEchoHaptics()
@@ -139,7 +139,7 @@ fun EchoButton(
             }
             Text(
                 text = text,
-                style = fontSize.merge(TextStyle(fontWeight = FontWeight.Medium)),
+                style = fontSize.merge(TextStyle(fontWeight = FontWeight.SemiBold, lineHeight = fontSize.fontSize)),
                 color = foreground,
             )
         }

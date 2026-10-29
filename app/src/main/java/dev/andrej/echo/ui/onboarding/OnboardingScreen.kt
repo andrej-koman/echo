@@ -61,7 +61,7 @@ fun OnboardingScreen(
                 start = EchoTheme.spacing.gutterScreen,
                 end = EchoTheme.spacing.gutterScreen,
                 top = EchoTheme.spacing.s6,
-                bottom = EchoTheme.spacing.s6,
+                bottom = 34.dp,
             ),
     ) {
         when (step) {

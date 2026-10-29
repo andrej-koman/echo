@@ -25,7 +25,7 @@ fun EchoSwitch(
     enabled: Boolean = true,
 ) {
     val colors = EchoTheme.colors
-    val trackColor by animateColorAsState(if (checked) colors.actionPrimaryBg else colors.borderSubtle, label = "switchTrack")
+    val trackColor by animateColorAsState(if (checked) colors.actionPrimaryBg else colors.controlTrack, label = "switchTrack")
     val knobOffset by animateDpAsState(if (checked) 22.dp else 2.dp, label = "switchKnob")
     Box(
         modifier = modifier

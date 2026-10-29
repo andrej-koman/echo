@@ -149,7 +149,7 @@ fun RecordButton(
                 Icon(
                     painter = painterResource(R.drawable.ic_mic),
                     contentDescription = null,
-                    tint = Color.White,
+                    tint = EchoTheme.colors.recordGlyph,
                     modifier = Modifier.size(diameter * 0.42f),
                 )
             }
@@ -181,6 +181,6 @@ private fun StopGlyph(diameter: Dp) {
         modifier = Modifier
             .size(side)
             .clip(androidx.compose.foundation.shape.RoundedCornerShape(radius))
-            .background(Color.White),
+            .background(EchoTheme.colors.recordGlyph),
     )
 }

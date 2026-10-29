@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -52,19 +53,6 @@ import dev.andrej.echo.ui.theme.echoShadow
 @Composable
 internal fun WelcomeStep(onGetStarted: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier.padding(top = EchoTheme.spacing.s4),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Mascot(size = 30.dp)
-            Text(
-                text = "Echo",
-                style = EchoTheme.typography.titleSm.copy(fontWeight = FontWeight.Bold, letterSpacing = (-0.7).sp),
-                color = EchoTheme.colors.textPrimary,
-            )
-        }
-
         Column(
             modifier = Modifier.weight(1f).fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -73,18 +61,28 @@ internal fun WelcomeStep(onGetStarted: () -> Unit) {
             val aura = EchoTheme.colors.aura
             Box(
                 modifier = Modifier
-                    .size(300.dp)
-                    .background(
-                        Brush.radialGradient(
-                            0f to aura,
-                            0.28f to aura,
-                            0.7f to aura.copy(alpha = 0f),
-                        ),
-                        CircleShape,
-                    ),
+                    .size(160.dp)
+                    .drawBehind {
+                        // The design's glow is a 300dp disc; drawn past this box's bounds so its
+                        // empty fade does not push the headline down. CSS radial-gradient sizes to
+                        // the farthest corner, hence √2 × the disc's half-width.
+                        val radius = 150.dp.toPx()
+                        drawCircle(
+                            Brush.radialGradient(
+                                0f to aura,
+                                0.28f to aura,
+                                0.7f to aura.copy(alpha = 0f),
+                                center = center,
+                                radius = radius * 1.414f,
+                            ),
+                            radius = radius * 1.414f,
+                        )
+                    },
                 contentAlignment = Alignment.Center,
             ) {
-                Mascot(size = 176.dp, mood = MascotMood.Breathing, contentDescription = "Echo, the ghost mascot")
+                // The design's image has transparent margin around the ghost; this raster is
+                // tighter, so a smaller size draws the same visible ghost.
+                Mascot(size = 120.dp, mood = MascotMood.Breathing, contentDescription = "Echo, the ghost mascot")
             }
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -368,7 +366,7 @@ internal fun ColumnScope.MicrophoneStep(onAllow: () -> Unit, onNotNow: () -> Uni
                 Icon(
                     painter = painterResource(R.drawable.ic_mic),
                     contentDescription = null,
-                    tint = Color.White,
+                    tint = EchoTheme.colors.recordGlyph,
                     modifier = Modifier.size(46.dp),
                 )
             }

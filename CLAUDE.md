@@ -447,5 +447,10 @@ hard cuts like the rest of the app; system back steps back, and leaves the app o
   pending-open-capture flag the recording notification uses. "I'll do it later" → finish → Home.
 - Voice-to-tasks' three example rows are a static `DemoItemRow` with per-kind icons
   (bell / list-checks / calendar), not `TaskRow` — real `TodoItem`s have no kind.
+- Button labels follow the design system's bumped scale: Sm/Md/Lg = 14/15/17sp semibold (was
+  13/14/15 medium). The same update made the record glyph (`recordGlyph`, mic and stop on the
+  record gradients) dark ink instead of white, darkened `textTertiary`/`waveformIdle`/
+  `indicatorIdle`, added `controlTrack` for the off-state switch track, and moved `recordLive` to
+  clay-600 and `statusWarningFg` to amber-700 in light.
 - `CardTone.Cream` now uses the new `surfaceCream` token (papaya whip / dark `#33291A`), as the
   design system's Card does; it used to fall back to the page colour.

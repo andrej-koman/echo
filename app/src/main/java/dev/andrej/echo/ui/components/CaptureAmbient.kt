@@ -151,15 +151,16 @@ fun ProcessingSpinner(modifier: Modifier = Modifier) {
                 ),
             contentAlignment = Alignment.Center,
         ) {
+            val glyph = EchoTheme.colors.recordGlyph
             Canvas(modifier = Modifier.size(28.dp)) {
                 drawCircle(
-                    color = Color.White.copy(alpha = 0.42f),
+                    color = glyph.copy(alpha = 0.42f),
                     radius = size.minDimension / 2f - 1.5f.dp.toPx(),
                     style = Stroke(width = 3.dp.toPx()),
                 )
                 rotate(inner) {
                     drawArc(
-                        color = Color.White,
+                        color = glyph,
                         startAngle = -90f,
                         sweepAngle = 90f,
                         useCenter = false,

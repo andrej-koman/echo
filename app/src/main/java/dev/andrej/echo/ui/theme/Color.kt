@@ -50,6 +50,7 @@ val Clay600 = Color(0xFF9E4B2E)
 val Amber100 = Color(0xFFFBEECB)
 val Amber400 = Color(0xFFDFAE4A)
 val Amber600 = Color(0xFFA87C19)
+val Amber700 = Color(0xFF7D5C10)
 
 // Shadows and scrims are tinted with ink, never black — black reads grey against cornsilk.
 val AlphaInk04 = Color(0x0A3A3125)
@@ -77,7 +78,7 @@ data class EchoColors(
 
     val textPrimary: Color = Ink900,
     val textSecondary: Color = Ink600,
-    val textTertiary: Color = Ink400,
+    val textTertiary: Color = Ink500,
     val textInverse: Color = Paper050,
     val textAccent: Color = Bronze700,
     val textOnAccent: Color = Ink900,
@@ -98,18 +99,21 @@ data class EchoColors(
     val actionDisabledFg: Color = Ink400,
 
     val recordIdle: Color = Bronze400,
-    val recordLive: Color = Clay500,
+    val recordLive: Color = Clay600,
+    /** Mic and stop glyphs on the record gradients: dark ink in both themes, like labels on bronze. */
+    val recordGlyph: Color = Ink900,
     val recordLiveSoft: Color = Clay100,
     val waveformActive: Color = Bronze500,
-    val waveformIdle: Color = Ink200,
-    val indicatorIdle: Color = Ink300,
+    val waveformIdle: Color = Ink400,
+    val indicatorIdle: Color = Ink400,
+    val controlTrack: Color = Ink400,
     val transcriptHighlight: Color = Sage200,
     val skeleton: Color = Ink100,
 
     val statusSuccessBg: Color = Sage100,
     val statusSuccessFg: Color = Sage700,
     val statusWarningBg: Color = Amber100,
-    val statusWarningFg: Color = Amber600,
+    val statusWarningFg: Color = Amber700,
     val statusDangerBg: Color = Clay100,
     val statusDangerFg: Color = Clay600,
     val statusNeutralBg: Color = Ink50,
@@ -157,8 +161,9 @@ val DarkEchoColors = EchoColors(
     recordLive = Clay400,
     recordLiveSoft = Color(0xFF3D2219),
     waveformActive = Bronze400,
-    waveformIdle = Ink700,
+    waveformIdle = Color(0xFF8A7C66),
     indicatorIdle = Ink500,
+    controlTrack = Color(0xFF8A7C66),
     transcriptHighlight = Color(0xFF3D4328),
     skeleton = Ink800,
 

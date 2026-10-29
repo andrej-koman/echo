@@ -21,6 +21,8 @@ interface AnalysisQueueRepository {
 
     suspend fun remove(transcriptId: String)
 
+    suspend fun clear()
+
     /** Queues the transcript if it isn't already, and clears its attempt count either way. */
     suspend fun reset(transcriptId: String, now: Long = System.currentTimeMillis())
 }

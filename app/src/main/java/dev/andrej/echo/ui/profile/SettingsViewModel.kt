@@ -8,16 +8,13 @@ import dev.andrej.echo.data.DerivedRepository
 import dev.andrej.echo.data.SettingsStore
 import dev.andrej.echo.data.TranscriptRepository
 import dev.andrej.echo.speech.TranscriptionEngine
-import dev.andrej.echo.sync.SyncStatus
 import dev.andrej.echo.ui.record.LanguageOption
 import dev.andrej.echo.ui.record.displayName
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 
 data class SettingsUiState(
@@ -35,10 +32,6 @@ data class SettingsUiState(
     val storageBytes: Long = 0,
     val notesCount: Int = 0,
     val tasksCount: Int = 0,
-    val isSignedIn: Boolean = false,
-    val syncEnabled: Boolean = false,
-    val syncing: Boolean = false,
-    val lastSyncedLabel: String? = null,
 )
 
 class SettingsViewModel(
@@ -56,10 +49,8 @@ class SettingsViewModel(
     val onTestReminderNotification: () -> Unit = {},
     val onTestDailyBriefNotification: () -> Unit = {},
     val onTestModelDownloadNotification: () -> Unit = {},
-    isSignedIn: Flow<Boolean> = flowOf(false),
-    private val onSetSyncEnabled: (Boolean) -> Unit = {},
-    syncStatus: Flow<SyncStatus> = flowOf(SyncStatus(syncing = false, lastSyncedAt = null)),
-    private val onSyncNow: () -> Unit = {},
+    private val onDeleteAllData: suspend () -> Unit = {},
+    val onReplayOnboarding: () -> Unit = {},
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(fromSettings(notesCount = 0, tasksCount = 0))
@@ -70,19 +61,8 @@ class SettingsViewModel(
             combine(transcripts.transcripts, derived.items) { t, d -> t.size to d.size }
                 .collect { (notesCount, tasksCount) ->
                     _state.value = fromSettings(notesCount, tasksCount)
-                        .copy(languages = _state.value.languages, isSignedIn = _state.value.isSignedIn)
+                        .copy(languages = _state.value.languages)
                 }
-        }
-        viewModelScope.launch {
-            isSignedIn.collect { signedIn -> _state.value = _state.value.copy(isSignedIn = signedIn) }
-        }
-        viewModelScope.launch {
-            syncStatus.collect { status ->
-                _state.value = _state.value.copy(
-                    syncing = status.syncing,
-                    lastSyncedLabel = formatLastSynced(status.lastSyncedAt),
-                )
-            }
         }
         refreshLanguages()
     }
@@ -101,7 +81,6 @@ class SettingsViewModel(
         storageBytes = storageUsedBytes(),
         notesCount = notesCount,
         tasksCount = tasksCount,
-        syncEnabled = settings.syncEnabled,
     )
 
     private fun refreshLanguages() {
@@ -154,15 +133,9 @@ class SettingsViewModel(
         _state.value = _state.value.copy(snoozeMinutes = value)
     }
 
-    fun setSyncEnabled(value: Boolean) {
-        onSetSyncEnabled(value)
-        _state.value = _state.value.copy(syncEnabled = value)
+    fun deleteAllData() {
+        viewModelScope.launch { onDeleteAllData() }
     }
-
-    fun syncNow() {
-        onSyncNow()
-    }
-
 }
 
 internal fun displayLanguage(tag: String): String =
@@ -171,15 +144,4 @@ internal fun displayLanguage(tag: String): String =
 internal fun formatBytes(bytes: Long): String {
     val mb = bytes / 1_000_000.0
     return "%.1f MB".format(mb)
-}
-
-internal fun formatLastSynced(at: Long?): String? {
-    if (at == null) return null
-    val minutes = TimeUnit.MILLISECONDS.toMinutes(System.currentTimeMillis() - at)
-    return when {
-        minutes < 1 -> "Just now"
-        minutes < 60 -> "$minutes min ago"
-        minutes < 24 * 60 -> "${minutes / 60} hr ago"
-        else -> "${minutes / (24 * 60)} d ago"
-    }
 }

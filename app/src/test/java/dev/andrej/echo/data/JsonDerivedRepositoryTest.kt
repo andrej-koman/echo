@@ -315,54 +315,29 @@ class JsonDerivedRepositoryTest {
     }
 
     @Test
-    fun `delete tombstones rather than dropping the row, so allForSync still sees it`() = runTest {
-        val repository = repository()
-        repository.replaceFor("t1", listOf(item("gone")))
-        val id = repository.items.first().single().id
+    fun `items tombstoned by the old sync-era delete stay deleted`() = runTest {
+        val directory = tempFolder.newFolder()
+        directory.resolve("derived.json").writeText(
+            """{"items":[""" +
+                """{"id":"kept","sourceTranscriptId":"t1","text":"kept","dueAt":1,"hasTime":false,"createdAt":1},""" +
+                """{"id":"gone","sourceTranscriptId":"t1","text":"gone","dueAt":1,"hasTime":false,"createdAt":1,"deletedAt":5}]}""",
+        )
 
-        repository.delete(id)
+        val stored = JsonDerivedRepository(directory, notifications).items.first()
 
-        val tombstoned = repository.allForSync().single { it.id == id }
-        assertTrue(tombstoned.deletedAt != null)
-        assertTrue(repository.items.first().none { it.id == id })
+        assertEquals(listOf("kept"), stored.map { it.id })
     }
 
     @Test
-    fun `upsertFromSync writes the row as given and applies it to items when not tombstoned`() = runTest {
+    fun `clear drops every item and cancels its notification`() = runTest {
         val repository = repository()
-        val remote = TodoItem(
-            id = "remote-1",
-            sourceTranscriptId = "t1",
-            text = "From another device",
-            dueAt = 5_000L,
-            hasTime = true,
-            createdAt = 1_000L,
-            updatedAt = 2_000L,
-        )
+        repository.replaceFor("t1", listOf(item("a")))
+        repository.replaceFor("t2", listOf(item("b")))
+        val ids = repository.items.first().map { it.id }
 
-        repository.upsertFromSync(remote)
-
-        assertEquals(remote, repository.items.first().single())
-        assertEquals(remote, repository.allForSync().single())
-    }
-
-    @Test
-    fun `upsertFromSync with a tombstoned row cancels the notification and hides it from items`() = runTest {
-        val repository = repository()
-        val remote = TodoItem(
-            id = "remote-1",
-            sourceTranscriptId = "t1",
-            text = "Deleted elsewhere",
-            dueAt = 5_000L,
-            hasTime = true,
-            createdAt = 1_000L,
-            updatedAt = 2_000L,
-            deletedAt = 2_000L,
-        )
-
-        repository.upsertFromSync(remote)
+        repository.clear()
 
         assertTrue(repository.items.first().isEmpty())
-        assertTrue("remote-1" in notifications.cancelled)
+        assertTrue(notifications.cancelled.containsAll(ids))
     }
 }

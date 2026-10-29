@@ -106,8 +106,6 @@ class JsonTranscriptRepositoryTest {
         assertNull(stored.title)
         assertNull(stored.summary)
         assertNull(stored.analyzedAt)
-        assertEquals(stored.createdAt, stored.updatedAt)
-        assertNull(stored.deletedAt)
     }
 
     @Test
@@ -126,33 +124,27 @@ class JsonTranscriptRepositoryTest {
     }
 
     @Test
-    fun `allForSync includes tombstoned rows`() = runTest {
-        val repository = repository()
-        val doomed = repository.save(text = "remove", language = "en-US", durationMs = 0)
+    fun `rows tombstoned by the old sync-era delete stay deleted`() = runTest {
+        val directory = tempFolder.newFolder()
+        directory.resolve("transcripts.json").writeText(
+            """[{"id":"kept","text":"kept","language":"en-GB","createdAt":1,"durationMs":0,"deletedAt":null},""" +
+                """{"id":"gone","text":"gone","language":"en-GB","createdAt":2,"durationMs":0,"deletedAt":5}]""",
+        )
 
-        repository.delete(doomed.id)
+        val stored = JsonTranscriptRepository(directory).transcripts.first()
 
-        val stored = repository.allForSync().single { it.id == doomed.id }
-        assertTrue(stored.deletedAt != null)
-        assertTrue(repository.transcripts.first().none { it.id == doomed.id })
+        assertEquals(listOf("kept"), stored.map { it.id })
     }
 
     @Test
-    fun `upsertFromSync writes the row as given`() = runTest {
-        val repository = repository()
-        val remote = Transcript(
-            id = "remote-1",
-            text = "From another device",
-            language = "en-GB",
-            createdAt = 1_000,
-            durationMs = 2_000,
-            updatedAt = 3_000,
-        )
+    fun `clear removes every transcript from disk`() = runTest {
+        val directory = tempFolder.newFolder()
+        val repository = JsonTranscriptRepository(directory)
+        repository.save(text = "one", language = "en-GB", durationMs = 0)
 
-        repository.upsertFromSync(remote)
+        repository.clear()
 
-        assertEquals(remote, repository.transcripts.first().single())
-        assertEquals(remote, repository.allForSync().single())
+        assertTrue(JsonTranscriptRepository(directory).transcripts.first().isEmpty())
     }
 
     @Test

@@ -22,6 +22,17 @@ data class LanguageSupport(
     val supported: List<String>,
 ) {
     val all: List<String> = installed + supported.filterNot { it in installed }
+
+    /**
+     * The language pack to fetch so the first recording works offline: none if one is already
+     * installed, else the device's own tag, else the first supported tag in the device's language.
+     */
+    fun toPrefetch(deviceTag: String): String? {
+        if (installed.isNotEmpty()) return null
+        if (deviceTag in supported) return deviceTag
+        val language = deviceTag.substringBefore('-')
+        return supported.firstOrNull { it.substringBefore('-') == language }
+    }
 }
 
 sealed interface Availability {

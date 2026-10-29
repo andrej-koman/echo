@@ -46,7 +46,7 @@ fun EchoCard(
         CardTone.Raised -> colors.surfaceRaised
         CardTone.Sage -> colors.surfaceSageSoft
         CardTone.Bronze -> colors.surfaceAccentSoft
-        CardTone.Cream -> colors.surfacePage
+        CardTone.Cream -> colors.surfaceCream
         CardTone.Inverse -> colors.surfaceInverse
     }
     val foreground = when (tone) {

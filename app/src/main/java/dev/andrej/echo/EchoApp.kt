@@ -1,6 +1,5 @@
 package dev.andrej.echo
 
-import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.background
@@ -15,6 +14,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.Modifier
@@ -29,9 +31,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import dev.andrej.echo.ai.AiCardState
-import dev.andrej.echo.auth.AuthState
-import dev.andrej.echo.ui.auth.AuthViewModel
-import dev.andrej.echo.ui.auth.SignInScreen
 import dev.andrej.echo.ui.capture.CaptureScreen
 import dev.andrej.echo.ui.components.EchoIconButton
 import dev.andrej.echo.ui.components.RecordButton
@@ -44,6 +43,8 @@ import dev.andrej.echo.ui.home.HomeScreen
 import dev.andrej.echo.ui.home.HomeViewModel
 import dev.andrej.echo.ui.notes.NotesScreen
 import dev.andrej.echo.ui.notes.NotesViewModel
+import dev.andrej.echo.ui.onboarding.OnboardingScreen
+import dev.andrej.echo.ui.onboarding.OnboardingViewModel
 import dev.andrej.echo.ui.profile.HistoryScreen
 import dev.andrej.echo.ui.profile.HistoryViewModel
 import dev.andrej.echo.ui.profile.ProfileScreen
@@ -55,6 +56,7 @@ import dev.andrej.echo.ui.tasks.EditTaskScreen
 import dev.andrej.echo.ui.tasks.TasksScreen
 import dev.andrej.echo.ui.tasks.TasksViewModel
 import dev.andrej.echo.ui.theme.EchoTheme
+import kotlinx.coroutines.flow.StateFlow
 
 private object Routes {
     const val HOME = "home"
@@ -81,6 +83,7 @@ private val Tabs = listOf(
 @Composable
 fun EchoApp(
     viewModelFactory: ViewModelProvider.Factory,
+    onboardingDone: StateFlow<Boolean>,
     modifier: Modifier = Modifier,
     pendingOpenTranscriptId: String? = null,
     onOpenTranscriptHandled: () -> Unit = {},
@@ -89,53 +92,40 @@ fun EchoApp(
     pendingOpenCapture: Boolean = false,
     onOpenCaptureHandled: () -> Unit = {},
 ) {
-    val authViewModel: AuthViewModel = viewModel(factory = viewModelFactory)
-    val authState by authViewModel.state.collectAsStateWithLifecycle()
-    val activity = LocalActivity.current
+    val done by onboardingDone.collectAsStateWithLifecycle()
+    var captureAfterOnboarding by remember { mutableStateOf(false) }
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(EchoTheme.colors.surfacePage),
     ) {
-        when (authState) {
-            AuthState.Unknown -> Unit
-
-            AuthState.SignedOut -> SignInScreen(
-                busy = authViewModel.busy,
-                error = authViewModel.error,
-                onSignInWithGoogle = { activity?.let(authViewModel::signIn) },
-                onContinueWithoutAccount = authViewModel::continueAsGuest,
+        if (!done) {
+            val onboardingViewModel: OnboardingViewModel = viewModel(factory = viewModelFactory)
+            OnboardingScreen(
+                viewModel = onboardingViewModel,
+                onRecordFirstNote = { captureAfterOnboarding = true },
             )
-
-            else -> SignedInApp(
+        } else {
+            MainApp(
                 viewModelFactory = viewModelFactory,
-                authState = authState,
-                signInBusy = authViewModel.busy,
-                signInError = authViewModel.error,
-                onSignIn = { activity?.let(authViewModel::signIn) },
-                onSignOut = authViewModel::signOut,
-                onDeleteAccount = authViewModel::deleteAccount,
                 pendingOpenTranscriptId = pendingOpenTranscriptId,
                 onOpenTranscriptHandled = onOpenTranscriptHandled,
                 pendingOpenTaskId = pendingOpenTaskId,
                 onOpenTaskHandled = onOpenTaskHandled,
-                pendingOpenCapture = pendingOpenCapture,
-                onOpenCaptureHandled = onOpenCaptureHandled,
+                pendingOpenCapture = pendingOpenCapture || captureAfterOnboarding,
+                onOpenCaptureHandled = {
+                    captureAfterOnboarding = false
+                    onOpenCaptureHandled()
+                },
             )
         }
     }
 }
 
 @Composable
-private fun SignedInApp(
+private fun MainApp(
     viewModelFactory: ViewModelProvider.Factory,
-    authState: AuthState,
-    signInBusy: Boolean,
-    signInError: String?,
-    onSignIn: () -> Unit,
-    onSignOut: () -> Unit,
-    onDeleteAccount: () -> Unit,
     pendingOpenTranscriptId: String? = null,
     onOpenTranscriptHandled: () -> Unit = {},
     pendingOpenTaskId: String? = null,
@@ -188,7 +178,6 @@ private fun SignedInApp(
             composable(Routes.HOME) {
                 HomeScreen(
                     viewModel = homeViewModel,
-                    userName = (authState as? AuthState.SignedIn)?.account?.displayName,
                     onSeeTasks = { navController.selectTab(Routes.TASKS) },
                     onSeeAll = { navController.selectTab(Routes.NOTES) },
                     onOpen = { navController.navigate(Routes.detail(it)) },
@@ -223,14 +212,8 @@ private fun SignedInApp(
                 val profileState by profileViewModel.state.collectAsStateWithLifecycle()
                 ProfileScreen(
                     state = profileState,
-                    authState = authState,
-                    signInBusy = signInBusy,
-                    signInError = signInError,
                     onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                     onOpenHistory = { navController.navigate(Routes.HISTORY) },
-                    onSignIn = onSignIn,
-                    onSignOut = onSignOut,
-                    onDeleteAccount = onDeleteAccount,
                 )
             }
 
@@ -251,14 +234,14 @@ private fun SignedInApp(
                     onReminderLeadMinutesChange = settingsViewModel::setReminderLeadMinutes,
                     onReminderMorningTimeChange = settingsViewModel::setReminderMorningTime,
                     onSnoozeMinutesChange = settingsViewModel::setSnoozeMinutes,
-                    onSyncEnabledChange = settingsViewModel::setSyncEnabled,
-                    onSyncNow = settingsViewModel::syncNow,
+                    onDeleteAllData = settingsViewModel::deleteAllData,
                     onDownloadModel = settingsViewModel.onDownloadModel,
                     onCancelDownload = settingsViewModel.onCancelDownload,
                     onDeleteModel = settingsViewModel.onDeleteModel,
                     onTestReminderNotification = settingsViewModel.onTestReminderNotification,
                     onTestDailyBriefNotification = settingsViewModel.onTestDailyBriefNotification,
                     onTestModelDownloadNotification = settingsViewModel.onTestModelDownloadNotification,
+                    onReplayOnboarding = settingsViewModel.onReplayOnboarding,
                 )
             }
 

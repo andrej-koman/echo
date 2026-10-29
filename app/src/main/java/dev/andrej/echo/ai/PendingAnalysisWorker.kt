@@ -92,7 +92,7 @@ class PendingAnalysisWorker(
 
         for (entry in currentPending) {
             val transcript = currentTranscripts.firstOrNull { it.id == entry.transcriptId }
-            if (transcript == null || transcript.deletedAt != null || transcript.analyzedAt != null) {
+            if (transcript == null || transcript.analyzedAt != null) {
                 queue.remove(entry.transcriptId)
                 continue
             }

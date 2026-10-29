@@ -6,16 +6,16 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.jsonArray
 
 class JsonTranscriptRepository(
     private val directory: File,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val onChanged: () -> Unit = {},
 ) : TranscriptRepository {
 
     private val file = File(directory, FILE_NAME)
@@ -24,8 +24,7 @@ class JsonTranscriptRepository(
 
     private val state = MutableStateFlow(readFromDisk())
 
-    override val transcripts: Flow<List<Transcript>> =
-        state.map { all -> all.filter { it.deletedAt == null } }
+    override val transcripts: Flow<List<Transcript>> = state
 
     override suspend fun save(
         text: String,
@@ -58,7 +57,6 @@ class JsonTranscriptRepository(
                         title = title,
                         summary = summary,
                         analyzedAt = analyzedAt,
-                        updatedAt = analyzedAt,
                     )
                 } else {
                     transcript
@@ -68,22 +66,11 @@ class JsonTranscriptRepository(
     }
 
     override suspend fun delete(id: String) {
-        val now = System.currentTimeMillis()
-        update { current ->
-            current.map { transcript ->
-                if (transcript.id == id) {
-                    transcript.copy(deletedAt = now, updatedAt = now)
-                } else {
-                    transcript
-                }
-            }
-        }
+        update { current -> current.filterNot { it.id == id } }
     }
 
-    override suspend fun allForSync(): List<Transcript> = state.value
-
-    override suspend fun upsertFromSync(transcript: Transcript) {
-        update { current -> current.filterNot { it.id == transcript.id } + transcript }
+    override suspend fun clear() {
+        update { emptyList() }
     }
 
     private suspend fun update(transform: (List<Transcript>) -> List<Transcript>) {
@@ -91,7 +78,6 @@ class JsonTranscriptRepository(
             val updated = transform(state.value).sortedByDescending { it.createdAt }
             withContext(ioDispatcher) { writeToDisk(updated) }
             state.value = updated
-            onChanged()
         }
     }
 
@@ -99,7 +85,8 @@ class JsonTranscriptRepository(
         if (!file.exists()) return emptyList()
 
         return try {
-            json.decodeFromString<List<Transcript>>(file.readText())
+            val rows = json.parseToJsonElement(file.readText()).jsonArray.withoutTombstones()
+            json.decodeFromJsonElement<List<Transcript>>(rows)
                 .sortedByDescending { it.createdAt }
         } catch (e: Exception) {
             // Losing history beats never launching again.

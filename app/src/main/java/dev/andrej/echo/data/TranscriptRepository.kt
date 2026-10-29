@@ -22,7 +22,5 @@ interface TranscriptRepository {
 
     suspend fun delete(id: String)
 
-    suspend fun allForSync(): List<Transcript>
-
-    suspend fun upsertFromSync(transcript: Transcript)
+    suspend fun clear()
 }

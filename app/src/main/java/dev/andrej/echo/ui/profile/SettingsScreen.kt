@@ -43,6 +43,7 @@ import dev.andrej.echo.ui.components.BadgeTone
 import dev.andrej.echo.ui.components.ButtonSize
 import dev.andrej.echo.ui.components.ButtonVariant
 import dev.andrej.echo.ui.components.CardPadding
+import dev.andrej.echo.ui.components.ConfirmSheet
 import dev.andrej.echo.ui.components.EchoBadge
 import dev.andrej.echo.ui.components.EchoButton
 import dev.andrej.echo.ui.components.EchoCard
@@ -65,14 +66,14 @@ fun SettingsScreen(
     onReminderLeadMinutesChange: (Int) -> Unit,
     onReminderMorningTimeChange: (Int, Int) -> Unit,
     onSnoozeMinutesChange: (Int) -> Unit,
-    onSyncEnabledChange: (Boolean) -> Unit,
-    onSyncNow: () -> Unit,
+    onDeleteAllData: () -> Unit,
     onDownloadModel: () -> Unit,
     onCancelDownload: () -> Unit,
     onDeleteModel: () -> Unit,
     onTestReminderNotification: () -> Unit = {},
     onTestDailyBriefNotification: () -> Unit = {},
     onTestModelDownloadNotification: () -> Unit = {},
+    onReplayOnboarding: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -80,6 +81,7 @@ fun SettingsScreen(
     var pickingModel by remember { mutableStateOf(false) }
     var pickingLead by remember { mutableStateOf(false) }
     var pickingSnooze by remember { mutableStateOf(false) }
+    var confirmingDeleteAll by remember { mutableStateOf(false) }
     val notificationsAllowed = remember { NotificationManagerCompat.from(context).areNotificationsEnabled() }
     val versionName = remember {
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }
@@ -244,32 +246,6 @@ fun SettingsScreen(
                 ),
             )
 
-            if (state.isSignedIn) {
-                Section(
-                    title = "SYNC",
-                    rows = buildList {
-                        add {
-                            SwitchRow(
-                                iconRes = R.drawable.ic_upload,
-                                label = "Sync across devices",
-                                subtitle = "Notes and tasks stay up to date on every signed-in device",
-                                checked = state.syncEnabled,
-                                onCheckedChange = onSyncEnabledChange,
-                            )
-                        }
-                        if (state.syncEnabled) {
-                            add {
-                                SyncStatusRow(
-                                    syncing = state.syncing,
-                                    lastSyncedLabel = state.lastSyncedLabel,
-                                    onSyncNow = onSyncNow,
-                                )
-                            }
-                        }
-                    },
-                )
-            }
-
             Section(
                 title = "DATA",
                 rows = listOf(
@@ -283,10 +259,10 @@ fun SettingsScreen(
                     },
                     {
                         DisclosureRow(
-                            iconRes = R.drawable.ic_file_text,
-                            label = "Export notes and tasks",
+                            iconRes = R.drawable.ic_trash,
+                            label = "Delete all data",
                             value = "",
-                            onClick = {},
+                            onClick = { confirmingDeleteAll = true },
                         )
                     },
                 ),
@@ -318,6 +294,14 @@ fun SettingsScreen(
                                 label = "Test: model download",
                                 value = "",
                                 onClick = onTestModelDownloadNotification,
+                            )
+                        },
+                        {
+                            DisclosureRow(
+                                iconRes = R.drawable.ic_refresh_cw,
+                                label = "Replay onboarding",
+                                value = "",
+                                onClick = onReplayOnboarding,
                             )
                         },
                     ),
@@ -380,6 +364,18 @@ fun SettingsScreen(
         onDismiss = { pickingSnooze = false },
     )
 
+    ConfirmSheet(
+        visible = confirmingDeleteAll,
+        title = "Delete all data?",
+        message = "Every note and task on this phone is erased. The downloaded AI model and your " +
+            "settings stay.",
+        confirmLabel = "Delete everything",
+        onConfirm = {
+            confirmingDeleteAll = false
+            onDeleteAllData()
+        },
+        onDismiss = { confirmingDeleteAll = false },
+    )
 }
 
 private fun formatMorningTime(hour: Int, minute: Int): String = "%d:%02d %s".format(
@@ -494,37 +490,6 @@ private fun SwitchRow(
             }
         }
         EchoSwitch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
-    }
-}
-
-@Composable
-private fun SyncStatusRow(syncing: Boolean, lastSyncedLabel: String?, onSyncNow: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = EchoTheme.spacing.s5),
-        horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "LAST SYNCED",
-                style = EchoTheme.typography.caption,
-                color = EchoTheme.colors.textTertiary,
-            )
-            Text(
-                text = when {
-                    syncing -> "Syncing…"
-                    lastSyncedLabel != null -> lastSyncedLabel
-                    else -> "Not synced yet"
-                },
-                style = EchoTheme.typography.bodySm,
-                color = EchoTheme.colors.textPrimary,
-            )
-        }
-        EchoIconButton(
-            iconRes = R.drawable.ic_refresh_cw,
-            contentDescription = "Sync now",
-            onClick = onSyncNow,
-        )
     }
 }
 

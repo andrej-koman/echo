@@ -30,18 +30,14 @@ ai/           LlmRunner interface + MlKitLlmRunner (Gemini Nano) and LiteRtLlmRu
               TranscriptAnalyzer, AnalysisOutcome/AnalysisBlock, PendingAnalysisWorker
 data/         Transcript, TranscriptRepository (JSON file), TodoItem + DerivedRepository
               (derived.json), PendingAnalysis + AnalysisQueueRepository (pending_analysis.json),
-              SettingsStore, AuthStore
-auth/         AuthRepository interface + SupabaseAuthRepository (Google via Credential Manager,
-              session/identity owned by Supabase Auth)
-sync/         SyncEngine (Transcripts + TodoItems <-> Supabase Postgrest, triggered pull, LWW),
-              SyncStateStore (per-table pull/push cursors), TranscriptDto/TodoItemDto
+              SettingsStore
 ui/theme/     OutLoud design tokens (Color, Type, Shape, Spacing, Elevation, Motion, Theme)
 ui/components/ the ported design system kit
 ui/home/      HomeScreen + HomeViewModel — hero task, then/coming-up strip, latest note
 ui/tasks/     TasksScreen + TasksViewModel — grouped by source transcript, done checkbox
 ui/capture/   CaptureScreen — Listening and Processing
 ui/record/    RecordViewModel (still named for its old screen)
-ui/auth/      SignInScreen, AuthViewModel
+ui/onboarding/ OnboardingScreen + OnboardingSteps (the 5 first-run screens), OnboardingViewModel
 ui/profile/   ProfileScreen (the Profile tab) + ProfileViewModel, SettingsScreen +
               SettingsViewModel, HistoryScreen + HistoryViewModel
 ui/transcripts/, ui/detail/    NotesScreen (the merged Notes tab — one shared card per day,
@@ -52,7 +48,6 @@ AppContainer manual DI, no Hilt
 ```
 
 Engine sits behind an interface so a different backend (e.g. Whisper) can replace it without touching UI.
-`AuthRepository` is behind an interface for the same reason — Google is the only provider today.
 
 Four tabs: Home / Tasks — record button — Notes / Profile, Home the start destination. There is no
 separate Transcripts tab — Notes is the one browsable list (former Transcripts content merged into it,
@@ -67,8 +62,7 @@ selection crossfade — and the NavHost runs with every transition set to `None`
 screen changes read as jank on device, so switching is a hard cut. Tab switches go through `NavHostController.selectTab`: Home pops back to Home, other tabs
 `popUpTo(HOME)` + `launchSingleTop`. Never `saveState`/`restoreState` — the saved tab stack keys to
 Home, so tapping Home restored it and landed on the last tab. Cost: tab scroll position is not kept.
-`EchoApp` gates on `AuthState` outside the
-NavHost, so signing out drops the whole graph rather than unwinding a back stack.
+`EchoApp` gates on `AppContainer.onboardingDone` outside the NavHost (see Onboarding below).
 
 ## Notes
 
@@ -76,18 +70,10 @@ NavHost, so signing out drops the whole graph rather than unwinding a back stack
 - `SpeechRecognizer` ends on silence; `AndroidSpeechEngine` restarts sessions to stay continuous. `ERROR_NO_MATCH` is silence, not failure.
 - No raw audio is ever written to disk — `SpeechRecognizer` streams straight to text, there is no `MediaRecorder`/file step to remove. Only the transcript text is persisted.
 - No Room: KSP has no release matching Kotlin 2.4.10.
-- Sign-in needs `google_web_client_id`, `supabase_url` and `supabase_anon_key` in
-  `res/values/auth.xml` — the OAuth **web** client ID (plus an Android client ID registered with
-  this package and signing SHA-1) and the Supabase project's URL/anon key. Left blank in the
-  repo: `SupabaseAuthRepository` then reports itself unconfigured instead of failing opaquely.
-- `AuthState.Guest` (from "Continue without account" on the initial `SignInScreen`) is the only
-  way to reach the signed-in graph without an account, and Profile's `SignedOutBody` is the only
-  way back to sign-in from there — it reuses the same `AuthViewModel.busy`/`error` that
-  `SignInScreen` shows, threaded down through `EchoApp` → `SignedInApp` → `ProfileScreen` as
-  `signInBusy`/`signInError`, so an unconfigured build or a cancelled/failed sign-in surfaces a
-  message on Profile too instead of the button silently doing nothing.
-- No server verifies the Google ID token; the account is a local label. `GoogleIdTokenCredential`
-  has no email field of its own — `id` is the email address for Google accounts.
+- **Fully offline, no account.** Google sign-in, Supabase auth and sync were removed
+  (2026-10-29). The only network traffic left is the LLM weights download (`HttpModelDownloader`,
+  hence `INTERNET`) and the system's own speech language-pack download. The remote Supabase
+  project was left as-is; nothing in the app talks to it.
 - `TranscriptsViewModel.title()` derives a title from the opening of the text (first sentence, or
   six words) — the fallback for a transcript analysis has not named yet, not a permanent scheme.
   `Transcript.asRow()` prefers `title`/`summary` when present. `summary` is the AI's full
@@ -168,10 +154,11 @@ NavHost, so signing out drops the whole graph rather than unwinding a back stack
   Notes list, so it stays local rather than changing `NoteRow` itself. Home dropped its own search
   field with this rework (nothing left on the screen is a list to filter); the header's search icon
   and the "Coming up"/"See all"/"All notes" links all just switch tabs.
-- Rows carry `updatedAt` and transcripts carry a `deletedAt` tombstone — `delete()` marks, the
-  `transcripts` flow filters. Both default off `createdAt`/null, so files written before them still
-  parse. Sync is not built and is not planned yet; these exist so a delete and a last-write-wins
-  merge stay possible later, when a hard delete would already have resurrected rows.
+- Deletes are hard deletes. The sync-era `deletedAt` tombstones are gone from `Transcript` and
+  `TodoItem`; files written before that still hold tombstoned rows, so both Json repositories
+  drop any row with a non-null `deletedAt` while decoding (`data/LegacyTombstones.kt`) — without
+  it `ignoreUnknownKeys` would quietly resurrect them. `TodoItem.updatedAt` stays: the Completed
+  section sorts by it. `Transcript.updatedAt` is gone.
 - Derived rows are keyed by `UUID.nameUUIDFromBytes(transcriptId + kind + normalized text)`, not
   minted fresh, so re-analysis lands on the same ids and `Task.done` survives it. Before this,
   Analyze silently un-ticked every task. Two rows with the same text under one transcript collapse
@@ -232,11 +219,9 @@ NavHost, so signing out drops the whole graph rather than unwinding a back stack
   recent-note cards, and the detail screen, which already has the Analyze button to retry with.
 - **Profile, Settings, History** implement the OutLoud design's three-screen exploration
   (Claude Design project `582866bc-4d0a-4f8f-a6bc-dbb7efb86455`). `ProfileScreen` replaced the old
-  `AccountScreen` stub: identity card, a NOTES/TASKS DONE/CAPTURED stats grid, a "This week"
-  bar-chart card (tap opens History) with a streak, and an ACCOUNT rail (Sign out, Delete account
-  behind `ConfirmSheet`). Signed-out (`AuthState.Guest`, reached only inside the signed-in graph —
-  the top-level `AuthState.SignedOut` still gets its own full `SignInScreen`) swaps the stats for a
-  mascot empty state and a "Sign in with Google" button. `ProfileViewModel.buildState` computes the
+  `AccountScreen` stub: a NOTES/TASKS DONE/CAPTURED stats grid and a "This week" bar-chart card
+  (tap opens History) with a streak — no identity card or account rail since the offline pivot.
+  `ProfileViewModel.buildState` computes the
   week bars and streak by walking backward from today over `Transcript.createdAt` grouped by
   calendar day (zone-aware) — the first empty day stops the streak. `AiViewModel` is gone: its
   Download/Cancel/Remove UI moved into `SettingsScreen`'s ON-DEVICE AI card, and `SettingsViewModel`
@@ -252,11 +237,10 @@ NavHost, so signing out drops the whole graph rather than unwinding a back stack
   motion) stays read-only by design — threading the setting through `rememberEchoHaptics()`/
   `LocalReducedMotion` would need a new CompositionLocal reaching every call site, out of scope for
   this pass; the switches render "on" but ignore taps. `AppContainer.storageUsedBytes()` backs
-  Settings' DATA section (no bulk-delete button there — no raw audio is ever saved to delete;
-  see the on-device AI note below). "Export notes and tasks" is UI-shell-only, no real exporter
-  exists. `AuthRepository.deleteAccount()` is a new method with the same body as
-  `signOut()` — kept separate because it is a distinct user intent, even though there is no server
-  account to actually delete. `HistoryScreen`/`HistoryViewModel` render a month calendar
+  Settings' DATA section, alongside **Delete all data** (behind `ConfirmSheet`):
+  `AppContainer.deleteAllData()` clears the pending queue, every `TodoItem` (cancelling its alarm)
+  and every transcript, via each repository's `clear()`. It keeps the model, settings and
+  `onboardingDone`. `HistoryScreen`/`HistoryViewModel` render a month calendar
   (`YearMonth`/`LocalDate` state, not persisted) with a 4-level heat grid (0/1/2/3+ notes that
   day), month totals, and a selected-day detail list; `nextMonth()` refuses to advance past the
   current month. `EchoSwitch` (44×24 pill, 20dp thumb) moved from a private composable in
@@ -276,8 +260,8 @@ artifact: https://claude.ai/artifact/3VcQDGeoAbWCMknDg8WUV2 (Claude Design proje
 The older screen files (`Echo Screens.dc.html`, `Echo Transcripts.dc.html`, project
 `2a9bb6ef-…`) are no longer reachable.
 
-Neither file has a sign-in artboard — `SignInScreen` and `AccountScreen` are composed from the
-tokens and kit, not ported from a design.
+Onboarding is ported from the separate "Echo Onboarding" Design artifact
+(https://claude.ai/artifact/We1pU5EfPrcFTnNatC6jmV), light and dark artboards.
 
 - Tokens live in `ui/theme/` and are reached through the `EchoTheme` object
   (`EchoTheme.colors.recordLive`), not through `MaterialTheme`. Material's `ColorScheme` carries
@@ -368,12 +352,11 @@ constructor param, not a defaulted no-op, so a build can't silently ship without
   listen for `LOCKED_BOOT_COMPLETED`: `filesDir` is credential-encrypted and unreadable before
   first unlock, same constraint as everywhere else in this app.
 - Tap-through to the source transcript is an `Intent` extra read in `MainActivity`, not a
-  Navigation-Compose deep link: `EchoApp` renders `SignInScreen` (or nothing, while `AuthState`
-  is `Unknown`) *outside* the `NavHost`, so a cold start calling `handleDeepLink` on a
+  Navigation-Compose deep link: `EchoApp` renders `OnboardingScreen` *outside* the `NavHost`, so a cold start calling `handleDeepLink` on a
   controller that doesn't exist yet would drop the intent. `MainActivity` holds the pending
   transcript id in `Activity` state instead (seeded in `onCreate`, updated in `onNewIntent`, the
   extra removed each time so a config-change recreation doesn't renavigate), and passes it down
-  to `SignedInApp`'s `NavHost` once it exists.
+  to `MainApp`'s `NavHost` once it exists.
 - `POST_NOTIFICATIONS` is requested from `TasksScreen` the first time its item list goes
   non-empty, guarded by a file-scoped `askedForNotifications` so it fires once per process. If
   denied, scheduling still runs — alarms fire — but `NotificationManager.notify()` silently
@@ -444,40 +427,25 @@ call). One prompt and one parser serve both, so a new backend costs one class.
   `..._mldrift_weight_cache.bin` beside the weights that is dead without them.
 - MediaPipe LLM Inference is maintenance-only; LiteRT-LM replaces it.
 
-## Sync
+## Onboarding
 
-Signed-in only, opt-in per device (`SettingsStore.syncEnabled`, default off, itself never
-synced — Settings are device-specific and out of scope). Syncs `Transcript`/`TodoItem` only —
-notes and tasks. Client-driven, triggered-pull, no Realtime, no server process: `SyncEngine`
-pulls remote rows newer than a local cursor, then pushes local rows newer than another local
-cursor, against two Supabase tables (`transcripts`, `todo_items`, schema in
-`supabase/migrations/`, RLS scoped to `auth.uid()`). Conflict resolution is last-write-wins by
-`updatedAt`, whole-row — no field-level merge; a tie (remote `updatedAt` not strictly greater
-than local) is a no-op, which is what stops a synced row from ping-ponging between devices.
+Five screens (`ui/onboarding/`): Welcome, Voice to tasks (1/4), Private and offline (2/4),
+Microphone (3/4), First note (4/4). One composable switches on `OnboardingStep` — no NavHost,
+hard cuts like the rest of the app; system back steps back, and leaves the app on Welcome.
 
-- `TranscriptRepository`/`DerivedRepository` both grew `allForSync()` (all rows including
-  tombstones, sync-only, never for UI) and `upsertFromSync()` (raw write of a remote row's
-  fields as given — no id minting, no derivation). `TodoItem` gained a `deletedAt` tombstone to
-  match `Transcript`'s (mirrors its "delete can outlive one device" reasoning exactly) —
-  `DerivedRepository.delete()`/`deleteFor()` now tombstone instead of dropping the row, and
-  `items` filters `deletedAt == null` like `transcripts` already did. Before this, a delete had
-  no way to propagate to another device at all.
-- `JsonTranscriptRepository`/`JsonDerivedRepository` both take an `onChanged: () -> Unit = {}`
-  constructor param, called after every successful disk write — `AppContainer` wires it to
-  `syncEngine.requestSync()` (via a `syncEngineRef` holder, since the repos are built before
-  `SyncEngine` exists and need the callback first). This means every local mutation, from any
-  call site present or future, triggers a sync attempt without any ViewModel needing to know
-  sync exists — same shape as the pre-existing `NotificationScheduler` hook in
-  `JsonDerivedRepository`.
-- `SyncEngine.requestSync()` is debounced (1s) into one coroutine at a time (`Mutex`-guarded);
-  it no-ops unless `AuthState.SignedIn && settings.syncEnabled`, and swallows network/Postgrest
-  errors via `runCatching` — a failed sync just waits for the next trigger, never crashes.
-  Called from: the `onChanged` hook above, `AppContainer.onAppForegrounded()`, and the
-  transition into `AuthState.SignedIn` (not on every emission — `wasSignedIn` tracks the edge so
-  re-collecting `Guest`/`SignedOut` states doesn't resync).
-- **Known, accepted gap: local JSON files are not account-scoped.** Signing into a different
-  Google account on a device that already has local data would push that old data into the new
-  account on first sync. Not handled — this app is used across one person's own devices under
-  one account, so it wasn't worth the complexity.
-- Schema changes go through `supabase/migrations/` (`supabase migration new <name>`, then
-  `supabase db push` against the already-linked project) — not a manual dashboard edit.
+- **Gate:** `AppContainer.onboardingDone` = `SettingsStore.onboardingDone`, or any transcript
+  already on disk — an install that predates onboarding goes straight to Home.
+- **Downloads start on "Get started", never block.** `startOnboardingDownloads()` fetches the
+  device language's speech pack if none is installed (`LanguageSupport.toPrefetch`) and starts
+  the LLM download only on Wi-Fi and only when `aiCardState` says `NeedsDownload` (Nano devices
+  skip it). On mobile data nothing starts; step 4 shows a "Download AI · 977 MB" button (not in
+  the design) so the first note isn't stuck "waiting for model" with no way forward. A note
+  recorded mid-download queues and auto-analyses when the model lands (existing drain trigger).
+- **Paths:** Skip (steps 1–2) → Microphone, never past it. Allow → system dialog; granted →
+  First note, denied → finish → Home. Not now → finish → Home (Capture asks again later). The
+  record button → finish, then `MainApp` opens straight on Capture through the same
+  pending-open-capture flag the recording notification uses. "I'll do it later" → finish → Home.
+- Voice-to-tasks' three example rows are a static `DemoItemRow` with per-kind icons
+  (bell / list-checks / calendar), not `TaskRow` — real `TodoItem`s have no kind.
+- `CardTone.Cream` now uses the new `surfaceCream` token (papaya whip / dark `#33291A`), as the
+  design system's Card does; it used to fall back to the page colour.

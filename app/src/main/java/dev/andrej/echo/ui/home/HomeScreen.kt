@@ -49,7 +49,6 @@ import dev.andrej.echo.ui.theme.EchoTheme
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
-    userName: String?,
     onSeeTasks: () -> Unit,
     onSeeAll: () -> Unit,
     onOpen: (String) -> Unit,
@@ -64,7 +63,7 @@ fun HomeScreen(
         ) {
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 Text(
-                    text = userName?.substringBefore(' ')?.let { "${state.greeting}, $it" } ?: state.greeting,
+                    text = state.greeting,
                     style = EchoTheme.typography.titleSm,
                     color = EchoTheme.colors.textPrimary,
                     maxLines = 1,

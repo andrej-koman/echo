@@ -7,15 +7,9 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import java.time.ZoneId
+import java.util.Locale
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import dev.andrej.echo.auth.AuthRepository
-import dev.andrej.echo.auth.AuthState
-import dev.andrej.echo.auth.SupabaseAuthRepository
-import io.github.jan.supabase.auth.Auth
-import io.github.jan.supabase.createSupabaseClient
-import io.github.jan.supabase.postgrest.Postgrest
-import io.github.jan.supabase.postgrest.postgrest
 import dev.andrej.echo.ai.AiCardState
 import dev.andrej.echo.ai.HttpModelDownloader
 import dev.andrej.echo.ai.LiteRtLlmRunner
@@ -29,13 +23,11 @@ import dev.andrej.echo.ai.QWEN3_1_7B_INT4
 import dev.andrej.echo.ai.TranscriptAnalyzer
 import dev.andrej.echo.ai.toCardState
 import dev.andrej.echo.data.AnalysisQueueRepository
-import dev.andrej.echo.data.AuthStore
 import dev.andrej.echo.data.DerivedRepository
 import dev.andrej.echo.data.JsonAnalysisQueueRepository
 import dev.andrej.echo.data.JsonDerivedRepository
 import dev.andrej.echo.data.JsonTranscriptRepository
 import dev.andrej.echo.data.SettingsStore
-import dev.andrej.echo.data.SharedPreferencesAuthStore
 import dev.andrej.echo.data.SharedPreferencesSettingsStore
 import dev.andrej.echo.data.TranscriptRepository
 import dev.andrej.echo.ai.ModelState
@@ -47,9 +39,6 @@ import dev.andrej.echo.notify.RecordingNotifier
 import dev.andrej.echo.notify.ReminderAlarmReceiver
 import dev.andrej.echo.speech.AndroidSpeechEngine
 import dev.andrej.echo.speech.TranscriptionEngine
-import dev.andrej.echo.sync.SharedPreferencesSyncStateStore
-import dev.andrej.echo.sync.SyncEngine
-import dev.andrej.echo.ui.auth.AuthViewModel
 import dev.andrej.echo.ui.home.HomeViewModel
 import dev.andrej.echo.ui.home.snoozeTime
 import dev.andrej.echo.ui.profile.HistoryViewModel
@@ -58,6 +47,7 @@ import dev.andrej.echo.ui.profile.SettingsViewModel
 import dev.andrej.echo.ui.record.RecordViewModel
 import dev.andrej.echo.ui.tasks.TasksViewModel
 import dev.andrej.echo.ui.notes.NotesViewModel
+import dev.andrej.echo.ui.onboarding.OnboardingViewModel
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -66,23 +56,25 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 class AppContainer(context: Context) {
 
     private val applicationContext = context.applicationContext
 
-    private var syncEngineRef: SyncEngine? = null
-
     val repository: TranscriptRepository =
-        JsonTranscriptRepository(applicationContext.filesDir, onChanged = { syncEngineRef?.requestSync() })
+        JsonTranscriptRepository(applicationContext.filesDir)
 
     val settings: SettingsStore =
         SharedPreferencesSettingsStore(applicationContext)
@@ -90,24 +82,9 @@ class AppContainer(context: Context) {
     /**
      * Application-scoped on purpose: leaving Capture must not cancel a half-finished
      * Engine.initialize(), which would throw away the wait and leak the partial engine. The same
-     * reasoning covers model download/delete, which must survive leaving AccountScreen, and the
-     * auth session flow, which must keep observing Supabase regardless of what screen is open.
+     * reasoning covers model download/delete, which must survive leaving Settings.
      */
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-
-    private val authStore: AuthStore =
-        SharedPreferencesAuthStore(applicationContext)
-
-    private val supabaseClient = createSupabaseClient(
-        supabaseUrl = applicationContext.getString(R.string.supabase_url),
-        supabaseKey = applicationContext.getString(R.string.supabase_anon_key),
-    ) {
-        install(Auth)
-        install(Postgrest)
-    }
-
-    val auth: AuthRepository =
-        SupabaseAuthRepository(applicationContext, supabaseClient, authStore, appScope)
 
     val engine: TranscriptionEngine =
         AndroidSpeechEngine(applicationContext)
@@ -119,29 +96,10 @@ class AppContainer(context: Context) {
     private val modelDownloadNotifier = ModelDownloadNotifier(applicationContext)
 
     val derived: DerivedRepository =
-        JsonDerivedRepository(
-            applicationContext.filesDir,
-            notificationScheduler,
-            onChanged = { syncEngineRef?.requestSync() },
-        )
+        JsonDerivedRepository(applicationContext.filesDir, notificationScheduler)
 
     val analysisQueue: AnalysisQueueRepository =
         JsonAnalysisQueueRepository(applicationContext.filesDir)
-
-    private val syncEngine = SyncEngine(
-        transcripts = repository,
-        derived = derived,
-        postgrest = supabaseClient.postgrest,
-        auth = auth,
-        settings = settings,
-        cursors = SharedPreferencesSyncStateStore(applicationContext),
-        scope = appScope,
-    ).also { syncEngineRef = it }
-
-    fun setSyncEnabled(enabled: Boolean) {
-        settings.syncEnabled = enabled
-        if (enabled) syncEngine.requestSync()
-    }
 
     val modelStore = ModelStore(
         directory = File(applicationContext.filesDir, "models"),
@@ -218,14 +176,45 @@ class AppContainer(context: Context) {
 
     private val recordingNotifier = RecordingNotifier(applicationContext)
 
+    private val _onboardingDone = MutableStateFlow(
+        settings.onboardingDone || runBlocking { repository.transcripts.first() }.isNotEmpty(),
+    )
+    val onboardingDone: StateFlow<Boolean> = _onboardingDone.asStateFlow()
+
+    fun finishOnboarding() {
+        settings.onboardingDone = true
+        _onboardingDone.value = true
+    }
+
+    /** Debug-only. Data is kept, so a cold start still skips onboarding because notes exist. */
+    fun replayOnboarding() {
+        if (!BuildConfig.DEBUG) return
+        settings.onboardingDone = false
+        _onboardingDone.value = false
+    }
+
+    fun startOnboardingDownloads() {
+        appScope.launch {
+            engine.languageSupport().toPrefetch(Locale.getDefault().toLanguageTag())
+                ?.let(engine::requestModelDownload)
+        }
+        appScope.launch {
+            if (onWifi() && llmNeedsDownload.first()) downloadModel()
+        }
+    }
+
+    val llmNeedsDownload: Flow<Boolean> =
+        aiCardState.filter { it != AiCardState.Checking }.map { it is AiCardState.NeedsDownload }
+
+    suspend fun deleteAllData() {
+        analysisQueue.clear()
+        derived.clear()
+        repository.clear()
+    }
+
     fun recordingListeningNotification() = recordingNotifier.listeningNotification()
 
     init {
-        // Collapsed to the state's kind, not raw equality — Downloading ticks progress on every
-        // chunk and neither invalidating the runner cache nor scanning the queue needs to happen
-        // that often. The payoff case is Absent/Failed -> Ready: a finished download used to sit
-        // there unnoticed until the app was killed and relaunched (LlmRunnerProvider cached its
-        // "no backend" answer for the process's life).
         appScope.launch {
             modelStore.state
                 .map { it.javaClass.simpleName }
@@ -245,15 +234,6 @@ class AppContainer(context: Context) {
             recordingController.state.collect(recordingNotifier::update)
         }
 
-        appScope.launch {
-            var wasSignedIn = false
-            auth.state.collect { state ->
-                val signedIn = state is AuthState.SignedIn
-                if (signedIn && !wasSignedIn) syncEngine.requestSync()
-                wasSignedIn = signedIn
-            }
-        }
-
         dailyBriefScheduler.scheduleNext()
         recordingNotifier.postIdle()
     }
@@ -262,7 +242,6 @@ class AppContainer(context: Context) {
     fun onAppForegrounded() {
         llmRunners.invalidate()
         pendingAnalysisWorker.requestDrain()
-        syncEngine.requestSync()
     }
 
     /** Exact alarms do not survive a reboot or an app update — [dev.andrej.echo.notify.BootReceiver] calls this. */
@@ -351,8 +330,13 @@ class AppContainer(context: Context) {
             modelClass.isAssignableFrom(NotesViewModel::class.java) ->
                 NotesViewModel(repository, analysisQueue, pendingAnalysisWorker, derived) as T
 
-            modelClass.isAssignableFrom(AuthViewModel::class.java) ->
-                AuthViewModel(auth) as T
+            modelClass.isAssignableFrom(OnboardingViewModel::class.java) ->
+                OnboardingViewModel(
+                    needsDownload = llmNeedsDownload,
+                    onStartDownloads = ::startOnboardingDownloads,
+                    onDownloadNow = ::downloadModel,
+                    onFinish = ::finishOnboarding,
+                ) as T
 
             modelClass.isAssignableFrom(HomeViewModel::class.java) ->
                 HomeViewModel(repository, derived, analysisQueue, settings) as T
@@ -379,10 +363,8 @@ class AppContainer(context: Context) {
                     onTestReminderNotification = ::sendTestReminderNotification,
                     onTestDailyBriefNotification = ::sendTestDailyBrief,
                     onTestModelDownloadNotification = ::sendTestModelDownloadNotification,
-                    isSignedIn = auth.state.map { it is AuthState.SignedIn },
-                    onSetSyncEnabled = ::setSyncEnabled,
-                    syncStatus = syncEngine.status,
-                    onSyncNow = syncEngine::requestSync,
+                    onDeleteAllData = ::deleteAllData,
+                    onReplayOnboarding = ::replayOnboarding,
                 ) as T
 
             modelClass.isAssignableFrom(HistoryViewModel::class.java) ->

@@ -61,6 +61,10 @@ class JsonAnalysisQueueRepository(
         update { current -> current.filterNot { it.transcriptId == transcriptId } }
     }
 
+    override suspend fun clear() {
+        update { emptyList() }
+    }
+
     override suspend fun reset(transcriptId: String, now: Long) {
         update { current ->
             if (current.any { it.transcriptId == transcriptId }) {

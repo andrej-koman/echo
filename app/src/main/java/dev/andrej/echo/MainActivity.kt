@@ -31,6 +31,7 @@ class MainActivity : ComponentActivity() {
             EchoTheme {
                 EchoApp(
                     viewModelFactory = container.viewModelFactory,
+                    onboardingDone = container.onboardingDone,
                     pendingOpenTranscriptId = pendingOpenTranscriptId,
                     onOpenTranscriptHandled = { pendingOpenTranscriptId = null },
                     pendingOpenTaskId = pendingOpenTaskId,

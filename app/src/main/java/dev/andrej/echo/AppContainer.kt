@@ -43,6 +43,7 @@ import dev.andrej.echo.notify.AlarmManagerNotificationScheduler
 import dev.andrej.echo.notify.DailyBriefReceiver
 import dev.andrej.echo.notify.DailyBriefScheduler
 import dev.andrej.echo.notify.ModelDownloadNotifier
+import dev.andrej.echo.notify.RecordingNotifier
 import dev.andrej.echo.notify.ReminderAlarmReceiver
 import dev.andrej.echo.speech.AndroidSpeechEngine
 import dev.andrej.echo.speech.TranscriptionEngine
@@ -206,6 +207,19 @@ class AppContainer(context: Context) {
         scope = appScope,
     )
 
+    val recordingController = RecordingController(
+        engine = engine,
+        repository = repository,
+        queue = analysisQueue,
+        worker = pendingAnalysisWorker,
+        settings = settings,
+        scope = appScope,
+    )
+
+    private val recordingNotifier = RecordingNotifier(applicationContext)
+
+    fun recordingListeningNotification() = recordingNotifier.listeningNotification()
+
     init {
         // Collapsed to the state's kind, not raw equality — Downloading ticks progress on every
         // chunk and neither invalidating the runner cache nor scanning the queue needs to happen
@@ -228,6 +242,10 @@ class AppContainer(context: Context) {
         }
 
         appScope.launch {
+            recordingController.state.collect(recordingNotifier::update)
+        }
+
+        appScope.launch {
             var wasSignedIn = false
             auth.state.collect { state ->
                 val signedIn = state is AuthState.SignedIn
@@ -237,6 +255,7 @@ class AppContainer(context: Context) {
         }
 
         dailyBriefScheduler.scheduleNext()
+        recordingNotifier.postIdle()
     }
 
     /** Called from Activity.onStart — a capable backend may have appeared while backgrounded. */
@@ -254,6 +273,11 @@ class AppContainer(context: Context) {
     /** [dev.andrej.echo.notify.DailyBriefReceiver] calls this after every fire, and [dev.andrej.echo.notify.BootReceiver] after a reboot. */
     fun rescheduleDailyBrief() {
         dailyBriefScheduler.scheduleNext()
+    }
+
+    /** [dev.andrej.echo.notify.BootReceiver] calls this — the idle notification does not survive a reboot either. */
+    fun repostRecordingNotification() {
+        recordingNotifier.update(recordingController.state.value)
     }
 
     /** Debug-only: fires each notification once, with fake data where the real path needs an alarm or a download in progress. */
@@ -322,14 +346,7 @@ class AppContainer(context: Context) {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T = when {
             modelClass.isAssignableFrom(RecordViewModel::class.java) ->
-                RecordViewModel(
-                    engine = engine,
-                    repository = repository,
-                    queue = analysisQueue,
-                    worker = pendingAnalysisWorker,
-                    settings = settings,
-                    warmup = ::warmUpLlm,
-                ) as T
+                RecordViewModel(controller = recordingController, warmup = ::warmUpLlm) as T
 
             modelClass.isAssignableFrom(NotesViewModel::class.java) ->
                 NotesViewModel(repository, analysisQueue, pendingAnalysisWorker, derived) as T

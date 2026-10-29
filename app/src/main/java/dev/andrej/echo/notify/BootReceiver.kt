@@ -27,6 +27,7 @@ class BootReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.Default).launch {
             try {
                 container.rescheduleNotifications()
+                container.repostRecordingNotification()
             } finally {
                 pending.finish()
             }

@@ -1,5 +1,6 @@
 package dev.andrej.echo.ui.record
 
+import dev.andrej.echo.RecordingController
 import dev.andrej.echo.ai.FakeLlmRunner
 import dev.andrej.echo.ai.LlmAvailability
 import dev.andrej.echo.ai.LlmRunner
@@ -71,15 +72,16 @@ class RecordViewModelTest {
             scope = CoroutineScope(dispatcher),
             now = { 42L },
         )
-        return RecordViewModel(
+        val controller = RecordingController(
             engine = engine,
             repository = repository,
             queue = queue,
             worker = worker,
             settings = settings,
-            warmup = warmup,
+            scope = CoroutineScope(dispatcher),
             clock = { 42L },
         )
+        return RecordViewModel(controller = controller, warmup = warmup)
     }
 
     private fun analyzingRunner(json: String) = FakeLlmRunner(responses = listOf(json))

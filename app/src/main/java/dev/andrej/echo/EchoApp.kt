@@ -86,6 +86,8 @@ fun EchoApp(
     onOpenTranscriptHandled: () -> Unit = {},
     pendingOpenTaskId: String? = null,
     onOpenTaskHandled: () -> Unit = {},
+    pendingOpenCapture: Boolean = false,
+    onOpenCaptureHandled: () -> Unit = {},
 ) {
     val authViewModel: AuthViewModel = viewModel(factory = viewModelFactory)
     val authState by authViewModel.state.collectAsStateWithLifecycle()
@@ -118,6 +120,8 @@ fun EchoApp(
                 onOpenTranscriptHandled = onOpenTranscriptHandled,
                 pendingOpenTaskId = pendingOpenTaskId,
                 onOpenTaskHandled = onOpenTaskHandled,
+                pendingOpenCapture = pendingOpenCapture,
+                onOpenCaptureHandled = onOpenCaptureHandled,
             )
         }
     }
@@ -136,6 +140,8 @@ private fun SignedInApp(
     onOpenTranscriptHandled: () -> Unit = {},
     pendingOpenTaskId: String? = null,
     onOpenTaskHandled: () -> Unit = {},
+    pendingOpenCapture: Boolean = false,
+    onOpenCaptureHandled: () -> Unit = {},
 ) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -159,6 +165,13 @@ private fun SignedInApp(
         if (pendingOpenTaskId != null) {
             navController.navigate(Routes.editTask(pendingOpenTaskId))
             onOpenTaskHandled()
+        }
+    }
+
+    LaunchedEffect(pendingOpenCapture) {
+        if (pendingOpenCapture) {
+            navController.navigate(Routes.CAPTURE)
+            onOpenCaptureHandled()
         }
     }
 

@@ -30,7 +30,11 @@ import dev.andrej.echo.R
 import dev.andrej.echo.ui.components.BadgeTone
 import dev.andrej.echo.ui.components.CardPadding
 import dev.andrej.echo.ui.components.EchoBadge
+import dev.andrej.echo.ui.components.ButtonSize
+import dev.andrej.echo.ui.components.ButtonVariant
+import dev.andrej.echo.ui.components.EchoButton
 import dev.andrej.echo.ui.components.EchoCard
+import dev.andrej.echo.ui.components.EchoIconButton
 import dev.andrej.echo.ui.components.EchoTopBar
 import dev.andrej.echo.ui.components.EmptyState
 import dev.andrej.echo.ui.components.Mascot
@@ -42,6 +46,7 @@ import dev.andrej.echo.ui.theme.EchoTheme
 fun NotesScreen(
     viewModel: NotesViewModel,
     onOpen: (String) -> Unit,
+    onImport: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -60,6 +65,13 @@ fun NotesScreen(
                 "${state.total} recordings · ${state.totalDuration} of speech"
             },
             leading = { Mascot(size = 30.dp, variant = MascotVariant.Notes) },
+            actions = {
+                EchoIconButton(
+                    iconRes = R.drawable.ic_upload,
+                    contentDescription = "Import audio",
+                    onClick = onImport,
+                )
+            },
         )
 
         if (!state.loaded) {
@@ -75,10 +87,19 @@ fun NotesScreen(
         if (state.total == 0) {
             EmptyState(
                 title = "No notes yet",
-                body = "Tap the button below and say something. Echo will clean it up and pull out your tasks.",
+                body = "Tap the button below and say something, or import a recording you already have. " +
+                    "Echo will clean it up and pull out your tasks.",
                 variant = MascotVariant.Notes,
                 modifier = Modifier.padding(bottom = 150.dp),
-            )
+            ) {
+                EchoButton(
+                    text = "Import audio",
+                    onClick = onImport,
+                    variant = ButtonVariant.Secondary,
+                    size = ButtonSize.Sm,
+                    modifier = Modifier.padding(top = EchoTheme.spacing.s4),
+                )
+            }
             return@Column
         }
 

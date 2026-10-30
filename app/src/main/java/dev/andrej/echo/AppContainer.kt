@@ -30,6 +30,8 @@ import dev.andrej.echo.notify.ModelDownloadNotifier
 import dev.andrej.echo.notify.RecordingNotifier
 import dev.andrej.echo.speech.AndroidSpeechEngine
 import dev.andrej.echo.speech.TranscriptionEngine
+import dev.andrej.echo.speech.whisper.whisperModelFor
+import dev.andrej.echo.transcribe.Transcriptions
 import dev.andrej.echo.ui.home.HomeViewModel
 import dev.andrej.echo.ui.profile.HistoryViewModel
 import dev.andrej.echo.ui.profile.ProfileViewModel
@@ -91,9 +93,18 @@ class AppContainer(context: Context) {
         downloader = HttpModelDownloader(),
     )
 
-    private val liteRtRunner = LiteRtLlmRunner(
-        store = modelStore,
-        activityManager = applicationContext.getSystemService(ActivityManager::class.java),
+    private val activityManager = applicationContext.getSystemService(ActivityManager::class.java)
+
+    private val liteRtRunner = LiteRtLlmRunner(store = modelStore, activityManager = activityManager)
+
+    private val whisperModel = whisperModelFor(
+        ActivityManager.MemoryInfo().also { activityManager.getMemoryInfo(it) }.totalMem,
+    )
+
+    private val whisperStore = ModelStore(
+        directory = File(applicationContext.filesDir, "models"),
+        spec = whisperModel.spec,
+        downloader = HttpModelDownloader(),
     )
 
     private val llmRunners = LlmRunnerProvider(listOf(liteRtRunner))
@@ -114,6 +125,16 @@ class AppContainer(context: Context) {
         transcripts = repository,
         derived = derived,
         analyzer = analyzer,
+        scope = appScope,
+    )
+
+    val transcriptions = Transcriptions(
+        context = applicationContext,
+        repository = repository,
+        modelStore = whisperStore,
+        settings = settings,
+        analysisQueue = analysisQueue,
+        analysis = pendingAnalysisWorker,
         scope = appScope,
     )
 
@@ -159,6 +180,7 @@ class AppContainer(context: Context) {
         aiCardState.filter { it != AiCardState.Checking }.map { it is AiCardState.NeedsDownload }
 
     suspend fun deleteAllData() {
+        transcriptions.discardAll()
         analysisQueue.clear()
         derived.clear()
         repository.clear()
@@ -238,7 +260,13 @@ class AppContainer(context: Context) {
                 RecordViewModel(controller = recordingController, warmup = ::warmUpLlm) as T
 
             modelClass.isAssignableFrom(NotesViewModel::class.java) ->
-                NotesViewModel(repository, analysisQueue, pendingAnalysisWorker, derived) as T
+                NotesViewModel(
+                    repository, analysisQueue, pendingAnalysisWorker, derived,
+                    transcription = transcriptions.status,
+                    onImport = transcriptions::import,
+                    onRetryTranscription = transcriptions::retry,
+                    onDeleted = transcriptions::discard,
+                ) as T
 
             modelClass.isAssignableFrom(OnboardingViewModel::class.java) ->
                 OnboardingViewModel(
@@ -249,7 +277,7 @@ class AppContainer(context: Context) {
                 ) as T
 
             modelClass.isAssignableFrom(HomeViewModel::class.java) ->
-                HomeViewModel(repository, derived, analysisQueue, settings) as T
+                HomeViewModel(repository, derived, analysisQueue, settings, transcriptions.status) as T
 
             modelClass.isAssignableFrom(TasksViewModel::class.java) ->
                 TasksViewModel(derived, repository, aiCardState) as T

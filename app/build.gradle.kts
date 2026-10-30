@@ -7,6 +7,7 @@ plugins {
 android {
     namespace = "dev.andrej.echo"
     compileSdk = 36
+    ndkVersion = "27.1.12297006"
 
     defaultConfig {
         applicationId = "dev.andrej.echo"
@@ -16,6 +17,17 @@ android {
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        ndk { abiFilters += "arm64-v8a" }
+        // An unoptimised whisper.cpp is tens of times slower, so debug builds get -O3 too.
+        externalNativeBuild { cmake { arguments += "-DCMAKE_BUILD_TYPE=Release" } }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     buildTypes {
@@ -61,6 +73,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
 
     implementation(libs.litertlm.android)
+    implementation(libs.androidx.work.runtime.ktx)
 
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)

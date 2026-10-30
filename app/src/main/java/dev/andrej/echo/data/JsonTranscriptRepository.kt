@@ -29,6 +29,7 @@ class JsonTranscriptRepository(
         language: String,
         durationMs: Long,
         createdAt: Long,
+        title: String?,
     ): Transcript {
         val transcript = Transcript(
             id = UUID.randomUUID().toString(),
@@ -36,6 +37,7 @@ class JsonTranscriptRepository(
             language = language,
             createdAt = createdAt,
             durationMs = durationMs,
+            title = title,
         )
 
         update { current -> current + transcript }
@@ -59,6 +61,14 @@ class JsonTranscriptRepository(
                 } else {
                     transcript
                 }
+            }
+        }
+    }
+
+    override suspend fun setTranscription(id: String, text: String, language: String, durationMs: Long) {
+        update { current ->
+            current.map {
+                if (it.id == id) it.copy(text = text, language = language, durationMs = durationMs) else it
             }
         }
     }

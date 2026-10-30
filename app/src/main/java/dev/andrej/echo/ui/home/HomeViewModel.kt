@@ -15,6 +15,10 @@ import dev.andrej.echo.ui.notes.asRow
 import dev.andrej.echo.ui.notes.clock
 import dev.andrej.echo.ui.notes.pendingCopyByTranscript
 import dev.andrej.echo.ui.notes.title
+import dev.andrej.echo.ui.notes.toPendingCopy
+import dev.andrej.echo.transcribe.TranscriptionStatus
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import dev.andrej.echo.ui.tasks.groupByDue
 import dev.andrej.echo.ui.tasks.isOverdue
 import java.text.SimpleDateFormat
@@ -82,13 +86,14 @@ class HomeViewModel(
     private val derived: DerivedRepository,
     private val queue: AnalysisQueueRepository,
     private val settings: SettingsStore,
+    transcription: Flow<Map<String, TranscriptionStatus>> = flowOf(emptyMap()),
     private val zone: ZoneId = ZoneId.systemDefault(),
     private val now: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
 
     val state: StateFlow<HomeUiState> =
-        combine(repository.transcripts, derived.items, queue.pending) { transcripts, items, pending ->
-            buildState(transcripts, items, pending, now(), zone)
+        combine(repository.transcripts, derived.items, queue.pending, transcription) { transcripts, items, pending, statuses ->
+            buildState(transcripts, items, pending, now(), zone, statuses)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
 
     fun setDone(itemId: String, done: Boolean) {
@@ -118,6 +123,7 @@ internal fun buildState(
     pending: List<PendingAnalysis>,
     now: Long,
     zone: ZoneId,
+    transcription: Map<String, TranscriptionStatus> = emptyMap(),
 ): HomeUiState {
     fun sourceTitleFor(transcriptId: String) =
         transcripts.firstOrNull { it.id == transcriptId }?.let { it.title ?: title(it.text) } ?: "Recording"
@@ -179,7 +185,8 @@ internal fun buildState(
     val pendingByTranscript = pendingCopyByTranscript(pending)
     val latest = transcripts.maxByOrNull { it.createdAt }
     val latestNote = latest?.let {
-        val row = it.asRow(pendingByTranscript[it.id], taskCounts[it.id] ?: 0)
+        val pendingCopy = transcription[it.id]?.toPendingCopy() ?: pendingByTranscript[it.id]
+        val row = it.asRow(pendingCopy, taskCounts[it.id] ?: 0)
         LatestNote(
             id = row.id,
             title = row.title,

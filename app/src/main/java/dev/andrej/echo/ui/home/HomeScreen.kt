@@ -53,6 +53,7 @@ fun HomeScreen(
     onSeeAll: () -> Unit,
     onOpen: (String) -> Unit,
     onEditTask: (String) -> Unit,
+    onImport: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -98,7 +99,7 @@ fun HomeScreen(
                 ) {
                     EchoButton(
                         text = "Upload audio",
-                        onClick = {},
+                        onClick = onImport,
                         variant = ButtonVariant.Secondary,
                         size = ButtonSize.Sm,
                     )

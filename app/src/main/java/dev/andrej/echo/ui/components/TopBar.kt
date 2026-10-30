@@ -69,6 +69,7 @@ fun EchoTopBar(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     leading: @Composable (RowScope.() -> Unit)? = null,
+    actions: @Composable (RowScope.() -> Unit)? = null,
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -101,6 +102,7 @@ fun EchoTopBar(
             subtitle = subtitle,
             leading = leading,
             trailing = {
+                actions?.invoke(this)
                 EchoIconButton(
                     iconRes = R.drawable.ic_search,
                     contentDescription = "Search",

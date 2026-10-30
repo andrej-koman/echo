@@ -1,5 +1,7 @@
 package dev.andrej.echo
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.background
@@ -132,6 +134,14 @@ private fun MainApp(
     val notesViewModel: NotesViewModel = viewModel(factory = viewModelFactory)
     val profileViewModel: ProfileViewModel = viewModel(factory = viewModelFactory)
 
+    val importPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) {
+            notesViewModel.import(uris)
+            navController.selectTab(Routes.NOTES)
+        }
+    }
+    val openImport = { importPicker.launch(arrayOf("audio/*", "video/*")) }
+
     LaunchedEffect(pendingOpenCapture) {
         if (pendingOpenCapture) {
             navController.navigate(Routes.CAPTURE)
@@ -156,6 +166,7 @@ private fun MainApp(
                     onSeeAll = { navController.selectTab(Routes.NOTES) },
                     onOpen = { navController.navigate(Routes.detail(it)) },
                     onEditTask = { navController.navigate(Routes.editTask(it)) },
+                    onImport = openImport,
                 )
             }
 
@@ -171,6 +182,7 @@ private fun MainApp(
                 NotesScreen(
                     viewModel = notesViewModel,
                     onOpen = { navController.navigate(Routes.detail(it)) },
+                    onImport = openImport,
                 )
             }
 

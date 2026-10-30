@@ -11,7 +11,11 @@ interface TranscriptRepository {
         language: String,
         durationMs: Long,
         createdAt: Long = System.currentTimeMillis(),
+        title: String? = null,
     ): Transcript
+
+    /** Rewritten after every transcribed chunk, so a long import fills in as it goes. */
+    suspend fun setTranscription(id: String, text: String, language: String, durationMs: Long)
 
     suspend fun attachAnalysis(
         id: String,

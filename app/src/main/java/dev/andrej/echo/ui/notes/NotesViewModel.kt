@@ -1,5 +1,6 @@
 package dev.andrej.echo.ui.notes
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.andrej.echo.ai.AnalysisBlock
@@ -10,6 +11,9 @@ import dev.andrej.echo.data.PendingAnalysis
 import dev.andrej.echo.data.TodoItem
 import dev.andrej.echo.data.Transcript
 import dev.andrej.echo.data.TranscriptRepository
+import dev.andrej.echo.transcribe.TranscriptionStatus
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -55,6 +59,10 @@ class NotesViewModel(
     private val queue: AnalysisQueueRepository,
     private val worker: PendingAnalysisWorker,
     private val derived: DerivedRepository,
+    transcription: Flow<Map<String, TranscriptionStatus>> = flowOf(emptyMap()),
+    private val onImport: (List<Uri>) -> Unit = {},
+    private val onRetryTranscription: (String) -> Unit = {},
+    private val onDeleted: (String) -> Unit = {},
     private val now: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
 
@@ -65,9 +73,14 @@ class NotesViewModel(
     val transcripts: StateFlow<List<Transcript>> = repository.transcripts
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val pending: StateFlow<Map<String, PendingCopy>> = queue.pending
-        .map(::pendingCopyByTranscript)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+    val pending: StateFlow<Map<String, PendingCopy>> =
+        combine(queue.pending, transcription) { entries, statuses ->
+            pendingCopyByTranscript(entries) + statuses.mapValues { it.value.toPendingCopy() }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    private val transcriptionFailed: StateFlow<Set<String>> = transcription
+        .map { statuses -> statuses.filterValues { it == TranscriptionStatus.Failed }.keys }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
     val tasks: StateFlow<List<TodoItem>> = derived.items
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -89,7 +102,10 @@ class NotesViewModel(
         query.value = text
     }
 
+    fun import(uris: List<Uri>) = onImport(uris)
+
     fun delete(id: String) {
+        onDeleted(id)
         viewModelScope.launch {
             derived.deleteFor(id)
             repository.delete(id)
@@ -100,7 +116,12 @@ class NotesViewModel(
         viewModelScope.launch { derived.setDone(itemId, done) }
     }
 
+    /** The detail screen's one retry button: a failed transcription retries that, not analysis. */
     fun analyze(transcriptId: String) {
+        if (transcriptId in transcriptionFailed.value) {
+            onRetryTranscription(transcriptId)
+            return
+        }
         if (worker.activeId.value != null) return
 
         worker.analyzeNowAsync(transcriptId)
@@ -136,6 +157,15 @@ internal fun Transcript.asRow(pending: PendingCopy?, taskCount: Int) = NoteRow(
 /** Only entries the drain has actually attempted carry a [PendingAnalysis.lastBlock]. */
 internal fun pendingCopyByTranscript(entries: List<PendingAnalysis>): Map<String, PendingCopy> =
     entries.mapNotNull { entry -> entry.lastBlock?.toPendingCopy()?.let { entry.transcriptId to it } }.toMap()
+
+internal fun TranscriptionStatus.toPendingCopy(): PendingCopy = when (this) {
+    TranscriptionStatus.Queued -> PendingCopy("Waiting to transcribe", PendingSeverity.Parked)
+    is TranscriptionStatus.DownloadingModel ->
+        PendingCopy("Getting the speech model… ${(fraction * 100).toInt()}%", PendingSeverity.Parked)
+    is TranscriptionStatus.Transcribing ->
+        PendingCopy("Transcribing… ${(fraction * 100).toInt()}%", PendingSeverity.Parked)
+    TranscriptionStatus.Failed -> PendingCopy("Transcription failed — tap retry", PendingSeverity.Failed)
+}
 
 internal fun AnalysisBlock.toPendingCopy(): PendingCopy? = when (this) {
     AnalysisBlock.EmptyTranscript -> null

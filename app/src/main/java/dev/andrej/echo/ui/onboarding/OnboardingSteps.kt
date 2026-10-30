@@ -138,7 +138,7 @@ internal fun WelcomeStep(onGetStarted: () -> Unit) {
 internal fun ColumnScope.VoiceToTasksStep(onContinue: () -> Unit) {
     StepIntro(
         title = "Speak once, get everything",
-        body = "Echo writes down what you say, then pulls out the todos, reminders and plans inside it.",
+        body = "Echo writes down what you say, then pulls out the tasks and plans inside it.",
     )
 
     Column(

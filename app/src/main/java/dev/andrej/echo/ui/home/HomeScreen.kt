@@ -87,8 +87,8 @@ fun HomeScreen(
         } else if (!state.hasAnyTranscripts) {
             EmptyState(
                 title = "Nothing recorded yet",
-                body = "Hold the record button and talk. OutLoud writes it down and sorts the " +
-                    "rest into notes, todos and reminders.",
+                body = "Hold the record button and talk. Echo writes it down and sorts the " +
+                    "rest into notes and tasks.",
                 modifier = Modifier.weight(1f).padding(bottom = 120.dp),
             ) {
                 Row(

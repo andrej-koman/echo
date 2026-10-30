@@ -109,7 +109,7 @@ fun SettingsScreen(
                         SwitchRow(
                             iconRes = R.drawable.ic_audio_waveform,
                             label = "Sort new notes with AI",
-                            subtitle = "Pull tasks and reminders out automatically after recording",
+                            subtitle = "Pull tasks out automatically after recording",
                             checked = state.autoAnalyze,
                             onCheckedChange = onAutoAnalyzeChange,
                         )

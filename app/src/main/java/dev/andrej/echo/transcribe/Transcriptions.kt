@@ -21,7 +21,7 @@ import dev.andrej.echo.data.TranscriptRepository
 import dev.andrej.echo.speech.AudioDecoder
 import dev.andrej.echo.speech.SAMPLE_RATE
 import dev.andrej.echo.speech.pcm16ToFloats
-import dev.andrej.echo.speech.whisper.Segment
+import dev.andrej.echo.data.Segment
 import dev.andrej.echo.speech.whisper.WhisperTranscriber
 import java.io.File
 import java.io.IOException
@@ -182,8 +182,9 @@ class Transcriptions(
                     // Detected once on the first chunk, then held so a quiet stretch can't flip it.
                     language = language ?: result.language
                     val offsetMs = start * 1000 / SAMPLE_RATE
-                    segments += result.segments.map { it.copy(startMs = it.startMs + offsetMs, endMs = it.endMs + offsetMs) }
-                    repository.setTranscription(id, transcriptText(segments), language.orEmpty(), durationMs)
+                    segments += result.segments.spoken()
+                        .map { it.copy(startMs = it.startMs + offsetMs, endMs = it.endMs + offsetMs) }
+                    repository.setTranscription(id, transcriptText(segments), language.orEmpty(), durationMs, segments)
                     start += length
                 }
             }

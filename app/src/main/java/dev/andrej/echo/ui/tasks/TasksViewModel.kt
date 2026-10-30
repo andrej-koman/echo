@@ -124,6 +124,6 @@ internal fun groupByDue(items: List<TodoItem>, now: Long, zone: ZoneId): List<Du
 private fun sortWithinGroup(items: List<TodoItem>): List<TodoItem> =
     items.sortedWith(compareBy({ !it.hasTime }, { if (it.hasTime) it.dueAt else it.createdAt }))
 
-/** Every done item, most recently checked off first — [JsonDerivedRepository.setDone] bumps [TodoItem.updatedAt]. */
+/** Every done item, most recently checked off first — [DerivedRepository.setDone] bumps [TodoItem.updatedAt]. */
 internal fun completedByRecency(items: List<TodoItem>): List<TodoItem> =
     items.filter { it.done }.sortedByDescending { it.updatedAt }

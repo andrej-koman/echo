@@ -6,7 +6,10 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import dev.andrej.echo.data.JsonTranscriptRepository
+import app.cash.sqldelight.driver.android.AndroidSqliteDriver
+import androidx.test.platform.app.InstrumentationRegistry
+import dev.andrej.echo.data.SqlTranscriptRepository
+import dev.andrej.echo.data.db.EchoDatabase
 import dev.andrej.echo.data.SettingsStore
 import dev.andrej.echo.speech.Availability
 import dev.andrej.echo.speech.LanguageSupport
@@ -53,7 +56,9 @@ class RecordScreenTest {
 
     private fun viewModel(engine: ScriptedEngine = ScriptedEngine()) = RecordViewModel(
         engine = engine,
-        repository = JsonTranscriptRepository(tempFolder.newFolder()),
+        repository = SqlTranscriptRepository(
+            EchoDatabase(AndroidSqliteDriver(EchoDatabase.Schema, InstrumentationRegistry.getInstrumentation().targetContext, null)),
+        ),
         settings = InMemorySettings(),
     )
 

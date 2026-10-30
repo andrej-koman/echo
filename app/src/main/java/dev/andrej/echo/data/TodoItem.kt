@@ -1,8 +1,6 @@
 package dev.andrej.echo.data
 
-import kotlinx.serialization.Serializable
 
-@Serializable
 data class TodoItem(
     val id: String,
     val sourceTranscriptId: String,

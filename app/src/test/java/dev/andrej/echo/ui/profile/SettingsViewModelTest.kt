@@ -2,8 +2,9 @@ package dev.andrej.echo.ui.profile
 
 import dev.andrej.echo.ai.AiCardState
 import dev.andrej.echo.data.FakeSettingsStore
-import dev.andrej.echo.data.JsonDerivedRepository
-import dev.andrej.echo.data.JsonTranscriptRepository
+import dev.andrej.echo.data.SqlDerivedRepository
+import dev.andrej.echo.data.SqlTranscriptRepository
+import dev.andrej.echo.data.testDatabase
 import dev.andrej.echo.speech.FakeTranscriptionEngine
 import dev.andrej.echo.speech.LanguageSupport
 import kotlinx.coroutines.Dispatchers
@@ -18,15 +19,10 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
-import org.junit.rules.TemporaryFolder
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SettingsViewModelTest {
-
-    @get:Rule
-    val tempFolder = TemporaryFolder()
 
     private val dispatcher = StandardTestDispatcher()
 
@@ -42,8 +38,8 @@ class SettingsViewModelTest {
     ) = SettingsViewModel(
         settings = settings,
         engine = engine,
-        transcripts = JsonTranscriptRepository(tempFolder.newFolder(), dispatcher),
-        derived = JsonDerivedRepository(tempFolder.newFolder(), dispatcher),
+        transcripts = SqlTranscriptRepository(testDatabase(), dispatcher),
+        derived = SqlDerivedRepository(testDatabase(), dispatcher),
         aiCardState = flowOf(AiCardState.Checking),
         litertModelBytes = 977_000_000L,
         onDownloadModel = {},

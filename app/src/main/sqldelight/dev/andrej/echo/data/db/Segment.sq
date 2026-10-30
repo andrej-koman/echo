@@ -1,0 +1,20 @@
+CREATE TABLE segment (
+    transcriptId TEXT NOT NULL,
+    idx INTEGER NOT NULL,
+    startMs INTEGER NOT NULL,
+    endMs INTEGER NOT NULL,
+    text TEXT NOT NULL,
+    PRIMARY KEY (transcriptId, idx)
+);
+
+selectFor:
+SELECT startMs, endMs, text FROM segment WHERE transcriptId = ? ORDER BY idx;
+
+insert:
+INSERT INTO segment (transcriptId, idx, startMs, endMs, text) VALUES (?, ?, ?, ?, ?);
+
+deleteFor:
+DELETE FROM segment WHERE transcriptId = ?;
+
+clear:
+DELETE FROM segment;

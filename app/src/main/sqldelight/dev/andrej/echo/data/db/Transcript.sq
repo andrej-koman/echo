@@ -1,0 +1,29 @@
+CREATE TABLE transcript (
+    id TEXT NOT NULL PRIMARY KEY,
+    text TEXT NOT NULL,
+    language TEXT NOT NULL,
+    createdAt INTEGER NOT NULL,
+    durationMs INTEGER NOT NULL,
+    title TEXT,
+    summary TEXT,
+    analyzedAt INTEGER
+);
+
+selectAll:
+SELECT * FROM transcript ORDER BY createdAt DESC;
+
+insert:
+INSERT INTO transcript (id, text, language, createdAt, durationMs, title)
+VALUES (?, ?, ?, ?, ?, ?);
+
+setTranscription:
+UPDATE transcript SET text = ?, language = ?, durationMs = ? WHERE id = ?;
+
+attachAnalysis:
+UPDATE transcript SET title = ?, summary = ?, analyzedAt = ? WHERE id = ?;
+
+delete:
+DELETE FROM transcript WHERE id = ?;
+
+clear:
+DELETE FROM transcript;

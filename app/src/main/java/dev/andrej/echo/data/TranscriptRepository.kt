@@ -15,7 +15,15 @@ interface TranscriptRepository {
     ): Transcript
 
     /** Rewritten after every transcribed chunk, so a long import fills in as it goes. */
-    suspend fun setTranscription(id: String, text: String, language: String, durationMs: Long)
+    suspend fun setTranscription(
+        id: String,
+        text: String,
+        language: String,
+        durationMs: Long,
+        segments: List<Segment>,
+    )
+
+    suspend fun segments(id: String): List<Segment>
 
     suspend fun attachAnalysis(
         id: String,

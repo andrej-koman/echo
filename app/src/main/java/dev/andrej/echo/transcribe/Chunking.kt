@@ -1,7 +1,7 @@
 package dev.andrej.echo.transcribe
 
+import dev.andrej.echo.data.Segment
 import dev.andrej.echo.speech.SAMPLE_RATE
-import dev.andrej.echo.speech.whisper.Segment
 
 /** Long files go to Whisper in pieces, so progress is saved as it goes and memory stays flat. */
 const val CHUNK_SAMPLES = 5 * 60 * SAMPLE_RATE
@@ -32,9 +32,12 @@ internal fun quietestCut(samples: FloatArray): Int {
 }
 
 /** Whisper fills silence and music with bracketed captions like `[BLANK_AUDIO]` or `(music)`. */
-internal fun transcriptText(segments: List<Segment>): String =
-    segments.map { it.text.trim() }
-        .filterNot { it.isEmpty() || BRACKETED.matches(it) }
-        .joinToString(" ")
+internal fun List<Segment>.spoken(): List<Segment> = mapNotNull { segment ->
+    segment.text.trim()
+        .takeUnless { it.isEmpty() || BRACKETED.matches(it) }
+        ?.let { segment.copy(text = it) }
+}
+
+internal fun transcriptText(segments: List<Segment>): String = segments.spoken().joinToString(" ") { it.text }
 
 private val BRACKETED = Regex("""^[\[(][^\])]*[\])]$""")

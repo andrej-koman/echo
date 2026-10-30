@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.sqldelight)
 }
 
 android {
@@ -56,6 +57,14 @@ android {
     }
 }
 
+sqldelight {
+    databases {
+        create("EchoDatabase") {
+            packageName = "dev.andrej.echo.data.db"
+        }
+    }
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -74,11 +83,14 @@ dependencies {
 
     implementation(libs.litertlm.android)
     implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.sqldelight.android.driver)
+    implementation(libs.sqldelight.coroutines)
 
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 
     testImplementation(libs.junit)
+    testImplementation(libs.sqldelight.sqlite.driver)
     testImplementation(libs.kotlinx.coroutines.test)
 
     androidTestImplementation(platform(libs.androidx.compose.bom))

@@ -4,17 +4,11 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import org.junit.Rule
 import org.junit.Test
-import org.junit.rules.TemporaryFolder
 
-class JsonDerivedRepositoryTest {
+class SqlDerivedRepositoryTest {
 
-    @get:Rule
-    val tempFolder = TemporaryFolder()
-
-
-    private fun repository() = JsonDerivedRepository(tempFolder.newFolder())
+    private fun repository() = SqlDerivedRepository(testDatabase())
 
     private fun item(text: String, dueAt: Long = 1_000L, hasTime: Boolean = false, hasDate: Boolean = true) =
         NewTodo(text, dueAt, hasTime, hasDate)
@@ -142,40 +136,6 @@ class JsonDerivedRepositoryTest {
         repository.deleteFor("t1")
 
         assertEquals(listOf("stays"), repository.items.first().map { it.text })
-    }
-
-    @Test
-    fun `rows survive a new repository instance`() = runTest {
-        val directory = tempFolder.newFolder()
-        JsonDerivedRepository(directory).replaceFor("t1", listOf(item("persisted")))
-
-        assertEquals(
-            listOf("persisted"),
-            JsonDerivedRepository(directory).items.first().map { it.text },
-        )
-    }
-
-    @Test
-    fun `corrupt file is recovered as empty and still writable`() = runTest {
-        val directory = tempFolder.newFolder()
-        directory.resolve("derived.json").writeText("{not json at all")
-        val repository = JsonDerivedRepository(directory)
-
-        assertTrue(repository.items.first().isEmpty())
-
-        repository.replaceFor("t1", listOf(item("after recovery")))
-        assertEquals(listOf("after recovery"), repository.items.first().map { it.text })
-    }
-
-    @Test
-    fun `an old-shape derived json decodes to zero rows without throwing`() = runTest {
-        val directory = tempFolder.newFolder()
-        directory.resolve("derived.json").writeText(
-            """{"tasks":[{"id":"a","sourceTranscriptId":"t1","text":"old","createdAt":1}],"reminders":[]}""",
-        )
-        val repository = JsonDerivedRepository(directory)
-
-        assertTrue(repository.items.first().isEmpty())
     }
 
     @Test

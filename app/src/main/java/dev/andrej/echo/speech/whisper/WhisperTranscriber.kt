@@ -1,13 +1,12 @@
 package dev.andrej.echo.speech.whisper
 
+import dev.andrej.echo.data.Segment
 import java.io.Closeable
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-
-data class Segment(val startMs: Long, val endMs: Long, val text: String)
 
 data class WhisperResult(val segments: List<Segment>, val language: String)
 

@@ -1,7 +1,7 @@
 package dev.andrej.echo.transcribe
 
 import dev.andrej.echo.speech.SAMPLE_RATE
-import dev.andrej.echo.speech.whisper.Segment
+import dev.andrej.echo.data.Segment
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

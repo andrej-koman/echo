@@ -19,12 +19,13 @@ import dev.andrej.echo.ai.TranscriptAnalyzer
 import dev.andrej.echo.ai.toCardState
 import dev.andrej.echo.data.AnalysisQueueRepository
 import dev.andrej.echo.data.DerivedRepository
-import dev.andrej.echo.data.JsonAnalysisQueueRepository
-import dev.andrej.echo.data.JsonDerivedRepository
-import dev.andrej.echo.data.JsonTranscriptRepository
 import dev.andrej.echo.data.SettingsStore
 import dev.andrej.echo.data.SharedPreferencesSettingsStore
+import dev.andrej.echo.data.SqlAnalysisQueueRepository
+import dev.andrej.echo.data.SqlDerivedRepository
+import dev.andrej.echo.data.SqlTranscriptRepository
 import dev.andrej.echo.data.TranscriptRepository
+import dev.andrej.echo.data.echoDatabase
 import dev.andrej.echo.ai.ModelState
 import dev.andrej.echo.notify.ModelDownloadNotifier
 import dev.andrej.echo.notify.RecordingNotifier
@@ -63,8 +64,12 @@ class AppContainer(context: Context) {
 
     private val applicationContext = context.applicationContext
 
-    val repository: TranscriptRepository =
-        JsonTranscriptRepository(applicationContext.filesDir)
+    private val database = run {
+        deleteJsonStore(applicationContext.filesDir)
+        echoDatabase(applicationContext)
+    }
+
+    val repository: TranscriptRepository = SqlTranscriptRepository(database)
 
     val settings: SettingsStore =
         SharedPreferencesSettingsStore(applicationContext)
@@ -81,11 +86,9 @@ class AppContainer(context: Context) {
 
     private val modelDownloadNotifier = ModelDownloadNotifier(applicationContext)
 
-    val derived: DerivedRepository =
-        JsonDerivedRepository(applicationContext.filesDir)
+    val derived: DerivedRepository = SqlDerivedRepository(database)
 
-    val analysisQueue: AnalysisQueueRepository =
-        JsonAnalysisQueueRepository(applicationContext.filesDir)
+    val analysisQueue: AnalysisQueueRepository = SqlAnalysisQueueRepository(database)
 
     val modelStore = ModelStore(
         directory = File(applicationContext.filesDir, "models"),
@@ -308,4 +311,16 @@ class AppContainer(context: Context) {
             else -> error("Unknown ViewModel: ${modelClass.name}")
         }
     }
+}
+
+/**
+ * The JSON files that came before the database are not migrated (they hold no audio). Imported
+ * audio under `recordings/` belonged to them, so it goes too.
+ */
+private fun deleteJsonStore(filesDir: File) {
+    val transcripts = File(filesDir, "transcripts.json")
+    if (!transcripts.exists()) return
+    File(filesDir, "recordings").deleteRecursively()
+    listOf("derived.json", "pending_analysis.json").forEach { File(filesDir, it).delete() }
+    transcripts.delete()
 }

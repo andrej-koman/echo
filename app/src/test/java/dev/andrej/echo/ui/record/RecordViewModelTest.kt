@@ -7,9 +7,10 @@ import dev.andrej.echo.ai.LlmRunner
 import dev.andrej.echo.ai.PendingAnalysisWorker
 import dev.andrej.echo.ai.TranscriptAnalyzer
 import dev.andrej.echo.data.FakeSettingsStore
-import dev.andrej.echo.data.JsonAnalysisQueueRepository
-import dev.andrej.echo.data.JsonDerivedRepository
-import dev.andrej.echo.data.JsonTranscriptRepository
+import dev.andrej.echo.data.SqlAnalysisQueueRepository
+import dev.andrej.echo.data.SqlDerivedRepository
+import dev.andrej.echo.data.SqlTranscriptRepository
+import dev.andrej.echo.data.testDatabase
 import dev.andrej.echo.speech.Availability
 import dev.andrej.echo.speech.FailureReason
 import dev.andrej.echo.speech.FakeTranscriptionEngine
@@ -30,15 +31,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
-import org.junit.rules.TemporaryFolder
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class RecordViewModelTest {
-
-    @get:Rule
-    val tempFolder = TemporaryFolder()
 
     private val dispatcher = StandardTestDispatcher()
 
@@ -49,20 +45,20 @@ class RecordViewModelTest {
     fun tearDown() = Dispatchers.resetMain()
 
     // Writes run on the test scheduler so advanceUntilIdle covers them.
-    private fun repository() = JsonTranscriptRepository(tempFolder.newFolder(), dispatcher)
+    private fun repository() = SqlTranscriptRepository(testDatabase(), dispatcher)
 
     private fun derivedRepository() =
-        JsonDerivedRepository(tempFolder.newFolder(), dispatcher)
+        SqlDerivedRepository(testDatabase(), dispatcher)
 
     private fun viewModel(
         engine: FakeTranscriptionEngine = FakeTranscriptionEngine(),
         settings: FakeSettingsStore = FakeSettingsStore(),
-        repository: JsonTranscriptRepository = repository(),
-        derived: JsonDerivedRepository = derivedRepository(),
+        repository: SqlTranscriptRepository = repository(),
+        derived: SqlDerivedRepository = derivedRepository(),
         runner: LlmRunner = FakeLlmRunner(availability = LlmAvailability.Unsupported("no model")),
         warmup: () -> Unit = {},
     ): RecordViewModel {
-        val queue = JsonAnalysisQueueRepository(tempFolder.newFolder(), dispatcher)
+        val queue = SqlAnalysisQueueRepository(testDatabase(), dispatcher)
         val worker = PendingAnalysisWorker(
             queue = queue,
             transcripts = repository,

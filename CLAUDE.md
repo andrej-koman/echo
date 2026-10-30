@@ -22,8 +22,9 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
   keep due dates and Home's snooze pill, but nothing rings. Nano: the spec forbids depending on a
   vendor AI platform, and the S24 can't run it anyway.
 - **The Home task dashboard stays**, although the spec's app is library-first.
-- **Storage → SQLDelight** (Phase 1). Room is blocked by KSP; SQLDelight needs no compiler
-  plugin. FTS4, not FTS5 — FTS5 isn't guaranteed in platform SQLite on older Android.
+- **Storage → SQLDelight** (Phase 1, done 2026-10-30; see Storage). Room is blocked by KSP;
+  SQLDelight needs no compiler plugin. FTS4, not FTS5 — FTS5 isn't guaranteed in platform SQLite
+  on older Android.
 - **Whisper → whisper.cpp over JNI** (Phase 2): the only mature Android runtime for Large V3
   Turbo quantized; language detect, `initial_prompt` and timestamps built in.
 - **Diarization → sherpa-onnx** (Phase 6), whose Silero VAD also picks Whisper chunk boundaries.
@@ -33,6 +34,60 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
   on-device recognizer calls are API 31/33. Lower it when that engine is deleted, then gate
   `VibratorManager` in `Haptics.kt` (API 31).
 - Old JSON data is not migrated — it has no audio, and the rebuild starts clean.
+- **Import was pulled ahead of Phases 1–3** (2026-10-30, Andrej had files on the phone to try).
+  Phase 1 then moved storage underneath it to SQLite.
+
+## Import and Whisper
+
+- **whisper.cpp v1.9.5** is fetched by CMake `FetchContent` (URL + SHA256 pinned) in
+  `app/src/main/cpp/CMakeLists.txt` and built static into `libechowhisper.so` with the JNI shim
+  `whisper_jni.cpp`. Native build is always `-O3` (`CMAKE_BUILD_TYPE=Release` even for debug —
+  unoptimised it is tens of times slower), arm64-v8a only, `armv8.2-a+dotprod+fp16`, OpenMP off
+  (the NDK's would need `libomp.so` shipped). Segment text crosses JNI as bytes: Whisper can split
+  a multibyte character and `NewStringUTF` aborts on that.
+- **Model per RAM** (`speech/whisper/WhisperModels.kt`): ≥7 GB total memory (8 GB phones report
+  ~7.3) → Large V3 Turbo q5_0 (574 MB), else Small q5_1 (190 MB). Ungated
+  `ggerganov/whisper.cpp` on HuggingFace, through the same `ModelStore`/`HttpModelDownloader` as
+  the LLM. It downloads on the first import, not at onboarding.
+- **Pipeline** (`transcribe/Transcriptions.kt`): the picked/shared file is copied to
+  `files/recordings/<id>/source` (a content URI's grant dies with the sharing app; export will need
+  the original), a placeholder transcript titled after the file name is saved, and a unique
+  WorkManager job (`TranscriptionWorker`, tagged `transcript:<id>`) runs. `AudioDecoder`
+  (MediaExtractor + MediaCodec → downmix → linear resample) writes 16 kHz PCM16 to `audio.pcm`,
+  deleted afterwards. Whisper runs in 5-minute chunks cut at the quietest 100 ms of the last 3 s;
+  the transcript text is rewritten after each chunk. Language is auto-detected on the first chunk
+  and held. Bracketed captions (`[BLANK_AUDIO]`, `(music)`) are dropped. Then the existing
+  analysis queue takes over (`autoAnalyze`).
+- Status comes from WorkManager (`Transcriptions.status`) and is shown through the same
+  `PendingCopy`/`PendingBadge` path as analysis; it wins over an analysis block. The detail
+  screen's retry button retries transcription when that is what failed.
+- Speed on the S24 (Large V3 Turbo, CPU): download plus a 3:20 file took ~10 min end to end.
+  Music produces invented text ("The End" repeated) — import speech.
+- The foreground service type is `mediaProcessing` on API 35+, `dataSync` below; WorkManager's
+  `SystemForegroundService` is re-declared in the manifest with both. Started from the background
+  (retry, reboot) the foreground call is refused and the job runs without it.
+- `adb shell am start -a SEND --eu android.intent.extra.STREAM content://media/...` can't test the
+  share target: the shell can't grant the URI. Use the Notes upload button.
+
+## Storage
+
+- One SQLite database, `echo.db`, through SQLDelight 2.4.1 (`app/src/main/sqldelight/`).
+  Tables: `transcript`, `segment`, `todo`, `analysis_queue`. The repository interfaces kept
+  their shape, so ViewModels never see SQL; each `Sql*Repository` exposes `Query.asFlow()`
+  flows, which re-emit on any write to their table.
+- Tables are added in the phase that uses them (the dictionary and FTS4 search in 7, speakers in
+  6, folders in 8), each with a `.sqm` migration — none exist yet, schema is version 1.
+- `segment` holds Whisper's timed segments (bracketed captions already dropped);
+  `transcript.text` stays as the joined text, which is all a live `SpeechRecognizer` recording
+  has. `TranscriptRepository.setTranscription` replaces text and segments in one transaction.
+- No foreign keys: SQLite needs `PRAGMA foreign_keys` per connection. Deleting a transcript
+  deletes its segments in the same transaction; todos and queue entries are deleted by the
+  callers, as before.
+- `AnalysisBlock` is stored as JSON text — a sealed type nothing ever queries into. One that
+  no longer decodes reads as no reason, not a crash.
+- The old JSON files are deleted on first launch (`deleteJsonStore` in `AppContainer`), with
+  `recordings/`, whose audio belonged to them.
+- Tests use an in-memory JDBC driver (`testDatabase()` in the test `data` package).
 
 ## Build
 
@@ -49,13 +104,17 @@ Wireless debugging drops often: `adb connect <ip:port>` from Settings → Develo
 ## Layout
 
 ```
-speech/       TranscriptionEngine interface + AndroidSpeechEngine (SpeechRecognizer)
+speech/       TranscriptionEngine interface + AndroidSpeechEngine (SpeechRecognizer, live capture),
+              AudioDecoder (any file → 16 kHz PCM), whisper/ (JNI, WhisperTranscriber, model per RAM)
+transcribe/   Transcriptions (import, job status) + TranscriptionWorker (WorkManager) + Chunking
+cpp/          CMake build of whisper.cpp + whisper_jni.cpp
 ai/           LlmRunner interface + LiteRtLlmRunner (downloaded Qwen3), LlmRunnerProvider,
               ModelStore/HttpModelDownloader for the weights, AnalysisPrompt,
               TranscriptAnalyzer, AnalysisOutcome/AnalysisBlock, PendingAnalysisWorker
-data/         Transcript, TranscriptRepository (JSON file), TodoItem + DerivedRepository
-              (derived.json), PendingAnalysis + AnalysisQueueRepository (pending_analysis.json),
-              SettingsStore
+data/         Transcript + Segment, TranscriptRepository, TodoItem + DerivedRepository,
+              PendingAnalysis + AnalysisQueueRepository, each Sql*Repository over one
+              EchoDatabase (Database.kt), SettingsStore
+sqldelight/   the schema, one .sq file per table (generated code in dev.andrej.echo.data.db)
 ui/theme/     OutLoud design tokens (Color, Type, Shape, Spacing, Elevation, Motion, Theme)
 ui/components/ the ported design system kit
 ui/home/      HomeScreen + HomeViewModel — hero task, then/coming-up strip, latest note
@@ -94,7 +153,8 @@ Home, so tapping Home restored it and landed on the last tab. Cost: tab scroll p
 
 - Languages come from the device via `checkRecognitionSupport()` — never hardcode locales. This phone has only `en-GB` installed; `sl-SI` is unsupported on-device.
 - `SpeechRecognizer` ends on silence; `AndroidSpeechEngine` restarts sessions to stay continuous. `ERROR_NO_MATCH` is silence, not failure.
-- No raw audio is ever written to disk — `SpeechRecognizer` streams straight to text, there is no `MediaRecorder`/file step to remove. Only the transcript text is persisted.
+- Live recording writes no audio — `SpeechRecognizer` streams straight to text. Imported files
+  are kept (see Import and Whisper); recording to file comes in Phase 3.
 - No Room: KSP has no release matching Kotlin 2.4.10.
 - **Fully offline, no account.** Google sign-in, Supabase auth and sync were removed
   (2026-10-29). The only network traffic left is the LLM weights download (`HttpModelDownloader`,
@@ -149,11 +209,9 @@ Home, so tapping Home restored it and landed on the last tab. Cost: tab scroll p
   (`title`/`query`/`onQueryChange`/`searchPlaceholder`) that toggles a trailing search icon into an
   inline `EchoSearchField` in place of the title, rather than each screen keeping its own
   always-visible field.
-- Old-shape `derived.json` (the pre-unification `tasks`/`reminders` lists) is not migrated —
-  it decodes to zero rows via `Json { ignoreUnknownKeys = true }` plus a defaulted `items`
-  field, and a re-Analyze regenerates. `derivedId` no longer takes a `kind` — one entity, one
-  id — but keeps the null-byte separator between transcript id and text: a plain
-  concatenation would let `"t1"` + `"x"` collide with `"t"` + `"1x"`.
+- `derivedId` takes no `kind` — one entity, one id — but keeps the null-byte separator between
+  transcript id and text: a plain concatenation would let `"t1"` + `"x"` collide with
+  `"t"` + `"1x"`.
 - **Home ("1b reworked")** puts one task in a hero slot rather than a list. `HomeViewModel.buildState`
   reuses `ui.tasks.groupByDue`/`isOverdue` (both `internal`, not `private`, for this reuse): the hero
   is the first item of the "Today" group (overdue items sort first, so an overdue task always wins
@@ -209,7 +267,7 @@ Home, so tapping Home restored it and landed on the last tab. Cost: tab scroll p
   `NoBackend(reason)`, `GenerationFailed(message)`, `EmptyResult`. `WaitingForModel` and
   `NoBackend` are preconditions, not failures — a transcript parked on either never exhausts its
   retries. `PendingAnalysisWorker` owns the drain: it reads `AnalysisQueueRepository`
-  (`pending_analysis.json`, mirrors `JsonTranscriptRepository`'s disk safety), runs
+  (the `analysis_queue` table), runs
   `TranscriptAnalyzer` against each entry, and either attaches the analysis or records the block.
   `GenerationFailed`/`EmptyResult` consume one of 3 attempts; past that an entry sits unretried
   until a manual Analyze. The worker runs on `AppContainer`'s `appScope`, not a ViewModel scope —
@@ -332,8 +390,8 @@ Onboarding is ported from the separate "Echo Onboarding" Design artifact
   delegates to the other two depending on whether its search icon has been tapped. All three draw
   the same bar chrome, so every screen header keeps one surface, hairline and height.
 - Home has its own `HomeViewModel` now (see "Home (1b reworked)" above); with no transcripts at
-  all it still falls back to the mascot empty state (its "Upload audio" / "Type a note" buttons
-  are inert).
+  all it still falls back to the mascot empty state ("Upload audio" opens the import picker,
+  "Type a note" is inert).
 - `RecordViewModel.stopRecording` saves the transcript and then runs
   `TranscriptAnalyzer`, writing `TodoItem` rows and a title and summary back onto the
   transcript. The Processing screen holds for that work — `STUB_PROCESSING_DELAY_MS` is gone.
@@ -341,9 +399,10 @@ Onboarding is ported from the separate "Echo Onboarding" Design artifact
 
 ## Notifications
 
-Two channels, no per-task reminders (cut in Phase 0): the recording notification
-(`RecordingNotifier` — idle "tap to record", or ongoing while `RecordingService` runs) and the
-model download progress (`ModelDownloadNotifier`).
+Three channels, no per-task reminders (cut in Phase 0): the recording notification
+(`RecordingNotifier` — idle "tap to record", or ongoing while `RecordingService` runs), the
+model download progress (`ModelDownloadNotifier`), and transcription progress (posted by
+`TranscriptionWorker` itself, including the Whisper download inside the job).
 
 - **`MY_PACKAGE_REPLACED` and reboot clear the idle recording notification**, so
   `notify/BootReceiver.kt` listens for both and re-posts it. It is *not* `directBootAware` and does

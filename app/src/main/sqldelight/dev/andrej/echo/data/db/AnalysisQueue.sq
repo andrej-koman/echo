@@ -1,0 +1,32 @@
+CREATE TABLE analysis_queue (
+    transcriptId TEXT NOT NULL PRIMARY KEY,
+    enqueuedAt INTEGER NOT NULL,
+    attempts INTEGER NOT NULL,
+    lastAttemptAt INTEGER,
+    -- AnalysisBlock as JSON: it is a sealed type, and nothing ever queries inside it.
+    lastBlock TEXT,
+    updatedAt INTEGER NOT NULL
+);
+
+selectAll:
+SELECT * FROM analysis_queue ORDER BY enqueuedAt;
+
+enqueue:
+INSERT OR IGNORE INTO analysis_queue (transcriptId, enqueuedAt, attempts, updatedAt)
+VALUES (:transcriptId, :now, 0, :now);
+
+recordBlock:
+UPDATE analysis_queue
+SET attempts = attempts + :consumed, lastAttemptAt = :now, lastBlock = :block, updatedAt = :now
+WHERE transcriptId = :transcriptId;
+
+reset:
+UPDATE analysis_queue
+SET attempts = 0, lastAttemptAt = NULL, lastBlock = NULL, updatedAt = :now
+WHERE transcriptId = :transcriptId;
+
+remove:
+DELETE FROM analysis_queue WHERE transcriptId = ?;
+
+clear:
+DELETE FROM analysis_queue;

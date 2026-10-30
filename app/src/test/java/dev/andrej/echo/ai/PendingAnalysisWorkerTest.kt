@@ -1,8 +1,9 @@
 package dev.andrej.echo.ai
 
-import dev.andrej.echo.data.JsonAnalysisQueueRepository
-import dev.andrej.echo.data.JsonDerivedRepository
-import dev.andrej.echo.data.JsonTranscriptRepository
+import dev.andrej.echo.data.SqlAnalysisQueueRepository
+import dev.andrej.echo.data.SqlDerivedRepository
+import dev.andrej.echo.data.SqlTranscriptRepository
+import dev.andrej.echo.data.testDatabase
 import java.time.ZoneId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -18,18 +19,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
-import org.junit.rules.TemporaryFolder
 
 private val UTC = ZoneId.of("UTC")
 private val good = """{"title":"Fix the tap","summary":"It drips.","items":[{"text":"Buy a washer","due":null}]}"""
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PendingAnalysisWorkerTest {
-
-    @get:Rule
-    val tempFolder = TemporaryFolder()
 
     private val dispatcher = StandardTestDispatcher()
 
@@ -39,15 +35,15 @@ class PendingAnalysisWorkerTest {
     @After
     fun tearDown() = Dispatchers.resetMain()
 
-    private fun transcripts() = JsonTranscriptRepository(tempFolder.newFolder(), dispatcher)
+    private fun transcripts() = SqlTranscriptRepository(testDatabase(), dispatcher)
     private fun derived() =
-        JsonDerivedRepository(tempFolder.newFolder(), dispatcher)
-    private fun queue() = JsonAnalysisQueueRepository(tempFolder.newFolder(), dispatcher)
+        SqlDerivedRepository(testDatabase(), dispatcher)
+    private fun queue() = SqlAnalysisQueueRepository(testDatabase(), dispatcher)
 
     private fun worker(
-        queue: JsonAnalysisQueueRepository,
-        transcripts: JsonTranscriptRepository,
-        derived: JsonDerivedRepository,
+        queue: SqlAnalysisQueueRepository,
+        transcripts: SqlTranscriptRepository,
+        derived: SqlDerivedRepository,
         runner: LlmRunner,
     ) = PendingAnalysisWorker(
         queue = queue,

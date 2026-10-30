@@ -1,22 +1,16 @@
 package dev.andrej.echo.data
 
 import dev.andrej.echo.ai.AnalysisBlock
-import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.junit.Rule
 import org.junit.Test
-import org.junit.rules.TemporaryFolder
 
-class JsonAnalysisQueueRepositoryTest {
+class SqlAnalysisQueueRepositoryTest {
 
-    @get:Rule
-    val tempFolder = TemporaryFolder()
-
-    private fun repository(directory: File = tempFolder.newFolder()) = JsonAnalysisQueueRepository(directory)
+    private fun repository() = SqlAnalysisQueueRepository(testDatabase())
 
     @Test
     fun `enqueue adds a fresh entry`() = runTest {
@@ -70,6 +64,16 @@ class JsonAnalysisQueueRepositoryTest {
     }
 
     @Test
+    fun `entries come out oldest first`() = runTest {
+        val repository = repository()
+
+        repository.enqueue("newer", now = 200)
+        repository.enqueue("older", now = 100)
+
+        assertEquals(listOf("older", "newer"), repository.pending.first().map { it.transcriptId })
+    }
+
+    @Test
     fun `remove drops the entry`() = runTest {
         val repository = repository()
         repository.enqueue("t1", now = 100)
@@ -103,23 +107,4 @@ class JsonAnalysisQueueRepositoryTest {
         assertEquals(0, entry.attempts)
     }
 
-    @Test
-    fun `the queue survives a new repository instance`() = runTest {
-        val directory = tempFolder.newFolder()
-        repository(directory).enqueue("t1", now = 100)
-
-        val reopened = repository(directory)
-
-        assertEquals("t1", reopened.pending.first().single().transcriptId)
-    }
-
-    @Test
-    fun `a corrupted file is treated as an empty queue`() = runTest {
-        val directory = tempFolder.newFolder()
-        File(directory, "pending_analysis.json").writeText("not json")
-
-        val repository = repository(directory)
-
-        assertTrue(repository.pending.first().isEmpty())
-    }
 }

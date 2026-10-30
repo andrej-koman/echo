@@ -5,9 +5,10 @@ import dev.andrej.echo.ai.FakeLlmRunner
 import dev.andrej.echo.ai.LlmAvailability
 import dev.andrej.echo.ai.PendingAnalysisWorker
 import dev.andrej.echo.ai.TranscriptAnalyzer
-import dev.andrej.echo.data.JsonAnalysisQueueRepository
-import dev.andrej.echo.data.JsonDerivedRepository
-import dev.andrej.echo.data.JsonTranscriptRepository
+import dev.andrej.echo.data.SqlAnalysisQueueRepository
+import dev.andrej.echo.data.SqlDerivedRepository
+import dev.andrej.echo.data.SqlTranscriptRepository
+import dev.andrej.echo.data.testDatabase
 import dev.andrej.echo.data.NewTodo
 import dev.andrej.echo.data.PendingAnalysis
 import dev.andrej.echo.data.Transcript
@@ -28,15 +29,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
-import org.junit.rules.TemporaryFolder
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class NotesViewModelTest {
-
-    @get:Rule
-    val tempFolder = TemporaryFolder()
 
     private val dispatcher = StandardTestDispatcher()
 
@@ -48,9 +44,9 @@ class NotesViewModelTest {
 
     @Test
     fun `deleting a transcript also clears its derived rows`() = runTest {
-        val repository = JsonTranscriptRepository(tempFolder.newFolder(), dispatcher)
-        val derived = JsonDerivedRepository(tempFolder.newFolder(), dispatcher)
-        val queue = JsonAnalysisQueueRepository(tempFolder.newFolder(), dispatcher)
+        val repository = SqlTranscriptRepository(testDatabase(), dispatcher)
+        val derived = SqlDerivedRepository(testDatabase(), dispatcher)
+        val queue = SqlAnalysisQueueRepository(testDatabase(), dispatcher)
         val worker = PendingAnalysisWorker(
             queue = queue,
             transcripts = repository,

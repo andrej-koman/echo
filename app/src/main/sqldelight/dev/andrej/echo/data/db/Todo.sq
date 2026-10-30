@@ -1,0 +1,39 @@
+import kotlin.Boolean;
+
+CREATE TABLE todo (
+    id TEXT NOT NULL PRIMARY KEY,
+    sourceTranscriptId TEXT NOT NULL,
+    text TEXT NOT NULL,
+    dueAt INTEGER NOT NULL,
+    hasTime INTEGER AS Boolean NOT NULL,
+    hasDate INTEGER AS Boolean NOT NULL,
+    done INTEGER AS Boolean NOT NULL,
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL
+);
+
+CREATE INDEX todo_source ON todo(sourceTranscriptId);
+
+selectAll:
+SELECT * FROM todo ORDER BY dueAt, hasTime DESC, createdAt;
+
+doneFor:
+SELECT id, done FROM todo WHERE sourceTranscriptId = ?;
+
+insert:
+INSERT INTO todo VALUES ?;
+
+setDone:
+UPDATE todo SET done = ?, updatedAt = ? WHERE id = ?;
+
+update:
+UPDATE todo SET text = ?, dueAt = ?, hasTime = ?, hasDate = ?, updatedAt = ? WHERE id = ?;
+
+delete:
+DELETE FROM todo WHERE id = ?;
+
+deleteFor:
+DELETE FROM todo WHERE sourceTranscriptId = ?;
+
+clear:
+DELETE FROM todo;

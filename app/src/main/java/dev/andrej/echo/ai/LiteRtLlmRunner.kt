@@ -16,8 +16,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
- * A model we ship the download for, so it works on every device Gemini Nano skips. Weights come
- * from [ModelStore]; nothing here runs until the user has asked for that download.
+ * Weights come from [ModelStore]; nothing here runs until the user has asked for that download.
  */
 class LiteRtLlmRunner(
     private val store: ModelStore,

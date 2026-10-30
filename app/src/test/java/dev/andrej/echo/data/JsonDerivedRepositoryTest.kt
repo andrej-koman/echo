@@ -13,9 +13,8 @@ class JsonDerivedRepositoryTest {
     @get:Rule
     val tempFolder = TemporaryFolder()
 
-    private val notifications = RecordingNotificationScheduler()
 
-    private fun repository() = JsonDerivedRepository(tempFolder.newFolder(), notifications)
+    private fun repository() = JsonDerivedRepository(tempFolder.newFolder())
 
     private fun item(text: String, dueAt: Long = 1_000L, hasTime: Boolean = false, hasDate: Boolean = true) =
         NewTodo(text, dueAt, hasTime, hasDate)
@@ -148,11 +147,11 @@ class JsonDerivedRepositoryTest {
     @Test
     fun `rows survive a new repository instance`() = runTest {
         val directory = tempFolder.newFolder()
-        JsonDerivedRepository(directory, notifications).replaceFor("t1", listOf(item("persisted")))
+        JsonDerivedRepository(directory).replaceFor("t1", listOf(item("persisted")))
 
         assertEquals(
             listOf("persisted"),
-            JsonDerivedRepository(directory, notifications).items.first().map { it.text },
+            JsonDerivedRepository(directory).items.first().map { it.text },
         )
     }
 
@@ -160,7 +159,7 @@ class JsonDerivedRepositoryTest {
     fun `corrupt file is recovered as empty and still writable`() = runTest {
         val directory = tempFolder.newFolder()
         directory.resolve("derived.json").writeText("{not json at all")
-        val repository = JsonDerivedRepository(directory, notifications)
+        val repository = JsonDerivedRepository(directory)
 
         assertTrue(repository.items.first().isEmpty())
 
@@ -174,170 +173,23 @@ class JsonDerivedRepositoryTest {
         directory.resolve("derived.json").writeText(
             """{"tasks":[{"id":"a","sourceTranscriptId":"t1","text":"old","createdAt":1}],"reminders":[]}""",
         )
-        val repository = JsonDerivedRepository(directory, notifications)
+        val repository = JsonDerivedRepository(directory)
 
         assertTrue(repository.items.first().isEmpty())
     }
 
     @Test
-    fun `replaceFor schedules the written rows`() = runTest {
-        val repository = repository()
-
-        repository.replaceFor("t1", listOf(item("call the plumber")))
-
-        val id = repository.items.first().single().id
-        assertEquals(listOf(id), notifications.scheduled)
-    }
-
-    @Test
-    fun `a re-analysis that drops a row cancels its notification`() = runTest {
-        val repository = repository()
-        repository.replaceFor("t1", listOf(item("keep"), item("drop")))
-        val dropped = repository.items.first().first { it.text == "drop" }.id
-
-        repository.replaceFor("t1", listOf(item("keep")))
-
-        assertTrue(dropped in notifications.cancelled)
-    }
-
-    @Test
-    fun `setDone true cancels, setDone false reschedules`() = runTest {
-        val repository = repository()
-        repository.replaceFor("t1", listOf(item("call the plumber")))
-        val id = repository.items.first().single().id
-        notifications.scheduled.clear()
-
-        repository.setDone(id, done = true)
-        assertTrue(id in notifications.cancelled)
-
-        notifications.cancelled.clear()
-        repository.setDone(id, done = false)
-        assertTrue(id in notifications.scheduled)
-    }
-
-    @Test
-    fun `re-analysis does not resurrect a ticked row's alarm`() = runTest {
-        val repository = repository()
-        repository.replaceFor("t1", listOf(item("buy milk")))
-        val id = repository.items.first().single().id
-        repository.setDone(id, done = true)
-        notifications.scheduled.clear()
-
-        repository.replaceFor("t1", listOf(item("buy milk")))
-
-        assertTrue(id !in notifications.scheduled)
-    }
-
-    @Test
     fun `update changes text, dueAt and hasTime and bumps updatedAt`() = runTest {
         val repository = repository()
-        repository.replaceFor("t1", listOf(item("old text", dueAt = 1_000L, hasTime = false)))
+        repository.replaceFor("t1", listOf(item("old text", dueAt = 1_000L, hasTime = false)), createdAt = 0L)
         val id = repository.items.first().single().id
 
-        repository.update(id, text = "new text", dueAt = 5_000L, hasTime = true, hasDate = true, notify = true)
+        repository.update(id, text = "new text", dueAt = 5_000L, hasTime = true, hasDate = true)
 
         val updated = repository.items.first().single()
         assertEquals("new text", updated.text)
         assertEquals(5_000L, updated.dueAt)
         assertTrue(updated.hasTime)
         assertTrue(updated.updatedAt > updated.createdAt)
-    }
-
-    @Test
-    fun `update reschedules the notification for the edited item`() = runTest {
-        val repository = repository()
-        repository.replaceFor("t1", listOf(item("a", dueAt = 1_000L, hasTime = false)))
-        val id = repository.items.first().single().id
-        notifications.scheduled.clear()
-
-        repository.update(id, text = "a", dueAt = 5_000L, hasTime = true, hasDate = true, notify = true)
-
-        assertTrue(id in notifications.scheduled)
-    }
-
-    @Test
-    fun `a dateless item never schedules a notification`() = runTest {
-        val repository = repository()
-
-        repository.replaceFor("t1", listOf(item("buy milk", hasDate = false)))
-
-        val id = repository.items.first().single().id
-        assertTrue(id !in notifications.scheduled)
-    }
-
-    @Test
-    fun `update to hasDate false cancels any scheduled notification`() = runTest {
-        val repository = repository()
-        repository.replaceFor("t1", listOf(item("a", dueAt = 1_000L, hasTime = true)))
-        val id = repository.items.first().single().id
-
-        repository.update(id, text = "a", dueAt = 1_000L, hasTime = false, hasDate = false, notify = true)
-
-        assertTrue(id in notifications.cancelled)
-    }
-
-    @Test
-    fun `update on a done item leaves it done and does not resurrect its notification`() = runTest {
-        val repository = repository()
-        repository.replaceFor("t1", listOf(item("a", dueAt = 1_000L, hasTime = false)))
-        val id = repository.items.first().single().id
-        repository.setDone(id, done = true)
-        notifications.scheduled.clear()
-
-        repository.update(id, text = "b", dueAt = 5_000L, hasTime = true, hasDate = true, notify = true)
-
-        assertTrue(repository.items.first().single().done)
-        assertTrue(id !in notifications.scheduled)
-        assertTrue(id in notifications.cancelled)
-    }
-
-    @Test
-    fun `delete removes the item and cancels its notification`() = runTest {
-        val repository = repository()
-        repository.replaceFor("t1", listOf(item("keep"), item("gone")))
-        val gone = repository.items.first().first { it.text == "gone" }.id
-
-        repository.delete(gone)
-
-        assertEquals(listOf("keep"), repository.items.first().map { it.text })
-        assertTrue(gone in notifications.cancelled)
-    }
-
-    @Test
-    fun `deleteFor cancels all of that transcript's ids`() = runTest {
-        val repository = repository()
-        repository.replaceFor("t1", listOf(item("a"), item("b")))
-        val ids = repository.items.first().map { it.id }
-
-        repository.deleteFor("t1")
-
-        assertEquals(ids.toSet(), notifications.cancelled.toSet())
-    }
-
-    @Test
-    fun `items tombstoned by the old sync-era delete stay deleted`() = runTest {
-        val directory = tempFolder.newFolder()
-        directory.resolve("derived.json").writeText(
-            """{"items":[""" +
-                """{"id":"kept","sourceTranscriptId":"t1","text":"kept","dueAt":1,"hasTime":false,"createdAt":1},""" +
-                """{"id":"gone","sourceTranscriptId":"t1","text":"gone","dueAt":1,"hasTime":false,"createdAt":1,"deletedAt":5}]}""",
-        )
-
-        val stored = JsonDerivedRepository(directory, notifications).items.first()
-
-        assertEquals(listOf("kept"), stored.map { it.id })
-    }
-
-    @Test
-    fun `clear drops every item and cancels its notification`() = runTest {
-        val repository = repository()
-        repository.replaceFor("t1", listOf(item("a")))
-        repository.replaceFor("t2", listOf(item("b")))
-        val ids = repository.items.first().map { it.id }
-
-        repository.clear()
-
-        assertTrue(repository.items.first().isEmpty())
-        assertTrue(notifications.cancelled.containsAll(ids))
     }
 }

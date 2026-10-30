@@ -85,10 +85,6 @@ fun EchoApp(
     viewModelFactory: ViewModelProvider.Factory,
     onboardingDone: StateFlow<Boolean>,
     modifier: Modifier = Modifier,
-    pendingOpenTranscriptId: String? = null,
-    onOpenTranscriptHandled: () -> Unit = {},
-    pendingOpenTaskId: String? = null,
-    onOpenTaskHandled: () -> Unit = {},
     pendingOpenCapture: Boolean = false,
     onOpenCaptureHandled: () -> Unit = {},
 ) {
@@ -109,10 +105,6 @@ fun EchoApp(
         } else {
             MainApp(
                 viewModelFactory = viewModelFactory,
-                pendingOpenTranscriptId = pendingOpenTranscriptId,
-                onOpenTranscriptHandled = onOpenTranscriptHandled,
-                pendingOpenTaskId = pendingOpenTaskId,
-                onOpenTaskHandled = onOpenTaskHandled,
                 pendingOpenCapture = pendingOpenCapture || captureAfterOnboarding,
                 onOpenCaptureHandled = {
                     captureAfterOnboarding = false
@@ -126,10 +118,6 @@ fun EchoApp(
 @Composable
 private fun MainApp(
     viewModelFactory: ViewModelProvider.Factory,
-    pendingOpenTranscriptId: String? = null,
-    onOpenTranscriptHandled: () -> Unit = {},
-    pendingOpenTaskId: String? = null,
-    onOpenTaskHandled: () -> Unit = {},
     pendingOpenCapture: Boolean = false,
     onOpenCaptureHandled: () -> Unit = {},
 ) {
@@ -143,20 +131,6 @@ private fun MainApp(
     val tasksViewModel: TasksViewModel = viewModel(factory = viewModelFactory)
     val notesViewModel: NotesViewModel = viewModel(factory = viewModelFactory)
     val profileViewModel: ProfileViewModel = viewModel(factory = viewModelFactory)
-
-    LaunchedEffect(pendingOpenTranscriptId) {
-        if (pendingOpenTranscriptId != null) {
-            navController.navigate(Routes.detail(pendingOpenTranscriptId))
-            onOpenTranscriptHandled()
-        }
-    }
-
-    LaunchedEffect(pendingOpenTaskId) {
-        if (pendingOpenTaskId != null) {
-            navController.navigate(Routes.editTask(pendingOpenTaskId))
-            onOpenTaskHandled()
-        }
-    }
 
     LaunchedEffect(pendingOpenCapture) {
         if (pendingOpenCapture) {
@@ -228,18 +202,13 @@ private fun MainApp(
                     aiState = aiState,
                     onBack = { navController.popBackStack() },
                     onLanguageChange = settingsViewModel::setLanguage,
-                    onLlmBackendChange = settingsViewModel::setLlmBackend,
                     onAutoAnalyzeChange = settingsViewModel::setAutoAnalyze,
                     onWifiOnlyDownloadChange = settingsViewModel::setWifiOnlyDownload,
-                    onReminderLeadMinutesChange = settingsViewModel::setReminderLeadMinutes,
-                    onReminderMorningTimeChange = settingsViewModel::setReminderMorningTime,
                     onSnoozeMinutesChange = settingsViewModel::setSnoozeMinutes,
                     onDeleteAllData = settingsViewModel::deleteAllData,
                     onDownloadModel = settingsViewModel.onDownloadModel,
                     onCancelDownload = settingsViewModel.onCancelDownload,
                     onDeleteModel = settingsViewModel.onDeleteModel,
-                    onTestReminderNotification = settingsViewModel.onTestReminderNotification,
-                    onTestDailyBriefNotification = settingsViewModel.onTestDailyBriefNotification,
                     onTestModelDownloadNotification = settingsViewModel.onTestModelDownloadNotification,
                     onReplayOnboarding = settingsViewModel.onReplayOnboarding,
                 )

@@ -11,7 +11,6 @@ data class TodoItem(
     val hasTime: Boolean,
     /** False means no date/time was ever stated — [dueAt] is a placeholder, never read. */
     val hasDate: Boolean = true,
-    val notify: Boolean = true,
     val done: Boolean = false,
     val createdAt: Long,
     val updatedAt: Long = createdAt,

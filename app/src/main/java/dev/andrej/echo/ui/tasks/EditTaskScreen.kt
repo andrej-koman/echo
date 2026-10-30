@@ -73,7 +73,6 @@ fun EditTaskScreen(
     var editedDueAt by remember { mutableStateOf(0L) }
     var editedHasTime by remember { mutableStateOf(false) }
     var editedHasDate by remember { mutableStateOf(true) }
-    var editedNotify by remember { mutableStateOf(true) }
     var loadedFor by remember { mutableStateOf<String?>(null) }
 
     if (task != null && loadedFor != taskId) {
@@ -81,7 +80,6 @@ fun EditTaskScreen(
         editedDueAt = task.dueAt
         editedHasTime = task.hasTime
         editedHasDate = task.hasDate
-        editedNotify = task.notify
         loadedFor = taskId
     }
 
@@ -114,7 +112,7 @@ fun EditTaskScreen(
                     variant = IconButtonVariant.Soft,
                     onClick = {
                         if (task != null) {
-                            viewModel.update(task.id, editedText, editedDueAt, editedHasTime, editedHasDate, editedNotify)
+                            viewModel.update(task.id, editedText, editedDueAt, editedHasTime, editedHasDate)
                             onBack()
                         }
                     },
@@ -221,31 +219,6 @@ fun EditTaskScreen(
                         onPick = { editedDueAt = it },
                         onEnable = { editedHasTime = true },
                     )
-                    HorizontalDivider(color = EchoTheme.colors.borderSubtle)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(EchoTheme.spacing.s5),
-                        horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Notify me",
-                                style = EchoTheme.typography.bodySm,
-                                color = EchoTheme.colors.textPrimary,
-                            )
-                            Text(
-                                text = "A time always rings",
-                                style = EchoTheme.typography.micro,
-                                color = EchoTheme.colors.textTertiary,
-                            )
-                        }
-                        EchoSwitch(
-                            checked = editedNotify,
-                            onCheckedChange = { checked -> editedNotify = checked },
-                        )
-                    }
                 }
             }
 

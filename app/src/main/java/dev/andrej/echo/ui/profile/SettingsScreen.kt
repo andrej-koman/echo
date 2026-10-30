@@ -1,8 +1,5 @@
 package dev.andrej.echo.ui.profile
 
-import android.app.TimePickerDialog
-import android.content.Intent
-import android.provider.Settings as AndroidSettings
 import dev.andrej.echo.BuildConfig
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -35,10 +32,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.core.app.NotificationManagerCompat
 import dev.andrej.echo.R
 import dev.andrej.echo.ai.AiCardState
-import dev.andrej.echo.ai.LlmBackend
 import dev.andrej.echo.ui.components.BadgeTone
 import dev.andrej.echo.ui.components.ButtonSize
 import dev.andrej.echo.ui.components.ButtonVariant
@@ -60,36 +55,25 @@ fun SettingsScreen(
     aiState: AiCardState,
     onBack: () -> Unit,
     onLanguageChange: (String) -> Unit,
-    onLlmBackendChange: (LlmBackend) -> Unit,
     onAutoAnalyzeChange: (Boolean) -> Unit,
     onWifiOnlyDownloadChange: (Boolean) -> Unit,
-    onReminderLeadMinutesChange: (Int) -> Unit,
-    onReminderMorningTimeChange: (Int, Int) -> Unit,
     onSnoozeMinutesChange: (Int) -> Unit,
     onDeleteAllData: () -> Unit,
     onDownloadModel: () -> Unit,
     onCancelDownload: () -> Unit,
     onDeleteModel: () -> Unit,
-    onTestReminderNotification: () -> Unit = {},
-    onTestDailyBriefNotification: () -> Unit = {},
     onTestModelDownloadNotification: () -> Unit = {},
     onReplayOnboarding: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     var pickingLanguage by remember { mutableStateOf(false) }
-    var pickingModel by remember { mutableStateOf(false) }
-    var pickingLead by remember { mutableStateOf(false) }
     var pickingSnooze by remember { mutableStateOf(false) }
     var confirmingDeleteAll by remember { mutableStateOf(false) }
-    val notificationsAllowed = remember { NotificationManagerCompat.from(context).areNotificationsEnabled() }
     val versionName = remember {
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }
             .getOrNull() ?: "?"
     }
-    val llmBackend = LlmBackend.fromId(state.preferredLlmBackendId)
-        ?: if (aiState is AiCardState.NanoReady) LlmBackend.NANO else LlmBackend.LITERT
-
     Column(modifier = modifier.fillMaxSize()) {
         EchoTopBar(
             title = "Settings",
@@ -137,16 +121,7 @@ fun SettingsScreen(
                 title = "ON-DEVICE AI",
                 rows = listOf(
                     {
-                        DisclosureRow(
-                            iconRes = R.drawable.ic_audio_waveform,
-                            label = "Model",
-                            value = llmBackend.displayName,
-                            onClick = { pickingModel = true },
-                        )
-                    },
-                    {
                         ModelCard(
-                            backend = llmBackend,
                             aiState = aiState,
                             modelBytes = state.litertModelBytes,
                             wifiOnly = state.wifiOnlyDownload,
@@ -160,31 +135,8 @@ fun SettingsScreen(
             )
 
             Section(
-                title = "REMINDERS",
+                title = "TASKS",
                 rows = listOf(
-                    {
-                        DisclosureRow(
-                            iconRes = R.drawable.ic_bell,
-                            label = "Ring before timed task",
-                            value = "${state.reminderLeadMinutes} min",
-                            onClick = { pickingLead = true },
-                        )
-                    },
-                    {
-                        DisclosureRow(
-                            iconRes = R.drawable.ic_clock,
-                            label = "Day without time",
-                            value = formatMorningTime(state.reminderMorningHour, state.reminderMorningMinute),
-                            onClick = {
-                                showTimePicker(
-                                    context = context,
-                                    hour = state.reminderMorningHour,
-                                    minute = state.reminderMorningMinute,
-                                    onPick = onReminderMorningTimeChange,
-                                )
-                            },
-                        )
-                    },
                     {
                         DisclosureRow(
                             iconRes = R.drawable.ic_clock,
@@ -192,30 +144,6 @@ fun SettingsScreen(
                             value = "${state.snoozeMinutes} min",
                             onClick = { pickingSnooze = true },
                         )
-                    },
-                    {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = EchoTheme.spacing.s5),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(text = "Notifications", style = EchoTheme.typography.body, color = EchoTheme.colors.textPrimary)
-                            if (notificationsAllowed) {
-                                EchoBadge(text = "Allowed")
-                            } else {
-                                EchoButton(
-                                    text = "Turn on",
-                                    size = ButtonSize.Sm,
-                                    variant = ButtonVariant.Secondary,
-                                    onClick = {
-                                        context.startActivity(
-                                            Intent(AndroidSettings.ACTION_APP_NOTIFICATION_SETTINGS)
-                                                .putExtra(AndroidSettings.EXTRA_APP_PACKAGE, context.packageName),
-                                        )
-                                    },
-                                )
-                            }
-                        }
                     },
                 ),
             )
@@ -275,22 +203,6 @@ fun SettingsScreen(
                         {
                             DisclosureRow(
                                 iconRes = R.drawable.ic_bell,
-                                label = "Test: task reminder",
-                                value = "",
-                                onClick = onTestReminderNotification,
-                            )
-                        },
-                        {
-                            DisclosureRow(
-                                iconRes = R.drawable.ic_bell,
-                                label = "Test: daily brief",
-                                value = "",
-                                onClick = onTestDailyBriefNotification,
-                            )
-                        },
-                        {
-                            DisclosureRow(
-                                iconRes = R.drawable.ic_bell,
                                 label = "Test: model download",
                                 value = "",
                                 onClick = onTestModelDownloadNotification,
@@ -332,28 +244,6 @@ fun SettingsScreen(
         onDismiss = { pickingLanguage = false },
     )
 
-    PickerSheet(
-        visible = pickingModel,
-        title = "Model",
-        options = listOf(LlmBackend.NANO, LlmBackend.LITERT).map { it.displayName to it },
-        selected = llmBackend,
-        onPick = {
-            onLlmBackendChange(it)
-            pickingModel = false
-        },
-        onDismiss = { pickingModel = false },
-    )
-
-    IntSliderSheet(
-        visible = pickingLead,
-        title = "Ring before timed task",
-        value = state.reminderLeadMinutes,
-        range = 0..60,
-        valueLabel = { "$it min" },
-        onValueChange = onReminderLeadMinutesChange,
-        onDismiss = { pickingLead = false },
-    )
-
     IntSliderSheet(
         visible = pickingSnooze,
         title = "Snooze",
@@ -376,22 +266,6 @@ fun SettingsScreen(
         },
         onDismiss = { confirmingDeleteAll = false },
     )
-}
-
-private fun formatMorningTime(hour: Int, minute: Int): String = "%d:%02d %s".format(
-    if (hour % 12 == 0) 12 else hour % 12,
-    minute,
-    if (hour < 12) "AM" else "PM",
-)
-
-private fun showTimePicker(context: android.content.Context, hour: Int, minute: Int, onPick: (Int, Int) -> Unit) {
-    TimePickerDialog(
-        context,
-        { _, pickedHour, pickedMinute -> onPick(pickedHour, pickedMinute) },
-        hour,
-        minute,
-        false,
-    ).show()
 }
 
 @Composable
@@ -495,7 +369,6 @@ private fun SwitchRow(
 
 @Composable
 private fun ModelCard(
-    backend: LlmBackend,
     aiState: AiCardState,
     modelBytes: Long,
     wifiOnly: Boolean,
@@ -527,9 +400,9 @@ private fun ModelCard(
                 )
             }
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = backend.displayName, style = EchoTheme.typography.body, color = EchoTheme.colors.textPrimary)
+                Text(text = MODEL_NAME, style = EchoTheme.typography.body, color = EchoTheme.colors.textPrimary)
                 Text(
-                    text = modelMeta(backend, aiState, modelBytes),
+                    text = modelMeta(aiState, modelBytes),
                     style = EchoTheme.typography.caption,
                     color = EchoTheme.colors.textTertiary,
                 )
@@ -546,59 +419,51 @@ private fun ModelCard(
             )
         }
 
-        if (backend == LlmBackend.LITERT) {
-            HorizontalDivider(color = EchoTheme.colors.borderSubtle)
-            SwitchRow(
-                iconRes = R.drawable.ic_settings,
-                label = "Download on Wi-Fi only",
-                subtitle = "Model updates wait for Wi-Fi",
-                checked = wifiOnly,
-                onCheckedChange = onWifiOnlyChange,
-            )
+        HorizontalDivider(color = EchoTheme.colors.borderSubtle)
+        SwitchRow(
+            iconRes = R.drawable.ic_settings,
+            label = "Download on Wi-Fi only",
+            subtitle = "Model updates wait for Wi-Fi",
+            checked = wifiOnly,
+            onCheckedChange = onWifiOnlyChange,
+        )
 
-            when (aiState) {
-                is AiCardState.NeedsDownload, is AiCardState.Downloading, AiCardState.LiteRtReady -> {
-                    HorizontalDivider(color = EchoTheme.colors.borderSubtle)
-                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = EchoTheme.spacing.s5)) {
-                        when (aiState) {
-                            is AiCardState.NeedsDownload ->
-                                EchoButton(text = "Download", onClick = onDownload, variant = ButtonVariant.Secondary, fullWidth = true)
+        when (aiState) {
+            is AiCardState.NeedsDownload, is AiCardState.Downloading, AiCardState.Ready -> {
+                HorizontalDivider(color = EchoTheme.colors.borderSubtle)
+                Box(modifier = Modifier.fillMaxWidth().padding(vertical = EchoTheme.spacing.s5)) {
+                    when (aiState) {
+                        is AiCardState.NeedsDownload ->
+                            EchoButton(text = "Download", onClick = onDownload, variant = ButtonVariant.Secondary, fullWidth = true)
 
-                            is AiCardState.Downloading ->
-                                EchoButton(text = "Cancel", onClick = onCancel, variant = ButtonVariant.Secondary, fullWidth = true)
+                        is AiCardState.Downloading ->
+                            EchoButton(text = "Cancel", onClick = onCancel, variant = ButtonVariant.Secondary, fullWidth = true)
 
-                            AiCardState.LiteRtReady ->
-                                EchoButton(text = "Remove model", onClick = onDelete, variant = ButtonVariant.Danger, fullWidth = true)
+                        AiCardState.Ready ->
+                            EchoButton(text = "Remove model", onClick = onDelete, variant = ButtonVariant.Danger, fullWidth = true)
 
-                            else -> Unit
-                        }
+                        else -> Unit
                     }
                 }
-
-                else -> Unit
             }
+
+            else -> Unit
         }
     }
 }
 
-private fun modelMeta(backend: LlmBackend, state: AiCardState, modelBytes: Long): String = when (backend) {
-    LlmBackend.NANO -> when (state) {
-        AiCardState.NanoReady -> "Uses your phone's built-in AI"
-        is AiCardState.Unsupported -> state.reason
-        else -> ""
-    }
+private const val MODEL_NAME = "Qwen3 1.7B"
 
-    LlmBackend.LITERT -> when (state) {
-        AiCardState.LiteRtReady -> "${formatBytes(modelBytes)} · on this device"
-        is AiCardState.NeedsDownload -> "${formatBytes(state.bytes)} · not downloaded"
-        is AiCardState.Downloading -> "Downloading… ${(state.fraction * 100).toInt()}%"
-        is AiCardState.Unsupported -> state.reason
-        else -> ""
-    }
+private fun modelMeta(state: AiCardState, modelBytes: Long): String = when (state) {
+    AiCardState.Ready -> "${formatBytes(modelBytes)} · on this device"
+    is AiCardState.NeedsDownload -> "${formatBytes(state.bytes)} · not downloaded"
+    is AiCardState.Downloading -> "Downloading… ${(state.fraction * 100).toInt()}%"
+    is AiCardState.Unsupported -> state.reason
+    AiCardState.Checking -> ""
 }
 
 private fun modelBadge(state: AiCardState): Pair<String, BadgeTone>? = when (state) {
-    AiCardState.NanoReady, AiCardState.LiteRtReady -> "Ready" to BadgeTone.Success
+    AiCardState.Ready -> "Ready" to BadgeTone.Success
     is AiCardState.NeedsDownload -> "Download" to BadgeTone.Neutral
     is AiCardState.Downloading -> "Downloading" to BadgeTone.Info
     is AiCardState.Unsupported -> "Unsupported" to BadgeTone.Warning

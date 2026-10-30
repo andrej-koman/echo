@@ -17,12 +17,11 @@ interface DerivedRepository {
 
     suspend fun setDone(itemId: String, done: Boolean)
 
-    suspend fun update(itemId: String, text: String, dueAt: Long, hasTime: Boolean, hasDate: Boolean, notify: Boolean)
+    suspend fun update(itemId: String, text: String, dueAt: Long, hasTime: Boolean, hasDate: Boolean)
 
     suspend fun delete(itemId: String)
 
     suspend fun deleteFor(transcriptId: String)
 
-    /** Drops every item and cancels its notification. */
     suspend fun clear()
 }

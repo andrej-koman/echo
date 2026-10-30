@@ -3,9 +3,9 @@
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
@@ -42,17 +42,8 @@
             </intent-filter>
         </activity>
 
-        <receiver
-            android:name=".notify.ReminderAlarmReceiver"
-            android:exported="false" />
 
-        <receiver
-            android:name=".notify.ReminderActionReceiver"
-            android:exported="false" />
 
-        <receiver
-            android:name=".notify.DailyBriefReceiver"
-            android:exported="false" />
 
         <receiver
             android:name=".notify.ModelDownloadActionReceiver"

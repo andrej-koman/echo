@@ -30,7 +30,7 @@ class LlmRunnerProviderTest {
 
         assertSame(
             nano,
-            LlmRunnerProvider(mapOf(LlmBackend.NANO to nano, LlmBackend.LITERT to fallback), log = {}).runner(),
+            LlmRunnerProvider(listOf(nano, fallback), log = {}).runner(),
         )
         assertEquals(0, fallback.probes)
     }
@@ -42,7 +42,7 @@ class LlmRunnerProviderTest {
 
         assertSame(
             fallback,
-            LlmRunnerProvider(mapOf(LlmBackend.NANO to nano, LlmBackend.LITERT to fallback), log = {}).runner(),
+            LlmRunnerProvider(listOf(nano, fallback), log = {}).runner(),
         )
     }
 
@@ -53,16 +53,16 @@ class LlmRunnerProviderTest {
 
         assertSame(
             nano,
-            LlmRunnerProvider(mapOf(LlmBackend.NANO to nano, LlmBackend.LITERT to fallback), log = {}).runner(),
+            LlmRunnerProvider(listOf(nano, fallback), log = {}).runner(),
         )
     }
 
     @Test
     fun `all unsupported yields a runner that reports why`() = runTest {
         val provider = LlmRunnerProvider(
-            candidates = mapOf(
-                LlmBackend.NANO to CountingRunner(LlmAvailability.Unsupported("no AICore")),
-                LlmBackend.LITERT to CountingRunner(LlmAvailability.Unsupported("not enough memory")),
+            candidates = listOf(
+                CountingRunner(LlmAvailability.Unsupported("no AICore")),
+                CountingRunner(LlmAvailability.Unsupported("not enough memory")),
             ),
             log = {},
         )
@@ -76,7 +76,7 @@ class LlmRunnerProviderTest {
 
     @Test
     fun `an empty candidate list yields a runner, not a crash`() = runTest {
-        val runner = LlmRunnerProvider(emptyMap(), log = {}).runner()
+        val runner = LlmRunnerProvider(emptyList(), log = {}).runner()
 
         assertTrue(runner.availability() is LlmAvailability.Unsupported)
     }
@@ -84,7 +84,7 @@ class LlmRunnerProviderTest {
     @Test
     fun `the choice is probed once and remembered`() = runTest {
         val nano = CountingRunner(LlmAvailability.Ready)
-        val provider = LlmRunnerProvider(mapOf(LlmBackend.NANO to nano), log = {})
+        val provider = LlmRunnerProvider(listOf(nano), log = {})
 
         repeat(5) { provider.runner() }
 
@@ -95,7 +95,7 @@ class LlmRunnerProviderTest {
     fun `invalidate forces a re-probe on the next call`() = runTest {
         val nano = CountingRunner(LlmAvailability.Unsupported("no AICore"))
         val fallback = CountingRunner(LlmAvailability.Ready)
-        val provider = LlmRunnerProvider(mapOf(LlmBackend.NANO to nano, LlmBackend.LITERT to fallback), log = {})
+        val provider = LlmRunnerProvider(listOf(nano, fallback), log = {})
 
         assertSame(fallback, provider.runner())
         provider.invalidate()
@@ -114,7 +114,7 @@ class LlmRunnerProviderTest {
             override suspend fun warmup() = Unit
             override suspend fun generate(prompt: String, temperature: Float) = "unused"
         }
-        val provider = LlmRunnerProvider(mapOf(LlmBackend.NANO to flexible), log = {})
+        val provider = LlmRunnerProvider(listOf(flexible), log = {})
 
         assertTrue(provider.runner().availability() is LlmAvailability.Unsupported)
 
@@ -123,35 +123,5 @@ class LlmRunnerProviderTest {
 
         provider.invalidate()
         assertEquals(LlmAvailability.Ready, provider.runner().availability())
-    }
-
-    @Test
-    fun `a preferred backend is used even if a candidate earlier in the map would win`() = runTest {
-        val nano = CountingRunner(LlmAvailability.Ready)
-        val litert = CountingRunner(LlmAvailability.Ready)
-        val provider = LlmRunnerProvider(
-            candidates = mapOf(LlmBackend.NANO to nano, LlmBackend.LITERT to litert),
-            preferredBackend = { LlmBackend.LITERT },
-            log = {},
-        )
-
-        assertSame(litert, provider.runner())
-        assertEquals(0, nano.probes)
-    }
-
-    @Test
-    fun `a preferred backend that is unsupported does not fall back to another candidate`() = runTest {
-        val nano = CountingRunner(LlmAvailability.Unsupported("no AICore"))
-        val litert = CountingRunner(LlmAvailability.Ready)
-        val provider = LlmRunnerProvider(
-            candidates = mapOf(LlmBackend.NANO to nano, LlmBackend.LITERT to litert),
-            preferredBackend = { LlmBackend.NANO },
-            log = {},
-        )
-
-        val runner = provider.runner()
-
-        assertTrue(runner.availability() is LlmAvailability.Unsupported)
-        assertEquals(0, litert.probes)
     }
 }

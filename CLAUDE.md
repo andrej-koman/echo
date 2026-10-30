@@ -9,6 +9,31 @@ Android app: live on-device speech-to-text. Kotlin, Compose, minSdk 33.
 - **Few comments.** Code should read on its own. Comment only what the code cannot say: a non-obvious platform quirk, or why an unusual choice was made. No comments restating the line below them, no KDoc on obvious functions.
 - **Keep this file current.** When something below stops being true, or a session turns up a fact worth having next time — a new package, a changed decision, a device quirk, a dependency that cannot be used — update the relevant section here as part of the work. Facts and decisions with their reasons, not a changelog.
 
+## Rebuild in progress (v1 spec)
+
+`Echo — Feature Spec (v1).pdf` (repo root, untracked) is the target: LoroNote parity on Android —
+on-device Whisper, speaker diarization, AI summary/tasks/polishing on every phone, import,
+TXT/SRT/audio export, playback-synced editor, widget + Quick Settings tile, Wear OS, Play Billing.
+The phased roadmap is in `~/.claude-personal/plans/hi-please-use-echo-swift-gray.md`. Each phase
+builds one feature and redesigns its UI only when that phase arrives. Decisions made for it:
+
+- **Reminders, the daily brief and Gemini Nano are gone** (Phase 0, 2026-10-30). Not in the spec,
+  and `USE_EXACT_ALARM` is a Play policy risk once reminders aren't the app's core function. Tasks
+  keep due dates and Home's snooze pill, but nothing rings. Nano: the spec forbids depending on a
+  vendor AI platform, and the S24 can't run it anyway.
+- **The Home task dashboard stays**, although the spec's app is library-first.
+- **Storage → SQLDelight** (Phase 1). Room is blocked by KSP; SQLDelight needs no compiler
+  plugin. FTS4, not FTS5 — FTS5 isn't guaranteed in platform SQLite on older Android.
+- **Whisper → whisper.cpp over JNI** (Phase 2): the only mature Android runtime for Large V3
+  Turbo quantized; language detect, `initial_prompt` and timestamps built in.
+- **Diarization → sherpa-onnx** (Phase 6), whose Silero VAD also picks Whisper chunk boundaries.
+- **Transcription jobs → WorkManager** with `setForeground`: the old "no WorkManager" reason was
+  Nano's foreground-only limit, which no longer applies.
+- **minSdk stays 33 until Phase 3.** The spec proposes API 29, but `AndroidSpeechEngine`'s
+  on-device recognizer calls are API 31/33. Lower it when that engine is deleted, then gate
+  `VibratorManager` in `Haptics.kt` (API 31).
+- Old JSON data is not migrated — it has no audio, and the rebuild starts clean.
+
 ## Build
 
 ```bash
@@ -25,8 +50,8 @@ Wireless debugging drops often: `adb connect <ip:port>` from Settings → Develo
 
 ```
 speech/       TranscriptionEngine interface + AndroidSpeechEngine (SpeechRecognizer)
-ai/           LlmRunner interface + MlKitLlmRunner (Gemini Nano) and LiteRtLlmRunner (bundled
-              Qwen3), ModelStore/HttpModelDownloader for the weights, AnalysisPrompt,
+ai/           LlmRunner interface + LiteRtLlmRunner (downloaded Qwen3), LlmRunnerProvider,
+              ModelStore/HttpModelDownloader for the weights, AnalysisPrompt,
               TranscriptAnalyzer, AnalysisOutcome/AnalysisBlock, PendingAnalysisWorker
 data/         Transcript, TranscriptRepository (JSON file), TodoItem + DerivedRepository
               (derived.json), PendingAnalysis + AnalysisQueueRepository (pending_analysis.json),
@@ -40,10 +65,11 @@ ui/record/    RecordViewModel (still named for its old screen)
 ui/onboarding/ OnboardingScreen + OnboardingSteps (the 5 first-run screens), OnboardingViewModel
 ui/profile/   ProfileScreen (the Profile tab) + ProfileViewModel, SettingsScreen +
               SettingsViewModel, HistoryScreen + HistoryViewModel
-ui/transcripts/, ui/detail/    NotesScreen (the merged Notes tab — one shared card per day,
-              hairline dividers, same rhythm as Tasks; search; TranscriptRow, PendingBadge),
-              TranscriptDetailScreen (NOTE + tasks-from-this-note + raw TRANSCRIPT, bar-icon
-              actions)
+ui/notes/     NotesScreen + NotesViewModel (the Notes tab — one shared card per day, hairline
+              dividers, same rhythm as Tasks; search; NoteRow, PendingBadge, PendingCopy)
+ui/detail/    NoteDetailScreen (NOTE + tasks-from-this-note + raw TRANSCRIPT, bar-icon actions)
+notify/       RecordingNotifier (+ RecordingActionReceiver, BootReceiver), ModelDownloadNotifier
+              (+ ModelDownloadActionReceiver)
 AppContainer manual DI, no Hilt
 ```
 
@@ -51,8 +77,8 @@ Engine sits behind an interface so a different backend (e.g. Whisper) can replac
 
 Four tabs: Home / Tasks — record button — Notes / Profile, Home the start destination. There is no
 separate Transcripts tab — Notes is the one browsable list (former Transcripts content merged into it,
-`ui/transcripts/NotesScreen.kt`), and raw transcript text lives only in each note's detail screen
-("WHAT WAS SAID" in `TranscriptDetailScreen`), not as a tab of its own or anywhere in Profile.
+`ui/notes/NotesScreen.kt`), and raw transcript text lives only in each note's detail screen
+("WHAT WAS SAID" in `NoteDetailScreen`), not as a tab of its own or anywhere in Profile.
 No header account icon
 button anywhere — Profile is reached only via its tab (Tasks' empty-state "Turn on AI" button also
 tab-switches there, via `onOpenProfile`). The record
@@ -74,11 +100,11 @@ Home, so tapping Home restored it and landed on the last tab. Cost: tab scroll p
   (2026-10-29). The only network traffic left is the LLM weights download (`HttpModelDownloader`,
   hence `INTERNET`) and the system's own speech language-pack download. The remote Supabase
   project was left as-is; nothing in the app talks to it.
-- `TranscriptsViewModel.title()` derives a title from the opening of the text (first sentence, or
+- `ui.notes.title()` derives a title from the opening of the text (first sentence, or
   six words) — the fallback for a transcript analysis has not named yet, not a permanent scheme.
   `Transcript.asRow()` prefers `title`/`summary` when present. `summary` is the AI's full
   reformatted note (a readable rewrite of the ramble, not a short blurb) — the prompt in
-  `ai/AnalysisPrompt.kt` asks for this explicitly. Row excerpts and `TranscriptDetailScreen`'s
+  `ai/AnalysisPrompt.kt` asks for this explicitly. Row excerpts and `NoteDetailScreen`'s
   NOTE section both just render it as-is; nothing truncates or re-summarizes it further.
 - Task and Reminder unified into one `TodoItem` (`text`, `dueAt` — never null, `hasTime`,
   `done`). A speaker who names no date at all still gets an item due **today**; `hasTime`
@@ -111,9 +137,8 @@ Home, so tapping Home restored it and landed on the last tab. Cost: tab scroll p
   until tomorrow. Within a group, timed items come first (soonest first), then date-only items
   (oldest-created first). Tapping a row opens `EditTaskScreen` (`onEditTask`) instead of jumping
   straight to the source transcript — that full-screen editor lets you retitle a task, change its
-  day/time via native `DatePickerDialog`/`TimePickerDialog`, toggle notification on/off, delete it
-  (`DerivedRepository.update`/`delete`, added alongside `replaceFor`/`setDone`/`deleteFor`, using
-  the same `update { current -> ... }`/`sync` machinery), and reach the source transcript only
+  day/time via native `DatePickerDialog`/`TimePickerDialog`, delete it
+  (`DerivedRepository.update`/`delete`, alongside `replaceFor`/`setDone`/`deleteFor`), and reach the source transcript only
   from its own "Heard in" row. `TasksViewModel` takes a `TranscriptRepository` for that lookup, on
   top of `DerivedRepository`. Due-time formatting (`formatDue`, `formatTime`, `Long.midnight()`)
   lives in `ui/DueLabels.kt`, shared by Home and Tasks rather than copied a third time.
@@ -133,9 +158,9 @@ Home, so tapping Home restored it and landed on the last tab. Cost: tab scroll p
   reuses `ui.tasks.groupByDue`/`isOverdue` (both `internal`, not `private`, for this reuse): the hero
   is the first item of the "Today" group (overdue items sort first, so an overdue task always wins
   the slot over a same-day timed one; a timed item wins over an untimed one). Its action pill is
-  context-dependent: `Snooze to tonight` (bg `surfaceAccentSoft`) when overdue — `HomeViewModel.snooze`
-  moves `dueAt` to 20:00 local time today via `DerivedRepository.update`, nothing fancier — or `Add a
-  time` (solid `actionPrimaryBg`, the bell icon, "the one thing that makes the task ring") when the
+  context-dependent: a snooze pill (bg `surfaceAccentSoft`) when overdue — `HomeViewModel.snooze`
+  pushes `dueAt` forward by `SettingsStore.snoozeMinutes` (`snoozeTime`) via
+  `DerivedRepository.update`, nothing fancier — or `Add a time` (solid `actionPrimaryBg`) when the
   hero has no time set, navigating to `EditTaskScreen` like every other "no time set" affordance.
   When the Today group is empty, the hero slot becomes a mascot "Today is clear" card instead
   (`HeroState.Clear`) and the strip below relabels itself "Coming up" (next `Tomorrow`+`Upcoming`
@@ -154,19 +179,16 @@ Home, so tapping Home restored it and landed on the last tab. Cost: tab scroll p
   Notes list, so it stays local rather than changing `NoteRow` itself. Home dropped its own search
   field with this rework (nothing left on the screen is a list to filter); the header's search icon
   and the "Coming up"/"See all"/"All notes" links all just switch tabs.
-- Deletes are hard deletes. The sync-era `deletedAt` tombstones are gone from `Transcript` and
-  `TodoItem`; files written before that still hold tombstoned rows, so both Json repositories
-  drop any row with a non-null `deletedAt` while decoding (`data/LegacyTombstones.kt`) — without
-  it `ignoreUnknownKeys` would quietly resurrect them. `TodoItem.updatedAt` stays: the Completed
-  section sorts by it. `Transcript.updatedAt` is gone.
+- Deletes are hard deletes, no tombstones. `TodoItem.updatedAt` stays: the Completed section
+  sorts by it.
 - Derived rows are keyed by `UUID.nameUUIDFromBytes(transcriptId + kind + normalized text)`, not
   minted fresh, so re-analysis lands on the same ids and `Task.done` survives it. Before this,
   Analyze silently un-ticked every task. Two rows with the same text under one transcript collapse
   to one (`distinctBy`) — a repeated task from a single note is noise.
-- `TranscriptDetailScreen` (redesigned from the OutLoud "Transcript Page" doc): the bar carries
+- `NoteDetailScreen` (redesigned from the OutLoud "Transcript Page" doc): the bar carries
   back / delete / re-analyze as icons instead of three stacked bottom buttons, so the body is
   content, not chrome. Re-analyze (`ic_audio_waveform`) re-runs `TranscriptAnalyzer` through
-  `TranscriptsViewModel.analyze()`; it goes `IconButtonVariant.Ghost` and no-ops while the entry's
+  `NotesViewModel.analyze()`; it goes `IconButtonVariant.Ghost` and no-ops while the entry's
   `PendingCopy.severity` is `Parked` (nothing to retry yet — `WaitingForModel`/`NoBackend` are
   preconditions), otherwise `Soft` (bronze) and calls `analyze()`. One in flight at a time
   (`analyzingId`, sourced from `PendingAnalysisWorker.activeId`). Body: NOTE (the summary) then a
@@ -178,7 +200,7 @@ Home, so tapping Home restored it and landed on the last tab. Cost: tab scroll p
   (`remember(text)`, plain `maxLines` swap — no CSS line-clamp equivalent needed) and a "Copy"
   chip writing to `ClipboardManager`. A `pending` entry (parked or failed) replaces NOTE/TASKS
   with a status card (icon avatar + copy + a retry button when `Failed`) — analysis hasn't
-  produced a note yet, so there is nothing to show there. `TranscriptsViewModel.tasks` (all
+  produced a note yet, so there is nothing to show there. `NotesViewModel.tasks` (all
   `DerivedRepository.items`, unfiltered) backs both this screen's per-transcript filter and the
   Notes list's per-row task counts.
 - **Pending analysis queue.** `TranscriptAnalyzer.analyze()` returns `AnalysisOutcome`
@@ -192,26 +214,24 @@ Home, so tapping Home restored it and landed on the last tab. Cost: tab scroll p
   `GenerationFailed`/`EmptyResult` consume one of 3 attempts; past that an entry sits unretried
   until a manual Analyze. The worker runs on `AppContainer`'s `appScope`, not a ViewModel scope —
   navigating away no longer cancels an in-flight analysis, which used to happen with
-  `TranscriptsViewModel`'s old `_analyzingId` on `viewModelScope`. Three triggers call
+  the old `_analyzingId` on `viewModelScope`. Three triggers call
   `worker.requestDrain()`: `RecordViewModel.stopRecording()` after saving (awaited inline, so the
   Processing screen's perceived flow is unchanged), `AppContainer`'s collector on
   `modelStore.state` (collapsed to the state's kind, not raw equality, so download progress ticks
   don't retrigger it), and `MainActivity.onStart()` via `container.onAppForegrounded()`. Both of
   the latter two also call `LlmRunnerProvider.invalidate()` first — without it a resolved
   `NoLlmRunner` answer stays cached for the process's life even after a model finishes
-  downloading. `TranscriptsViewModel.analyze()` (the manual button) calls
+  downloading. `NotesViewModel.analyze()` (the manual button) calls
   `worker.analyzeNowAsync()`, which bypasses both the attempt cap and the "already analyzed"
-  drop that the automatic drain applies — an explicit tap always gets a fresh run. **No
-  WorkManager**: it would need a custom `WorkerFactory` (no Hilt here), and Nano's
-  foreground-only restriction already rules out a background retry loop — the triggers above are
-  the only times a retry can usefully happen. **No timed backoff**: drains are event-triggered,
+  drop that the automatic drain applies — an explicit tap always gets a fresh run. Analysis does
+  not use WorkManager yet; transcription jobs will (see Rebuild above). **No timed backoff**: drains are event-triggered,
   not a polling loop, so there is nothing to back off *from*; the attempt cap alone prevents
-  churn. `TranscriptsViewModel.pending`/`HomeViewModel` and `TranscriptsViewModel.group()` turn
-  each queue entry's `lastBlock` into a `PendingCopy` (`ui/transcripts/TranscriptsViewModel.kt`)
+  churn. `NotesViewModel.pending`/`HomeViewModel` and `ui.notes.group()` turn
+  each queue entry's `lastBlock` into a `PendingCopy` (`ui/notes/NotesViewModel.kt`)
   — a plain `{text, severity}` pair, no Compose types, so it stays testable without a device. An
   entry only gets copy once the drain has actually attempted it (`lastBlock != null`); a
   freshly-enqueued row shows nothing for the moment before that. `PendingBadge` (in
-  `ui/transcripts/NotesScreen.kt`, reused by Home and the detail screen) renders it as an
+  `ui/notes/NotesScreen.kt`, reused by Home and the detail screen) renders it as an
   `EchoBadge`: `Parked` (waiting on a model or backend) in `BadgeTone.Neutral`, `Failed`
   (`GenerationFailed`/`EmptyResult`, exhausted or not — the badge doesn't distinguish) in
   `BadgeTone.Warning`. `EmptyTranscript` never renders — it's never enqueued. No dedicated
@@ -226,20 +246,16 @@ Home, so tapping Home restored it and landed on the last tab. Cost: tab scroll p
   calendar day (zone-aware) — the first empty day stops the streak. `AiViewModel` is gone: its
   Download/Cancel/Remove UI moved into `SettingsScreen`'s ON-DEVICE AI card, and `SettingsViewModel`
   now takes the same `aiCardState`/`onDownloadModel`/`onCancelDownload`/`onDeleteModel` shape
-  directly from `AppContainer`. `SettingsStore` grew four fields beyond `languageTag`:
-  `autoAnalyze` (gates the enqueue in `RecordViewModel.stopRecording()` — off means every note
-  waits for a manual Analyze), `wifiOnlyDownload` (checked in `AppContainer.downloadModel()` via
-  `ConnectivityManager`, download is skipped rather than queued if off Wi-Fi), and
-  `reminderLeadMinutes`/`reminderMorningHour`, which `fireTimeFor` (`data/NotificationScheduler.kt`)
-  now takes as parameters instead of hardcoded constants — `AlarmManagerNotificationScheduler`
-  reads them from `SettingsStore` on every `schedule()` call, so a change takes effect on the next
-  write without needing to reschedule existing alarms. Settings' FEEL section (Haptics, Reduce
+  directly from `AppContainer`. `SettingsStore` beyond `languageTag`: `autoAnalyze` (gates the
+  enqueue in `RecordViewModel.stopRecording()` — off means every note waits for a manual Analyze),
+  `wifiOnlyDownload` (checked in `AppContainer.downloadModel()` via `ConnectivityManager`, download
+  is skipped rather than queued if off Wi-Fi), `snoozeMinutes` (Settings' TASKS section, Home's
+  snooze pill). The ON-DEVICE AI card shows the one model, no backend picker. Settings' FEEL section (Haptics, Reduce
   motion) stays read-only by design — threading the setting through `rememberEchoHaptics()`/
   `LocalReducedMotion` would need a new CompositionLocal reaching every call site, out of scope for
   this pass; the switches render "on" but ignore taps. `AppContainer.storageUsedBytes()` backs
   Settings' DATA section, alongside **Delete all data** (behind `ConfirmSheet`):
-  `AppContainer.deleteAllData()` clears the pending queue, every `TodoItem` (cancelling its alarm)
-  and every transcript, via each repository's `clear()`. It keeps the model, settings and
+  `AppContainer.deleteAllData()` clears the pending queue, every `TodoItem` and every transcript, via each repository's `clear()`. It keeps the model, settings and
   `onboardingDone`. `HistoryScreen`/`HistoryViewModel` render a month calendar
   (`YearMonth`/`LocalDate` state, not persisted) with a 4-level heat grid (0/1/2/3+ notes that
   day), month totals, and a selected-day detail list; `nextMonth()` refuses to advance past the
@@ -325,99 +341,48 @@ Onboarding is ported from the separate "Echo Onboarding" Design artifact
 
 ## Notifications
 
-Every undone `TodoItem` gets an `AlarmManager` notification: 15 minutes before `dueAt` when
-`hasTime`, else a fixed 9:00 AM local time on `dueAt`'s day. `NotificationScheduler`
-(`data/NotificationScheduler.kt`, plus `fireTimeFor`) is a pure-JVM interface so the scheduling
-*logic* — `JsonDerivedRepository`'s `sync`/`resync`, called from every write path
-(`replaceFor`, `setDone`, `deleteFor`) — is unit-testable without Android; the Android
-implementation, `notify/AlarmManagerNotificationScheduler.kt`, is unreachable from unit tests and
-only verified on device. `JsonDerivedRepository` takes the scheduler as a **required**
-constructor param, not a defaulted no-op, so a build can't silently ship without notifications.
+Two channels, no per-task reminders (cut in Phase 0): the recording notification
+(`RecordingNotifier` — idle "tap to record", or ongoing while `RecordingService` runs) and the
+model download progress (`ModelDownloadNotifier`).
 
-- **`USE_EXACT_ALARM`**, not `SCHEDULE_EXACT_ALARM`: auto-granted and non-revocable for apps
-  whose core function is alarms/reminders, but that exemption is a Play Store policy review, not
-  a manifest guarantee — a future policy rejection would force a fallback to inexact alarms or
-  `canScheduleExactAlarms()` gating, neither of which exists today.
-- **`PendingIntent` identity is the Intent's data URI (`echo://item/<id>`), not `requestCode`.**
-  `PendingIntent` equality goes through `Intent.filterEquals`, which checks action/data/type/
-  package/component/categories and ignores extras — so `requestCode = itemId.hashCode()` alone
-  would be a 32-bit collision lottery where one item's alarm silently overwrites another's. With
-  an explicit component and a per-item data URI, `requestCode = 0` is safe. The content
-  `PendingIntent` (notification tap → `MainActivity`) needs its own per-item data URI for the
-  same reason, plus `FLAG_ACTIVITY_SINGLE_TOP` as an *Intent* flag (not a manifest `launchMode`)
-  to get `onNewIntent` delivery against `MainActivity`'s default `standard` launch mode.
-- **`MY_PACKAGE_REPLACED` clears exact alarms exactly like a reboot does** — during
-  `./gradlew installAndRun` development this means every alarm silently disappears without
-  `notify/BootReceiver.kt` listening for both actions. It is *not* `directBootAware` and does not
-  listen for `LOCKED_BOOT_COMPLETED`: `filesDir` is credential-encrypted and unreadable before
-  first unlock, same constraint as everywhere else in this app.
-- Tap-through to the source transcript is an `Intent` extra read in `MainActivity`, not a
-  Navigation-Compose deep link: `EchoApp` renders `OnboardingScreen` *outside* the `NavHost`, so a cold start calling `handleDeepLink` on a
-  controller that doesn't exist yet would drop the intent. `MainActivity` holds the pending
-  transcript id in `Activity` state instead (seeded in `onCreate`, updated in `onNewIntent`, the
-  extra removed each time so a config-change recreation doesn't renavigate), and passes it down
-  to `MainApp`'s `NavHost` once it exists.
-- `POST_NOTIFICATIONS` is requested from `TasksScreen` the first time its item list goes
-  non-empty, guarded by a file-scoped `askedForNotifications` so it fires once per process. If
-  denied, scheduling still runs — alarms fire — but `NotificationManager.notify()` silently
-  no-ops; no crash, no retry, no re-prompt.
-- **Ported from the OutLoud "Echo Notifications & Widgets" design** (Claude Design project
-  `e17770fa-3b8d-43f1-b85d-c74c647c4e70`). Widgets (that doc's 1h) are not built — out of scope
-  for that pass. What is: a dedicated tray icon, the reminder redesign, a daily brief digest, and
-  a silent download-progress notification. The design's persistent "quick capture" ongoing
-  notification (record straight from the tray, 1c/1d) is deferred too — it needs a foreground
-  `Service` hosting recording independent of any Activity/ViewModel, a bigger, separate piece of
-  work than the rest of this pass.
-- **`R.drawable.ic_notification_echo`** is the one icon on every notification channel — the
-  launcher's stroked ghost closes into a grey blob at 12–24dp, so this is the same silhouette
-  flattened to a solid shape with the eyes cut out via `fillType="evenOdd"`, reusing the mascot's
-  own path data. It replaces `ic_bell` only as a notification `smallIcon`; `ic_bell` keeps its
-  unrelated in-app meaning (the "has a time set" glyph on `TaskRow`/Home) and is untouched.
-- **Task reminder** (`ReminderAlarmReceiver`) now carries the due label and source note title in
-  its body (`"Today, 9:00 AM · Monday admin dump"`), and two actions: **Done** (broadcasts to
-  `ReminderActionReceiver`, which calls `derived.setDone` and cancels the notification) and
-  **Snooze to tonight** (same receiver, calls `AppContainer.snoozeReminder` — the 20:00 rule
-  factored out of `HomeViewModel` as `internal fun snoozeTime` so both surfaces mean the same
-  thing). The source title comes from a one-shot `repository.transcripts.first()` lookup inside
-  `goAsync()`, falling back to `ui.notes.title(text)` same as everywhere else a transcript lacks
-  an AI title yet. Tap goes to `EditTaskScreen`, not the transcript — a second `pendingOpenTaskId`
-  extra (`MainActivity.EXTRA_TASK_ID`) threaded through `EchoApp`/`SignedInApp` the same way
-  `pendingOpenTranscriptId` already was, navigating to `Routes.editTask(id)`.
-- **Daily brief** (`notify/DailyBriefReceiver` + `DailyBriefScheduler`) fires once at
-  `reminderMorningHour:reminderMorningMinute` and is suppressed outright when `groupByDue`'s
-  "Today" group is empty — Home already says "Today is clear" better than a notification can.
-  There is no exact *repeating* alarm on Android, so the receiver reschedules itself for tomorrow
-  (`AppContainer.rescheduleDailyBrief`) every time it fires, in a `finally` block so a crash mid-post
-  can't silently kill tomorrow's brief; `AppContainer`'s `init` schedules the first one, so a fresh
-  process (including after `BootReceiver`, which already touches `container`) always has one
-  queued. Deliberately not rescheduled the moment the user changes `reminderMorningHour` in
-  Settings — same precedent as per-item reminders, which also only pick up a settings change on
-  their *next* write, not retroactively.
-- **Model download** (`notify/ModelDownloadNotifier`) is wired into the same `modelStore.state`
-  collector in `AppContainer` that already drives `llmRunners.invalidate()`, posting/updating a
-  silent (`IMPORTANCE_LOW`, no sound, `setSilent(true)`), ongoing progress notification while
-  `ModelState.Downloading` and cancelling it on any other state — including `Failed`, so a failed
-  download doesn't leave a stuck progress bar. No "finished" notification is ever posted, matching
-  the design. **Pause** and **Cancel** are the same underlying call
-  (`AppContainer.cancelDownload`, which just cancels the coroutine — the `.part` file survives so
-  the next `downloadModel()` resumes) except Cancel also calls `deleteModel()` to drop the partial
-  file.
+- **`MY_PACKAGE_REPLACED` and reboot clear the idle recording notification**, so
+  `notify/BootReceiver.kt` listens for both and re-posts it. It is *not* `directBootAware` and does
+  not listen for `LOCKED_BOOT_COMPLETED`: `filesDir` is credential-encrypted and unreadable before
+  first unlock.
+- The record action without `RECORD_AUDIO` granted opens `MainActivity` with
+  `EXTRA_OPEN_CAPTURE`, an `Intent` extra rather than a Navigation-Compose deep link: `EchoApp`
+  renders `OnboardingScreen` *outside* the `NavHost`, so a cold-start `handleDeepLink` would be
+  dropped. `MainActivity` holds the flag in `Activity` state (the extra removed each time so a
+  config-change recreation doesn't renavigate) and passes it to `MainApp`'s `NavHost`.
+  `FLAG_ACTIVITY_SINGLE_TOP` as an *Intent* flag gets `onNewIntent` delivery against the default
+  `standard` launch mode.
+- `POST_NOTIFICATIONS` is still requested from `TasksScreen` the first time its item list goes
+  non-empty (`askedForNotifications`, once per process) — a leftover placement from reminders;
+  move it with the recording rework. Denied means `notify()` silently no-ops.
+- **`R.drawable.ic_notification_echo`** is the one `smallIcon` on every channel — the launcher's
+  stroked ghost closes into a grey blob at 12–24dp, so this is the same silhouette flattened to a
+  solid shape with the eyes cut out via `fillType="evenOdd"`.
+- **Model download** (`notify/ModelDownloadNotifier`) is wired into the `modelStore.state`
+  collector in `AppContainer` that also drives `llmRunners.invalidate()`: a silent
+  (`IMPORTANCE_LOW`, `setSilent(true)`), ongoing progress notification while
+  `ModelState.Downloading`, cancelled on any other state — including `Failed`, so a failed
+  download doesn't leave a stuck progress bar. No "finished" notification. **Pause** and
+  **Cancel** are the same call (`AppContainer.cancelDownload`, which cancels the coroutine — the
+  `.part` file survives so the next `downloadModel()` resumes) except Cancel also calls
+  `deleteModel()`.
+- Widgets and the Quick Settings tile come in Phase 10 (design: OutLoud "Echo Notifications &
+  Widgets", Claude Design project `e17770fa-3b8d-43f1-b85d-c74c647c4e70`).
 
 ## On-device AI
 
-Analysis runs on whichever backend the device has, picked once per process by `LlmRunnerProvider`
-(first usable wins; `NeedsDownload` still beats the next candidate — the download is the user's
-call). One prompt and one parser serve both, so a new backend costs one class.
+Analysis runs on a downloaded model, the only backend. `LlmRunnerProvider` still takes an ordered
+list and caches the first usable runner (`NeedsDownload` beats the next candidate — the download
+is the user's call), so a smaller per-tier model (Phase 2) slots in as one more class.
 
-- **Gemini Nano is not available on the S24.** AICore is installed
-  (`0.release.samsungslsi.prod_aicore_20260723`) but `checkStatus()` *throws*
-  `[606] FEATURE_NOT_FOUND: Feature 636 is not available`. Google's device list starts Samsung at
-  the S25; blog posts claiming S24 support are from the retired AI Edge dev preview. Unsupported
-  devices throw rather than return `UNAVAILABLE`, so the `GenAiException` catch in
-  `MlKitLlmRunner.availability()` is load-bearing — without it every non-Nano phone crashes.
-- **Nano is foreground-only** (`BACKGROUND_USE_BLOCKED`; foreground services do not qualify).
-  That is why analysis lives on the Processing screen and there is no service or WorkManager.
-- Fallback is Qwen3-1.7B int4 `.litertlm` (977MB) via LiteRT-LM. The format must be `.litertlm`,
+- **Gemini Nano was removed** (Phase 0): the spec forbids a vendor AI dependency, and the S24
+  can't run it — AICore's `checkStatus()` *throws* `[606] FEATURE_NOT_FOUND` there (Google's
+  device list starts Samsung at the S25).
+- The model is Qwen3-1.7B int4 `.litertlm` (977MB) via LiteRT-LM. The format must be `.litertlm`,
   never GGUF — the wrong format fails silently on load. Gemma repos on HuggingFace are
   `gated: auto` and 401 an anonymous download; `litert-community/Qwen3-1.7B` is not gated.
 - `Engine.initialize()` costs ~19s against ~5s of inference, so it is held open for the life of
@@ -437,8 +402,7 @@ hard cuts like the rest of the app; system back steps back, and leaves the app o
   already on disk — an install that predates onboarding goes straight to Home.
 - **Downloads start on "Get started", never block.** `startOnboardingDownloads()` fetches the
   device language's speech pack if none is installed (`LanguageSupport.toPrefetch`) and starts
-  the LLM download only on Wi-Fi and only when `aiCardState` says `NeedsDownload` (Nano devices
-  skip it). On mobile data nothing starts; step 4 shows a "Download AI · 977 MB" button (not in
+  the LLM download only on Wi-Fi and only when `aiCardState` says `NeedsDownload`. On mobile data nothing starts; step 4 shows a "Download AI · 977 MB" button (not in
   the design) so the first note isn't stuck "waiting for model" with no way forward. A note
   recorded mid-download queues and auto-analyses when the model lands (existing drain trigger).
 - **Paths:** Skip (steps 1–2) → Microphone, never past it. Allow → system dialog; granted →

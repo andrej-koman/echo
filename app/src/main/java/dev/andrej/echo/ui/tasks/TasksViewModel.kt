@@ -55,7 +55,7 @@ class TasksViewModel(
                 completed = completedByRecency(filtered),
                 loaded = true,
                 query = text,
-                aiOff = items.isEmpty() && ai !is AiCardState.NanoReady && ai !is AiCardState.LiteRtReady,
+                aiOff = items.isEmpty() && ai !is AiCardState.Ready,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TasksUiState())
 
@@ -67,8 +67,8 @@ class TasksViewModel(
         query.value = text
     }
 
-    fun update(itemId: String, text: String, dueAt: Long, hasTime: Boolean, hasDate: Boolean, notify: Boolean) {
-        viewModelScope.launch { derived.update(itemId, text, dueAt, hasTime, hasDate, notify) }
+    fun update(itemId: String, text: String, dueAt: Long, hasTime: Boolean, hasDate: Boolean) {
+        viewModelScope.launch { derived.update(itemId, text, dueAt, hasTime, hasDate) }
     }
 
     fun delete(itemId: String) {

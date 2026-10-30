@@ -60,7 +60,6 @@ dependencies {
 
     implementation(libs.kotlinx.serialization.json)
 
-    implementation(libs.mlkit.genai.prompt)
     implementation(libs.litertlm.android)
 
     debugImplementation(libs.androidx.ui.tooling)

@@ -2,10 +2,8 @@ package dev.andrej.echo
 
 import android.app.ActivityManager
 import android.content.Context
-import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import android.net.Uri
 import java.time.ZoneId
 import java.util.Locale
 import androidx.lifecycle.ViewModel
@@ -13,10 +11,7 @@ import androidx.lifecycle.ViewModelProvider
 import dev.andrej.echo.ai.AiCardState
 import dev.andrej.echo.ai.HttpModelDownloader
 import dev.andrej.echo.ai.LiteRtLlmRunner
-import dev.andrej.echo.ai.LlmAvailability
-import dev.andrej.echo.ai.LlmBackend
 import dev.andrej.echo.ai.LlmRunnerProvider
-import dev.andrej.echo.ai.MlKitLlmRunner
 import dev.andrej.echo.ai.ModelStore
 import dev.andrej.echo.ai.PendingAnalysisWorker
 import dev.andrej.echo.ai.QWEN3_1_7B_INT4
@@ -31,16 +26,11 @@ import dev.andrej.echo.data.SettingsStore
 import dev.andrej.echo.data.SharedPreferencesSettingsStore
 import dev.andrej.echo.data.TranscriptRepository
 import dev.andrej.echo.ai.ModelState
-import dev.andrej.echo.notify.AlarmManagerNotificationScheduler
-import dev.andrej.echo.notify.DailyBriefReceiver
-import dev.andrej.echo.notify.DailyBriefScheduler
 import dev.andrej.echo.notify.ModelDownloadNotifier
 import dev.andrej.echo.notify.RecordingNotifier
-import dev.andrej.echo.notify.ReminderAlarmReceiver
 import dev.andrej.echo.speech.AndroidSpeechEngine
 import dev.andrej.echo.speech.TranscriptionEngine
 import dev.andrej.echo.ui.home.HomeViewModel
-import dev.andrej.echo.ui.home.snoozeTime
 import dev.andrej.echo.ui.profile.HistoryViewModel
 import dev.andrej.echo.ui.profile.ProfileViewModel
 import dev.andrej.echo.ui.profile.SettingsViewModel
@@ -51,7 +41,6 @@ import dev.andrej.echo.ui.onboarding.OnboardingViewModel
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
@@ -61,7 +50,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filter
@@ -89,14 +77,10 @@ class AppContainer(context: Context) {
     val engine: TranscriptionEngine =
         AndroidSpeechEngine(applicationContext)
 
-    private val notificationScheduler = AlarmManagerNotificationScheduler(applicationContext, settings)
-
-    private val dailyBriefScheduler = DailyBriefScheduler(applicationContext, settings)
-
     private val modelDownloadNotifier = ModelDownloadNotifier(applicationContext)
 
     val derived: DerivedRepository =
-        JsonDerivedRepository(applicationContext.filesDir, notificationScheduler)
+        JsonDerivedRepository(applicationContext.filesDir)
 
     val analysisQueue: AnalysisQueueRepository =
         JsonAnalysisQueueRepository(applicationContext.filesDir)
@@ -107,50 +91,18 @@ class AppContainer(context: Context) {
         downloader = HttpModelDownloader(),
     )
 
-    private val mlKitRunner = MlKitLlmRunner()
-
     private val liteRtRunner = LiteRtLlmRunner(
         store = modelStore,
         activityManager = applicationContext.getSystemService(ActivityManager::class.java),
     )
 
-    private val preferredBackend = MutableStateFlow(LlmBackend.fromId(settings.preferredLlmBackend))
-
-    private val llmRunners = LlmRunnerProvider(
-        candidates = mapOf(LlmBackend.NANO to mlKitRunner, LlmBackend.LITERT to liteRtRunner),
-        preferredBackend = { preferredBackend.value },
-    )
+    private val llmRunners = LlmRunnerProvider(listOf(liteRtRunner))
 
     val analyzer = TranscriptAnalyzer(llmRunners::runner)
 
-    private fun aiCardStateFor(backend: LlmBackend): Flow<AiCardState> = when (backend) {
-        LlmBackend.NANO -> flow { emit(mlKitRunner.availability().toCardState()) }
-        LlmBackend.LITERT -> modelStore.state.map { liteRtRunner.availability().toCardState() }
-    }
-
-    private val autoAiCardState: Flow<AiCardState> = flow {
-        if (mlKitRunner.availability() is LlmAvailability.Ready) {
-            emit(AiCardState.NanoReady)
-        } else {
-            emitAll(modelStore.state.map { liteRtRunner.availability().toCardState() })
-        }
-    }
-
-    /** The backend actually driving analysis right now: the user's explicit pick, or whichever wins automatically. */
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val aiCardState: Flow<AiCardState> = preferredBackend.flatMapLatest { pref ->
-        val live = pref?.let(::aiCardStateFor) ?: autoAiCardState
-        flow {
-            emit(AiCardState.Checking)
-            emitAll(live)
-        }
-    }
-
-    fun setPreferredLlmBackend(backend: LlmBackend?) {
-        settings.preferredLlmBackend = backend?.id
-        preferredBackend.value = backend
-        llmRunners.invalidate()
-        pendingAnalysisWorker.requestDrain()
+    val aiCardState: Flow<AiCardState> = flow {
+        emit(AiCardState.Checking)
+        emitAll(modelStore.state.map { liteRtRunner.availability().toCardState() })
     }
 
     private fun warmUpLlm() {
@@ -234,7 +186,6 @@ class AppContainer(context: Context) {
             recordingController.state.collect(recordingNotifier::update)
         }
 
-        dailyBriefScheduler.scheduleNext()
         recordingNotifier.postIdle()
     }
 
@@ -244,56 +195,15 @@ class AppContainer(context: Context) {
         pendingAnalysisWorker.requestDrain()
     }
 
-    /** Exact alarms do not survive a reboot or an app update — [dev.andrej.echo.notify.BootReceiver] calls this. */
-    suspend fun rescheduleNotifications() {
-        derived.items.first().forEach { if (!it.done) notificationScheduler.schedule(it) }
-    }
-
-    /** [dev.andrej.echo.notify.DailyBriefReceiver] calls this after every fire, and [dev.andrej.echo.notify.BootReceiver] after a reboot. */
-    fun rescheduleDailyBrief() {
-        dailyBriefScheduler.scheduleNext()
-    }
-
     /** [dev.andrej.echo.notify.BootReceiver] calls this — the idle notification does not survive a reboot either. */
     fun repostRecordingNotification() {
         recordingNotifier.update(recordingController.state.value)
     }
 
-    /** Debug-only: fires each notification once, with fake data where the real path needs an alarm or a download in progress. */
-    fun sendTestReminderNotification() {
-        if (!BuildConfig.DEBUG) return
-        val intent = Intent(applicationContext, ReminderAlarmReceiver::class.java).apply {
-            data = Uri.parse("echo://item/test-reminder")
-            putExtra(ReminderAlarmReceiver.EXTRA_ITEM_ID, "test-reminder")
-            putExtra(ReminderAlarmReceiver.EXTRA_TRANSCRIPT_ID, "test-transcript")
-            putExtra(ReminderAlarmReceiver.EXTRA_TEXT, "Call the landlord")
-            putExtra(ReminderAlarmReceiver.EXTRA_DUE_AT, System.currentTimeMillis())
-            putExtra(ReminderAlarmReceiver.EXTRA_HAS_TIME, true)
-        }
-        applicationContext.sendBroadcast(intent)
-    }
-
-    fun sendTestDailyBrief() {
-        if (!BuildConfig.DEBUG) return
-        applicationContext.sendBroadcast(Intent(applicationContext, DailyBriefReceiver::class.java))
-    }
-
+    /** Debug-only: shows the download notification with fake progress. */
     fun sendTestModelDownloadNotification() {
         if (!BuildConfig.DEBUG) return
         modelDownloadNotifier.update(ModelState.Downloading(bytesDownloaded = 412_000_000L, totalBytes = 1_100_000_000L))
-    }
-
-    /** "Snooze" from the reminder notification — the same configurable-duration rule Home's overdue pill uses. */
-    suspend fun snoozeReminder(itemId: String) {
-        val item = derived.items.first().firstOrNull { it.id == itemId } ?: return
-        derived.update(
-            item.id,
-            item.text,
-            snoozeTime(System.currentTimeMillis(), settings.snoozeMinutes),
-            hasTime = true,
-            hasDate = true,
-            notify = item.notify,
-        )
     }
 
     private var downloadJob: Job? = null
@@ -354,14 +264,11 @@ class AppContainer(context: Context) {
                     transcripts = repository,
                     derived = derived,
                     aiCardState = aiCardState,
-                    onSetLlmBackend = ::setPreferredLlmBackend,
                     litertModelBytes = modelStore.spec.bytes,
                     onDownloadModel = ::downloadModel,
                     onCancelDownload = ::cancelDownload,
                     onDeleteModel = ::deleteModel,
                     storageUsedBytes = ::storageUsedBytes,
-                    onTestReminderNotification = ::sendTestReminderNotification,
-                    onTestDailyBriefNotification = ::sendTestDailyBrief,
                     onTestModelDownloadNotification = ::sendTestModelDownloadNotification,
                     onDeleteAllData = ::deleteAllData,
                     onReplayOnboarding = ::replayOnboarding,

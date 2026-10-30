@@ -9,9 +9,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 /**
- * Exact alarms do not survive a reboot, and an app update ([Intent.ACTION_MY_PACKAGE_REPLACED])
- * clears them exactly like a reboot does — which during `./gradlew installAndRun` development
- * means every alarm silently disappears without this.
+ * A reboot or an app update ([Intent.ACTION_MY_PACKAGE_REPLACED]) clears the idle "tap to record"
+ * notification, and nothing else starts the process to post it again until the app is opened.
  */
 class BootReceiver : BroadcastReceiver() {
 
@@ -26,7 +25,6 @@ class BootReceiver : BroadcastReceiver() {
         val container = (context.applicationContext as EchoApplication).container
         CoroutineScope(Dispatchers.Default).launch {
             try {
-                container.rescheduleNotifications()
                 container.repostRecordingNotification()
             } finally {
                 pending.finish()

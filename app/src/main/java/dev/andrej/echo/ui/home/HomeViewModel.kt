@@ -104,7 +104,6 @@ class HomeViewModel(
                 snoozeTime(now(), settings.snoozeMinutes),
                 hasTime = true,
                 hasDate = true,
-                notify = item.notify,
             )
         }
     }

@@ -4,7 +4,6 @@ import dev.andrej.echo.ai.AiCardState
 import dev.andrej.echo.data.FakeSettingsStore
 import dev.andrej.echo.data.JsonDerivedRepository
 import dev.andrej.echo.data.JsonTranscriptRepository
-import dev.andrej.echo.data.RecordingNotificationScheduler
 import dev.andrej.echo.speech.FakeTranscriptionEngine
 import dev.andrej.echo.speech.LanguageSupport
 import kotlinx.coroutines.Dispatchers
@@ -44,9 +43,8 @@ class SettingsViewModelTest {
         settings = settings,
         engine = engine,
         transcripts = JsonTranscriptRepository(tempFolder.newFolder(), dispatcher),
-        derived = JsonDerivedRepository(tempFolder.newFolder(), RecordingNotificationScheduler(), dispatcher),
+        derived = JsonDerivedRepository(tempFolder.newFolder(), dispatcher),
         aiCardState = flowOf(AiCardState.Checking),
-        onSetLlmBackend = {},
         litertModelBytes = 977_000_000L,
         onDownloadModel = {},
         onCancelDownload = {},
@@ -84,30 +82,5 @@ class SettingsViewModelTest {
 
         assertEquals("de-DE", settings.languageTag)
         assertEquals("de-DE", viewModel.state.value.languageTag)
-    }
-
-    @Test
-    fun `ring-before minutes are persisted`() = runTest {
-        val settings = FakeSettingsStore()
-        val viewModel = viewModel(settings = settings)
-        advanceUntilIdle()
-
-        viewModel.setReminderLeadMinutes(30)
-
-        assertEquals(30, settings.reminderLeadMinutes)
-        assertEquals(30, viewModel.state.value.reminderLeadMinutes)
-    }
-
-    @Test
-    fun `morning reminder time is persisted as hour and minute`() = runTest {
-        val settings = FakeSettingsStore()
-        val viewModel = viewModel(settings = settings)
-        advanceUntilIdle()
-
-        viewModel.setReminderMorningTime(14, 30)
-
-        assertEquals(14, settings.reminderMorningHour)
-        assertEquals(30, settings.reminderMorningMinute)
-        assertTrue(viewModel.state.value.reminderMorningHour == 14 && viewModel.state.value.reminderMorningMinute == 30)
     }
 }

@@ -10,8 +10,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.decodeFromJsonElement
-import kotlinx.serialization.json.jsonArray
 
 class JsonTranscriptRepository(
     private val directory: File,
@@ -85,8 +83,7 @@ class JsonTranscriptRepository(
         if (!file.exists()) return emptyList()
 
         return try {
-            val rows = json.parseToJsonElement(file.readText()).jsonArray.withoutTombstones()
-            json.decodeFromJsonElement<List<Transcript>>(rows)
+            json.decodeFromString<List<Transcript>>(file.readText())
                 .sortedByDescending { it.createdAt }
         } catch (e: Exception) {
             // Losing history beats never launching again.

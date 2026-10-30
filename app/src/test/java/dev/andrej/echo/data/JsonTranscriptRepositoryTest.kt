@@ -124,19 +124,6 @@ class JsonTranscriptRepositoryTest {
     }
 
     @Test
-    fun `rows tombstoned by the old sync-era delete stay deleted`() = runTest {
-        val directory = tempFolder.newFolder()
-        directory.resolve("transcripts.json").writeText(
-            """[{"id":"kept","text":"kept","language":"en-GB","createdAt":1,"durationMs":0,"deletedAt":null},""" +
-                """{"id":"gone","text":"gone","language":"en-GB","createdAt":2,"durationMs":0,"deletedAt":5}]""",
-        )
-
-        val stored = JsonTranscriptRepository(directory).transcripts.first()
-
-        assertEquals(listOf("kept"), stored.map { it.id })
-    }
-
-    @Test
     fun `clear removes every transcript from disk`() = runTest {
         val directory = tempFolder.newFolder()
         val repository = JsonTranscriptRepository(directory)

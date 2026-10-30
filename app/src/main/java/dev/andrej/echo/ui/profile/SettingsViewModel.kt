@@ -3,7 +3,6 @@ package dev.andrej.echo.ui.profile
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.andrej.echo.ai.AiCardState
-import dev.andrej.echo.ai.LlmBackend
 import dev.andrej.echo.data.DerivedRepository
 import dev.andrej.echo.data.SettingsStore
 import dev.andrej.echo.data.TranscriptRepository
@@ -21,13 +20,9 @@ data class SettingsUiState(
     val languageTag: String? = null,
     val languageLabel: String = "",
     val languages: List<LanguageOption> = emptyList(),
-    val preferredLlmBackendId: String? = null,
     val litertModelBytes: Long = 0,
     val autoAnalyze: Boolean = true,
     val wifiOnlyDownload: Boolean = false,
-    val reminderLeadMinutes: Int = 15,
-    val reminderMorningHour: Int = 9,
-    val reminderMorningMinute: Int = 0,
     val snoozeMinutes: Int = 60,
     val storageBytes: Long = 0,
     val notesCount: Int = 0,
@@ -40,14 +35,11 @@ class SettingsViewModel(
     transcripts: TranscriptRepository,
     derived: DerivedRepository,
     val aiCardState: Flow<AiCardState>,
-    private val onSetLlmBackend: (LlmBackend) -> Unit,
     private val litertModelBytes: Long,
     val onDownloadModel: () -> Unit,
     val onCancelDownload: () -> Unit,
     val onDeleteModel: () -> Unit,
     private val storageUsedBytes: () -> Long,
-    val onTestReminderNotification: () -> Unit = {},
-    val onTestDailyBriefNotification: () -> Unit = {},
     val onTestModelDownloadNotification: () -> Unit = {},
     private val onDeleteAllData: suspend () -> Unit = {},
     val onReplayOnboarding: () -> Unit = {},
@@ -70,13 +62,9 @@ class SettingsViewModel(
     private fun fromSettings(notesCount: Int, tasksCount: Int) = SettingsUiState(
         languageTag = settings.languageTag,
         languageLabel = settings.languageTag?.let(::displayLanguage) ?: "Not set",
-        preferredLlmBackendId = settings.preferredLlmBackend,
         litertModelBytes = litertModelBytes,
         autoAnalyze = settings.autoAnalyze,
         wifiOnlyDownload = settings.wifiOnlyDownload,
-        reminderLeadMinutes = settings.reminderLeadMinutes,
-        reminderMorningHour = settings.reminderMorningHour,
-        reminderMorningMinute = settings.reminderMorningMinute,
         snoozeMinutes = settings.snoozeMinutes,
         storageBytes = storageUsedBytes(),
         notesCount = notesCount,
@@ -102,11 +90,6 @@ class SettingsViewModel(
         }
     }
 
-    fun setLlmBackend(backend: LlmBackend) {
-        onSetLlmBackend(backend)
-        _state.value = _state.value.copy(preferredLlmBackendId = backend.id)
-    }
-
     fun setAutoAnalyze(value: Boolean) {
         settings.autoAnalyze = value
         _state.value = _state.value.copy(autoAnalyze = value)
@@ -115,17 +98,6 @@ class SettingsViewModel(
     fun setWifiOnlyDownload(value: Boolean) {
         settings.wifiOnlyDownload = value
         _state.value = _state.value.copy(wifiOnlyDownload = value)
-    }
-
-    fun setReminderLeadMinutes(value: Int) {
-        settings.reminderLeadMinutes = value
-        _state.value = _state.value.copy(reminderLeadMinutes = value)
-    }
-
-    fun setReminderMorningTime(hour: Int, minute: Int) {
-        settings.reminderMorningHour = hour
-        settings.reminderMorningMinute = minute
-        _state.value = _state.value.copy(reminderMorningHour = hour, reminderMorningMinute = minute)
     }
 
     fun setSnoozeMinutes(value: Int) {

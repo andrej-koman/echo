@@ -16,8 +16,7 @@ data class Analysis(
 )
 
 /**
- * Words, not tokens: Gemini Nano caps input around 4000 tokens and there is no tokenizer on
- * this side of the interface. Long recordings are truncated until chunking exists.
+ * Words, not tokens: there is no tokenizer on this side of the interface. Long recordings are truncated until chunking exists.
  */
 const val MAX_PROMPT_WORDS = 3000
 

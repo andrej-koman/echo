@@ -42,7 +42,7 @@ class PendingAnalysisWorker(
         drainJob = scope.launch { drainLoop() }
     }
 
-    /** Used where the caller has to wait for the result — recording, and the manual retry. */
+    /** Used where the caller has to wait for the result: a transcription job, and the manual retry. */
     suspend fun requestDrainAndAwait() {
         requestDrain()
         drainJob?.join()

@@ -19,6 +19,7 @@ import dev.andrej.echo.data.AnalysisQueueRepository
 import dev.andrej.echo.data.SettingsStore
 import dev.andrej.echo.data.TranscriptRepository
 import dev.andrej.echo.speech.AudioDecoder
+import dev.andrej.echo.speech.AudioEncoder
 import dev.andrej.echo.speech.SAMPLE_RATE
 import dev.andrej.echo.speech.pcm16ToFloats
 import dev.andrej.echo.data.Segment
@@ -46,9 +47,10 @@ sealed interface TranscriptionStatus {
 }
 
 /**
- * Imported files are copied to `recordings/<id>/source` and transcribed by [TranscriptionWorker],
- * which calls back into [run]. The copy is kept: a content URI's read grant does not outlive the
- * app that shared it, and export and playback will need the original.
+ * Each transcript's audio lives in `recordings/<id>/`, transcribed by [TranscriptionWorker], which
+ * calls back into [run]. An import is copied to `source` and kept: a content URI's read grant
+ * does not outlive the app that shared it, and export and playback will need the original. A
+ * recording arrives as raw `audio.pcm` and is encoded to `source` once transcribed.
  */
 class Transcriptions(
     private val context: Context,
@@ -62,6 +64,7 @@ class Transcriptions(
     private val workManager = WorkManager.getInstance(context)
     private val recordingsDir = File(context.filesDir, "recordings")
     private val decoder = AudioDecoder()
+    private val encoder = AudioEncoder()
 
     // One model in memory at a time; a second job waits for the first.
     private val lock = Mutex()
@@ -112,8 +115,42 @@ class Transcriptions(
         }
     }
 
-    fun retry(id: String) {
-        if (File(dirFor(id), SOURCE).isFile) enqueue(id)
+    /** Where a recording writes its samples. */
+    fun recordingFile(id: String): File = File(dirFor(id), PCM)
+
+    /**
+     * A take whose process died before Stop leaves `audio.pcm` with no transcript. Raw PCM needs
+     * no finishing, so it is filed as it stands. Call only before any recording can have started.
+     */
+    fun recoverInterruptedRecordings() {
+        scope.launch {
+            val known = repository.transcripts.first().map { it.id }.toSet()
+            val orphans = withContext(Dispatchers.IO) {
+                recordingsDir.listFiles().orEmpty().filter { it.name !in known && File(it, PCM).isFile }
+            }
+            orphans.forEach { dir ->
+                val pcm = File(dir, PCM)
+                if (pcm.length() == 0L) {
+                    dir.deleteRecursively()
+                    return@forEach
+                }
+                val durationMs = pcm.length() / 2 * 1000 / SAMPLE_RATE
+                repository.save(
+                    id = dir.name,
+                    text = "",
+                    language = "",
+                    durationMs = durationMs,
+                    createdAt = pcm.lastModified() - durationMs,
+                )
+                enqueue(dir.name)
+            }
+        }
+    }
+
+    /** Queues [id] for transcription, or re-queues one that failed. */
+    fun transcribe(id: String) {
+        val dir = dirFor(id)
+        if (File(dir, SOURCE).isFile || File(dir, PCM).isFile) enqueue(id)
     }
 
     fun discard(id: String) {
@@ -144,7 +181,8 @@ class Transcriptions(
     internal suspend fun run(id: String, report: (TranscriptionStatus) -> Unit) = lock.withLock {
         val dir = dirFor(id)
         val source = File(dir, SOURCE)
-        if (!source.isFile) throw IOException("source file is gone")
+        val pcm = File(dir, PCM)
+        if (!source.isFile && !pcm.isFile) throw IOException("audio is gone")
 
         if (modelStore.state.value !is ModelState.Ready) {
             val progress = scope.launch {
@@ -160,13 +198,18 @@ class Transcriptions(
         }
         val model = modelStore.fileOrNull() ?: throw IOException("speech model download failed")
 
-        val pcm = File(dir, PCM)
-        val durationMs = withContext(Dispatchers.IO) {
-            decoder.decode(source, pcm) { report(TranscriptionStatus.Transcribing(it * DECODE_SHARE)) }
+        val recorded = !source.isFile
+        val decodeShare = if (recorded) 0f else DECODE_SHARE
+        val durationMs = if (recorded) {
+            pcm.length() / 2 * 1000 / SAMPLE_RATE
+        } else {
+            withContext(Dispatchers.IO) {
+                decoder.decode(source, pcm) { report(TranscriptionStatus.Transcribing(it * DECODE_SHARE)) }
+            }
         }
 
         val segments = mutableListOf<Segment>()
-        var language: String? = null
+        var language: String? = settings.transcriptionLanguage
         WhisperTranscriber.load(model).use { whisper ->
             RandomAccessFile(pcm, "r").use { file ->
                 val total = file.length() / 2
@@ -177,7 +220,7 @@ class Transcriptions(
                     val chunkStart = start
                     val result = whisper.transcribe(samples.copyOf(length), language) { percent ->
                         val done = chunkStart + length * percent / 100f
-                        report(TranscriptionStatus.Transcribing(DECODE_SHARE + (1 - DECODE_SHARE) * done / total))
+                        report(TranscriptionStatus.Transcribing(decodeShare + (1 - decodeShare) * done / total))
                     }
                     // Detected once on the first chunk, then held so a quiet stretch can't flip it.
                     language = language ?: result.language
@@ -189,12 +232,18 @@ class Transcriptions(
                 }
             }
         }
+        if (recorded) {
+            // Encoded beside, then renamed: a half-written `source` would be taken for an import.
+            val partial = File(dir, "$SOURCE.part")
+            withContext(Dispatchers.IO) { encoder.encode(pcm, partial) }
+            partial.renameTo(source)
+        }
         pcm.delete()
 
         val exists = repository.transcripts.first().any { it.id == id }
         if (exists && settings.autoAnalyze && transcriptText(segments).isNotBlank()) {
             analysisQueue.enqueue(id)
-            analysis.requestDrain()
+            analysis.requestDrainAndAwait()
         }
     }
 

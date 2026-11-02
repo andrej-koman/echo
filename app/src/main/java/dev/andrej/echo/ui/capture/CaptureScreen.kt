@@ -1,10 +1,11 @@
 package dev.andrej.echo.ui.capture
 
 import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
+import androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,7 +18,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.material3.Icon
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -27,7 +28,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -35,46 +35,42 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.andrej.echo.R
-import dev.andrej.echo.speech.Availability
-import dev.andrej.echo.speech.FailureReason
 import dev.andrej.echo.ui.components.BadgeTone
-import dev.andrej.echo.ui.components.ButtonSize
-import dev.andrej.echo.ui.components.ButtonVariant
-import dev.andrej.echo.ui.components.CardTone
 import dev.andrej.echo.ui.components.EchoBadge
-import dev.andrej.echo.ui.components.EchoButton
-import dev.andrej.echo.ui.components.EchoCard
 import dev.andrej.echo.ui.components.EchoIconButton
 import dev.andrej.echo.ui.components.IconButtonSize
+import dev.andrej.echo.ui.components.IconButtonVariant
 import dev.andrej.echo.ui.components.Mascot
 import dev.andrej.echo.ui.components.MascotMood
 import dev.andrej.echo.ui.components.RecordButton
 import dev.andrej.echo.ui.components.RecordButtonSize
 import dev.andrej.echo.ui.components.RecordButtonState
-import dev.andrej.echo.ui.components.ProcessingSpinner
-import dev.andrej.echo.ui.components.SPINNER_PERIOD_MS
 import dev.andrej.echo.ui.components.RecordRipples
 import dev.andrej.echo.ui.components.RecordingTimer
-import dev.andrej.echo.ui.components.SkeletonBar
-import dev.andrej.echo.ui.components.ThinkingDots
 import dev.andrej.echo.ui.components.Waveform
 import dev.andrej.echo.ui.record.RecordUiState
 import dev.andrej.echo.ui.record.RecordViewModel
 import dev.andrej.echo.ui.theme.EchoTheme
-import dev.andrej.echo.ui.theme.LocalReducedMotion
 import dev.andrej.echo.ui.theme.rememberEchoHaptics
-import kotlinx.coroutines.delay
 
 const val TAG_RECORD_BUTTON = "record_button"
-const val TAG_TRANSCRIPT = "transcript_text"
-const val TAG_ERROR = "record_error"
+const val TAG_PAUSE_BUTTON = "pause_button"
 
+private val capturePermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+    arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS)
+} else {
+    arrayOf(Manifest.permission.RECORD_AUDIO)
+}
+
+/**
+ * Recording only: stopping files the take away and leaves at once. Whisper runs in the
+ * background, and the note's badge shows how far it has got.
+ */
 @Composable
 fun CaptureScreen(
     viewModel: RecordViewModel,
@@ -88,36 +84,47 @@ fun CaptureScreen(
     var permissionGranted by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
-                android.content.pm.PackageManager.PERMISSION_GRANTED,
+                PackageManager.PERMISSION_GRANTED,
         )
     }
     var started by remember { mutableStateOf(false) }
+    // onDone pops the back stack; a second call would pop Home too.
+    var left by remember { mutableStateOf(false) }
+    val leave = {
+        if (!left) {
+            left = true
+            onDone()
+        }
+    }
 
-    val permissionLauncher = rememberLauncherForActivityResult(RequestPermission()) { granted ->
+    // Notifications ride along: the recording controls and transcription progress live there,
+    // but only the microphone is needed to record.
+    val permissionLauncher = rememberLauncherForActivityResult(RequestMultiplePermissions()) { results ->
+        val granted = results[Manifest.permission.RECORD_AUDIO] == true
         permissionGranted = granted
         if (granted) {
             viewModel.startRecording()
             started = true
         } else {
-            onDone()
+            leave()
         }
     }
 
-    LaunchedEffect(permissionGranted, state.canRecord) {
+    LaunchedEffect(permissionGranted) {
         if (started) return@LaunchedEffect
         if (!permissionGranted) {
-            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-        } else if (state.canRecord) {
+            permissionLauncher.launch(capturePermissions)
+        } else {
             viewModel.startRecording()
             started = true
         }
     }
 
-    // Leave once the take has been filed away, not before.
-    LaunchedEffect(started, state.isRecording, state.isProcessing) {
-        if (started && !state.isRecording && !state.isProcessing && state.error == null) {
+    // Also covers a stop from the notification while this screen is open.
+    LaunchedEffect(started, state.isRecording) {
+        if (started && !state.isRecording && !left) {
             haptics.success()
-            onDone()
+            leave()
         }
     }
 
@@ -127,22 +134,18 @@ fun CaptureScreen(
             .background(EchoTheme.colors.surfacePage)
             .warmWash(EchoTheme.colors.aura),
     ) {
-        when {
-            state.availability is Availability.NoRecognizer -> UnavailableState(onDone)
-            state.isProcessing -> ProcessingState(state)
-            else -> ListeningState(
-                state = state,
-                onStop = viewModel::stopRecording,
-                onDiscard = {
-                    viewModel.discard()
-                    onDone()
-                },
-                onClose = {
-                    viewModel.stopRecording()
-                },
-                onDismissError = viewModel::dismissError,
-            )
-        }
+        RecordingState(
+            state = state,
+            onStop = viewModel::stopRecording,
+            onPause = viewModel::pause,
+            onResume = viewModel::resume,
+            onDiscard = {
+                left = true
+                viewModel.discard()
+                onDone()
+            },
+            onClose = leave,
+        )
     }
 }
 
@@ -160,20 +163,15 @@ private fun Modifier.warmWash(aura: Color): Modifier = drawBehind {
 }
 
 @Composable
-private fun ListeningState(
+private fun RecordingState(
     state: RecordUiState,
     onStop: () -> Unit,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
     onDiscard: () -> Unit,
     onClose: () -> Unit,
-    onDismissError: () -> Unit,
 ) {
-    var elapsed by remember { mutableStateOf(0L) }
-    LaunchedEffect(state.startedAtMillis, state.isRecording) {
-        while (state.isRecording) {
-            elapsed = (System.currentTimeMillis() - state.startedAtMillis) / 1000
-            delay(250)
-        }
-    }
+    val live = state.isRecording && !state.isPaused
 
     Column(
         modifier = Modifier
@@ -191,11 +189,15 @@ private fun ListeningState(
         ) {
             EchoIconButton(
                 iconRes = R.drawable.ic_chevron_down,
-                contentDescription = "Close",
+                contentDescription = "Keep recording in the background",
                 onClick = onClose,
                 size = IconButtonSize.Sm,
             )
-            EchoBadge(text = "Live", tone = BadgeTone.Live)
+            if (live) {
+                EchoBadge(text = "Live", tone = BadgeTone.Live)
+            } else {
+                EchoBadge(text = "Paused", tone = BadgeTone.Neutral)
+            }
             EchoIconButton(
                 iconRes = R.drawable.ic_trash,
                 contentDescription = "Discard",
@@ -210,70 +212,57 @@ private fun ListeningState(
             modifier = Modifier.size(160.dp),
             contentAlignment = Alignment.Center,
         ) {
-            RecordRipples()
+            if (live) RecordRipples()
             Mascot(
                 size = 104.dp,
-                mood = MascotMood.Breathing,
+                mood = if (live) MascotMood.Breathing else MascotMood.Still,
                 contentDescription = "Echo is listening",
             )
         }
 
         Spacer(Modifier.height(16.dp))
 
-        RecordingTimer(seconds = elapsed, live = true)
+        RecordingTimer(seconds = state.elapsedMs / 1000, live = live)
 
         Spacer(Modifier.height(8.dp))
 
         Text(
-            text = "Echo is listening",
+            text = state.statusText(),
             style = EchoTheme.typography.bodySm,
-            color = EchoTheme.colors.textSecondary,
+            color = if (state.micFailed) EchoTheme.colors.textDanger else EchoTheme.colors.textSecondary,
+            textAlign = TextAlign.Center,
         )
 
         Spacer(Modifier.height(28.dp))
 
         Waveform(
-            level = normalisedLevel(state.level),
-            live = state.isRecording,
+            level = state.level,
+            live = live,
             color = EchoTheme.colors.recordLive,
         )
 
-        if (state.displayText.isNotBlank()) {
-            Spacer(Modifier.height(20.dp))
-            Text(
-                text = state.displayText,
-                style = EchoTheme.typography.body,
-                color = EchoTheme.colors.textSecondary,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.testTag(TAG_TRANSCRIPT),
-            )
-        }
-
-        if (state.error != null) {
-            Spacer(Modifier.height(16.dp))
-            ErrorCard(reason = state.error, onDismiss = onDismissError)
-        }
-
-        if (state.downloadingLanguage != null) {
-            Spacer(Modifier.height(16.dp))
-            EchoCard(tone = CardTone.Bronze) {
-                Text(
-                    text = "Downloading the ${state.downloadingLanguage} model. " +
-                        "Recording starts once it lands.",
-                    style = EchoTheme.typography.bodySm,
-                    color = EchoTheme.colors.textAccent,
-                )
-            }
-        }
-
         Spacer(Modifier.weight(1f))
 
-        RecordButton(
-            state = RecordButtonState.Recording,
-            onClick = onStop,
-            size = RecordButtonSize.Lg,
-            modifier = Modifier.testTag(TAG_RECORD_BUTTON),
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            EchoIconButton(
+                iconRes = if (state.isPaused) R.drawable.ic_mic else R.drawable.ic_pause,
+                contentDescription = if (state.isPaused) "Resume" else "Pause",
+                onClick = if (state.isPaused) onResume else onPause,
+                variant = IconButtonVariant.Soft,
+                size = IconButtonSize.Md,
+                modifier = Modifier.testTag(TAG_PAUSE_BUTTON),
+            )
+            Spacer(Modifier.width(28.dp))
+            RecordButton(
+                state = RecordButtonState.Recording,
+                onClick = onStop,
+                size = RecordButtonSize.Lg,
+                modifier = Modifier.testTag(TAG_RECORD_BUTTON),
+            )
+            Spacer(Modifier.width(28.dp))
+            // Balances the pause button so the stop button sits in the centre.
+            Spacer(Modifier.size(IconButtonSize.Md.box))
+        }
 
         Spacer(Modifier.height(14.dp))
 
@@ -285,148 +274,9 @@ private fun ListeningState(
     }
 }
 
-@Composable
-private fun ProcessingState(state: RecordUiState) {
-    val haptics = rememberEchoHaptics()
-    val reduced = LocalReducedMotion.current
-    LaunchedEffect(reduced) {
-        while (!reduced) {
-            delay(SPINNER_PERIOD_MS.toLong())
-            haptics.pulse()
-        }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .padding(horizontal = EchoTheme.spacing.gutterScreen)
-            .padding(top = EchoTheme.spacing.s7, bottom = EchoTheme.spacing.s10),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        EchoBadge(text = "Processing", tone = BadgeTone.Info)
-
-        Spacer(Modifier.height(36.dp))
-
-        Column(
-            modifier = Modifier.height(160.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically),
-        ) {
-            Mascot(
-                size = 104.dp,
-                mood = MascotMood.Nodding,
-                contentDescription = "Echo is thinking",
-            )
-            ThinkingDots()
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        RecordingTimer(
-            seconds = (System.currentTimeMillis() - state.startedAtMillis) / 1000,
-            live = false,
-            color = EchoTheme.colors.textTertiary,
-        )
-
-        Spacer(Modifier.height(8.dp))
-
-        Text(
-            text = "Sorting what you said",
-            style = EchoTheme.typography.bodySm,
-            color = EchoTheme.colors.textSecondary,
-        )
-
-        Spacer(Modifier.height(28.dp))
-
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            SkeletonBar(widthFraction = 0.88f, delayMillis = 0)
-            SkeletonBar(widthFraction = 0.96f, delayMillis = 180)
-            SkeletonBar(widthFraction = 0.64f, delayMillis = 360)
-        }
-
-        Spacer(Modifier.weight(1f))
-
-        ProcessingSpinner()
-
-        Spacer(Modifier.height(14.dp))
-
-        Text(
-            text = "Usually under five seconds",
-            style = EchoTheme.typography.bodySm,
-            color = EchoTheme.colors.textTertiary,
-        )
-    }
+private fun RecordUiState.statusText(): String = when {
+    micFailed -> "The microphone is in use by another app. Tap resume to try again."
+    interrupted -> "Paused for a call — picks up when it ends"
+    isPaused -> "Paused"
+    else -> "Echo is listening"
 }
-
-@Composable
-private fun UnavailableState(onDone: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .padding(EchoTheme.spacing.s9),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
-    ) {
-        Mascot(size = 96.dp)
-        Text(
-            text = "No speech recognition on this device",
-            style = EchoTheme.typography.heading,
-            color = EchoTheme.colors.textPrimary,
-            textAlign = TextAlign.Center,
-        )
-        Text(
-            text = "Echo needs an on-device recogniser to transcribe anything.",
-            style = EchoTheme.typography.bodySm,
-            color = EchoTheme.colors.textTertiary,
-            textAlign = TextAlign.Center,
-        )
-        EchoButton(text = "Back", onClick = onDone, variant = ButtonVariant.Secondary)
-    }
-}
-
-
-@Composable
-private fun ErrorCard(reason: FailureReason, onDismiss: () -> Unit) {
-    EchoCard(modifier = Modifier.testTag(TAG_ERROR), tone = CardTone.Paper) {
-        Text(
-            text = reason.message(),
-            style = EchoTheme.typography.bodySm,
-            color = EchoTheme.colors.textDanger,
-        )
-        Spacer(Modifier.height(10.dp))
-        EchoButton(
-            text = "Dismiss",
-            onClick = onDismiss,
-            variant = ButtonVariant.Ghost,
-            size = ButtonSize.Sm,
-        )
-    }
-}
-
-private fun FailureReason.message(): String = when (this) {
-    FailureReason.MissingPermission -> "Echo needs the microphone to hear you."
-    FailureReason.LanguageUnavailable -> "That language isn't available on this device."
-    FailureReason.RecognizerBusy -> "The recogniser is busy. Try again in a moment."
-    FailureReason.Unknown -> "Something went wrong while listening."
-}
-
-/** The engine reports -2f..10f dB; the waveform wants 0f..1f. */
-private fun normalisedLevel(level: Float): Float =
-    ((level - NOISE_FLOOR_DB) / (LOUD_DB - NOISE_FLOOR_DB)).coerceIn(0f, 1f)
-
-/** Room tone on this phone reads up to ~0.9 dB, so anything under this is nothing at all. */
-private const val NOISE_FLOOR_DB = 1.5f
-
-/**
- * Not headroom for shouting: the recogniser clamps at 10.0 and ordinary speech already reaches it,
- * so a raised voice reads the same as a normal one. The waveform's height is what keeps peaks
- * from dominating.
- */
-private const val LOUD_DB = 10f

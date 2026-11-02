@@ -1,9 +1,5 @@
 package dev.andrej.echo.ui.tasks
 
-import android.Manifest
-import android.content.pm.PackageManager
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -32,14 +28,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.andrej.echo.R
 import dev.andrej.echo.data.TodoItem
@@ -61,9 +55,6 @@ import java.time.ZoneId
 import java.util.Date
 import java.util.Locale
 
-/** Attempted once per process, not on every Home -> Tasks -> Home -> Tasks round trip. */
-private var askedForNotifications = false
-
 @Composable
 fun TasksScreen(
     viewModel: TasksViewModel,
@@ -76,23 +67,10 @@ fun TasksScreen(
     val sourceTitles = remember(transcripts) {
         transcripts.associate { it.id to (it.title ?: title(it.text)) }
     }
-    val context = LocalContext.current
-    val notificationLauncher = rememberLauncherForActivityResult(RequestPermission()) {}
     var completedExpanded by remember { mutableStateOf(false) }
     val onlyCompleted = state.loaded && state.groups.isEmpty() && state.completed.isNotEmpty()
     LaunchedEffect(onlyCompleted) {
         if (onlyCompleted) completedExpanded = true
-    }
-
-    LaunchedEffect(state.groups.isNotEmpty()) {
-        if (!askedForNotifications && state.groups.isNotEmpty()) {
-            askedForNotifications = true
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
-                PackageManager.PERMISSION_GRANTED
-            ) {
-                notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        }
     }
 
     Column(modifier = modifier.fillMaxSize()) {

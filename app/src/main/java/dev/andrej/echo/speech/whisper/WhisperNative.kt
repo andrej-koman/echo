@@ -5,7 +5,7 @@ fun interface WhisperProgress {
 }
 
 /** Mirrors `src/main/cpp/whisper_jni.cpp`; a handle is a `whisper_context` plus its abort flag. */
-internal object WhisperNative {
+object WhisperNative {
     init {
         System.loadLibrary("echowhisper")
     }
@@ -22,4 +22,6 @@ internal object WhisperNative {
     external fun segmentEndMs(handle: Long, index: Int): Long
     external fun segmentText(handle: Long, index: Int): ByteArray
     external fun detectedLanguage(handle: Long): String
+
+    external fun languages(): Array<String>
 }

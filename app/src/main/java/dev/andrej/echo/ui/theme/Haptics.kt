@@ -1,6 +1,7 @@
 package dev.andrej.echo.ui.theme
 
 import android.content.Context
+import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -31,9 +32,6 @@ class EchoHaptics(
     /** Capture closes: a crisp release, audio in, processing started. */
     fun release() = view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_RELEASE)
 
-    /** Ambient beat while Echo is thinking: the softest thing the platform will play. */
-    fun pulse() = view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-
     /** The take is filed away: a double pulse you can feel without looking. */
     fun success() {
         if (!hapticsEnabled()) return
@@ -43,8 +41,14 @@ class EchoHaptics(
     private fun hapticsEnabled(): Boolean =
         Settings.System.getInt(context.contentResolver, Settings.System.HAPTIC_FEEDBACK_ENABLED, 1) == 1
 
-    private fun vibrator(): Vibrator? =
-        context.getSystemService(VibratorManager::class.java)?.defaultVibrator?.takeIf { it.hasVibrator() }
+    private fun vibrator(): Vibrator? {
+        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            context.getSystemService(VibratorManager::class.java)?.defaultVibrator
+        } else {
+            context.getSystemService(Vibrator::class.java)
+        }
+        return vibrator?.takeIf { it.hasVibrator() }
+    }
 }
 
 @Composable

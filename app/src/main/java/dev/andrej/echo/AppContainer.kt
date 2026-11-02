@@ -5,7 +5,6 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import java.time.ZoneId
-import java.util.Locale
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import dev.andrej.echo.ai.AiCardState
@@ -29,8 +28,10 @@ import dev.andrej.echo.data.echoDatabase
 import dev.andrej.echo.ai.ModelState
 import dev.andrej.echo.notify.ModelDownloadNotifier
 import dev.andrej.echo.notify.RecordingNotifier
-import dev.andrej.echo.speech.AndroidSpeechEngine
-import dev.andrej.echo.speech.TranscriptionEngine
+import dev.andrej.echo.notify.mode
+import dev.andrej.echo.speech.AudioFocus
+import dev.andrej.echo.speech.AudioRecorder
+import dev.andrej.echo.speech.whisper.WhisperNative
 import dev.andrej.echo.speech.whisper.whisperModelFor
 import dev.andrej.echo.transcribe.Transcriptions
 import dev.andrej.echo.ui.home.HomeViewModel
@@ -80,9 +81,6 @@ class AppContainer(context: Context) {
      * reasoning covers model download/delete, which must survive leaving Settings.
      */
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-
-    val engine: TranscriptionEngine =
-        AndroidSpeechEngine(applicationContext)
 
     private val modelDownloadNotifier = ModelDownloadNotifier(applicationContext)
 
@@ -142,11 +140,12 @@ class AppContainer(context: Context) {
     )
 
     val recordingController = RecordingController(
-        engine = engine,
+        recorder = AudioRecorder(),
+        interruptions = AudioFocus(applicationContext),
         repository = repository,
-        queue = analysisQueue,
-        worker = pendingAnalysisWorker,
-        settings = settings,
+        audioFile = transcriptions::recordingFile,
+        onRecorded = transcriptions::transcribe,
+        onDiscarded = transcriptions::discard,
         scope = appScope,
     )
 
@@ -169,13 +168,12 @@ class AppContainer(context: Context) {
         _onboardingDone.value = false
     }
 
+    /** Both models start on Wi-Fi only; on mobile data the first recording fetches Whisper. */
     fun startOnboardingDownloads() {
+        if (!onWifi()) return
+        appScope.launch { whisperStore.download() }
         appScope.launch {
-            engine.languageSupport().toPrefetch(Locale.getDefault().toLanguageTag())
-                ?.let(engine::requestModelDownload)
-        }
-        appScope.launch {
-            if (onWifi() && llmNeedsDownload.first()) downloadModel()
+            if (llmNeedsDownload.first()) downloadModel()
         }
     }
 
@@ -189,7 +187,7 @@ class AppContainer(context: Context) {
         repository.clear()
     }
 
-    fun recordingListeningNotification() = recordingNotifier.listeningNotification()
+    fun recordingNotification() = recordingNotifier.notification(recordingController.state.value.mode())
 
     init {
         appScope.launch {
@@ -208,10 +206,11 @@ class AppContainer(context: Context) {
         }
 
         appScope.launch {
-            recordingController.state.collect(recordingNotifier::update)
+            recordingController.state.map { it.mode() }.distinctUntilChanged().collect(recordingNotifier::update)
         }
 
         recordingNotifier.postIdle()
+        transcriptions.recoverInterruptedRecordings()
     }
 
     /** Called from Activity.onStart — a capable backend may have appeared while backgrounded. */
@@ -222,7 +221,7 @@ class AppContainer(context: Context) {
 
     /** [dev.andrej.echo.notify.BootReceiver] calls this — the idle notification does not survive a reboot either. */
     fun repostRecordingNotification() {
-        recordingNotifier.update(recordingController.state.value)
+        recordingNotifier.update(recordingController.state.value.mode())
     }
 
     /** Debug-only: shows the download notification with fake progress. */
@@ -260,14 +259,18 @@ class AppContainer(context: Context) {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T = when {
             modelClass.isAssignableFrom(RecordViewModel::class.java) ->
-                RecordViewModel(controller = recordingController, warmup = ::warmUpLlm) as T
+                RecordViewModel(
+                    controller = recordingController,
+                    onStarted = { RecordingService.start(applicationContext) },
+                    warmup = ::warmUpLlm,
+                ) as T
 
             modelClass.isAssignableFrom(NotesViewModel::class.java) ->
                 NotesViewModel(
                     repository, analysisQueue, pendingAnalysisWorker, derived,
                     transcription = transcriptions.status,
                     onImport = transcriptions::import,
-                    onRetryTranscription = transcriptions::retry,
+                    onRetryTranscription = transcriptions::transcribe,
                     onDeleted = transcriptions::discard,
                 ) as T
 
@@ -291,7 +294,7 @@ class AppContainer(context: Context) {
             modelClass.isAssignableFrom(SettingsViewModel::class.java) ->
                 SettingsViewModel(
                     settings = settings,
-                    engine = engine,
+                    whisperLanguages = { WhisperNative.languages().toList() },
                     transcripts = repository,
                     derived = derived,
                     aiCardState = aiCardState,

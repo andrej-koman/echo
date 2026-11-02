@@ -1,6 +1,7 @@
 # Echo
 
-Android app: live on-device speech-to-text. Kotlin, Compose, minSdk 33.
+Android app: on-device voice notes — record or import audio, Whisper transcribes it, a local LLM
+pulls out a note and tasks. Kotlin, Compose, minSdk 29.
 
 ## Rules
 
@@ -30,12 +31,40 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
 - **Diarization → sherpa-onnx** (Phase 6), whose Silero VAD also picks Whisper chunk boundaries.
 - **Transcription jobs → WorkManager** with `setForeground`: the old "no WorkManager" reason was
   Nano's foreground-only limit, which no longer applies.
-- **minSdk stays 33 until Phase 3.** The spec proposes API 29, but `AndroidSpeechEngine`'s
-  on-device recognizer calls are API 31/33. Lower it when that engine is deleted, then gate
-  `VibratorManager` in `Haptics.kt` (API 31).
+- **minSdk 29** (Phase 3, with `SpeechRecognizer` gone). API 30+/31+/33+ calls are gated:
+  the microphone foreground type, `VibratorManager`, `POST_NOTIFICATIONS`. `mipmap-anydpi-v26`
+  keeps its qualifier although lint calls it obsolete — renamed, AAPT stops finding
+  `ic_launcher`.
 - Old JSON data is not migrated — it has no audio, and the rebuild starts clean.
 - **Import was pulled ahead of Phases 1–3** (2026-10-30, Andrej had files on the phone to try).
   Phase 1 then moved storage underneath it to SQLite.
+
+## Recording
+
+- `RecordingController` (app-scoped) records through `AudioRecorder` straight to
+  `recordings/<id>/audio.pcm` — raw 16 kHz PCM16, what Whisper reads, with no header to finish if
+  the process dies. Stop saves a transcript row with that id (empty text) and hands it to
+  `Transcriptions.transcribe`; a take with no audio is discarded. Afterwards the PCM is encoded to
+  AAC `source` (`AudioEncoder`, 32 kbps — ~14 MB/hour instead of 115) and deleted. Encoding goes
+  to `source.part` and is renamed: a half-written `source` would read as an import.
+- **There is no live text and no Processing screen.** Stop leaves Capture at once; Whisper runs
+  as a WorkManager job (minutes, not seconds) and the note's badge shows "Transcribing… N%".
+- Pause/resume append to the same file (resume waits for the paused read to finish first).
+  `AudioFocus` takes transient focus for the take: music pauses, and a phone call
+  (`AUDIOFOCUS_LOSS_TRANSIENT`) auto-pauses until focus returns — but the end of a call never
+  undoes a pause the user made. A failing `AudioRecord` (mic held by another app) pauses with
+  `micFailed` instead of losing the take.
+- Every take runs under `RecordingService` (microphone foreground type), started from
+  `RecordViewModel.startRecording` too — not only from the notification — so leaving the app
+  keeps recording. Capture's chevron leaves the screen and keeps recording; the tab bar's record
+  button (`launchSingleTop`) or the notification returns to it.
+- **Startup recovery** (`Transcriptions.recoverInterruptedRecordings`): an `audio.pcm` with no
+  transcript row is a take whose process died before Stop; it is filed with its length and
+  queued. Called once from `AppContainer.init`, before any take can exist.
+- Language is a Whisper code in Settings (`SettingsStore.transcriptionLanguage`, preference key
+  `transcription_language` — the old `language` key held a `SpeechRecognizer` locale), or
+  auto-detect when unset. The list comes from `WhisperNative.languages()` (99 codes, no model
+  needed); `PickerSheet` scrolls for it.
 
 ## Import and Whisper
 
@@ -45,6 +74,7 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
   unoptimised it is tens of times slower), arm64-v8a only, `armv8.2-a+dotprod+fp16`, OpenMP off
   (the NDK's would need `libomp.so` shipped). Segment text crosses JNI as bytes: Whisper can split
   a multibyte character and `NewStringUTF` aborts on that.
+- Recordings share this pipeline from the PCM step on (see Recording).
 - **Model per RAM** (`speech/whisper/WhisperModels.kt`): ≥7 GB total memory (8 GB phones report
   ~7.3) → Large V3 Turbo q5_0 (574 MB), else Small q5_1 (190 MB). Ungated
   `ggerganov/whisper.cpp` on HuggingFace, through the same `ModelStore`/`HttpModelDownloader` as
@@ -78,8 +108,7 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
 - Tables are added in the phase that uses them (the dictionary and FTS4 search in 7, speakers in
   6, folders in 8), each with a `.sqm` migration — none exist yet, schema is version 1.
 - `segment` holds Whisper's timed segments (bracketed captions already dropped);
-  `transcript.text` stays as the joined text, which is all a live `SpeechRecognizer` recording
-  has. `TranscriptRepository.setTranscription` replaces text and segments in one transaction.
+  `transcript.text` stays as the joined text, which is all a pre-Phase-3 recording had. `TranscriptRepository.setTranscription` replaces text and segments in one transaction.
 - No foreign keys: SQLite needs `PRAGMA foreign_keys` per connection. Deleting a transcript
   deletes its segments in the same transaction; todos and queue entries are deleted by the
   callers, as before.
@@ -98,15 +127,20 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
 ```
 
 Wireless debugging drops often: `adb connect <ip:port>` from Settings → Developer options → Wireless debugging.
-`connectedAndroidTest` uninstalls the app afterwards; reinstall and re-grant the mic permission with
-`adb shell pm grant dev.andrej.echo android.permission.RECORD_AUDIO`.
+There are no instrumented tests (the old `RecordScreenTest` tested live recognizer text). Grant
+the mic without the dialog: `adb shell pm grant dev.andrej.echo android.permission.RECORD_AUDIO`.
+Capture opens behind a locked keyguard (`am start -n dev.andrej.echo/.MainActivity --ez
+open_capture true`) and records, but Stop can't be tapped — `am force-stop` then leaves the take
+for startup recovery.
 
 ## Layout
 
 ```
-speech/       TranscriptionEngine interface + AndroidSpeechEngine (SpeechRecognizer, live capture),
-              AudioDecoder (any file → 16 kHz PCM), whisper/ (JNI, WhisperTranscriber, model per RAM)
-transcribe/   Transcriptions (import, job status) + TranscriptionWorker (WorkManager) + Chunking
+speech/       AudioRecorder (mic → 16 kHz PCM16 file), AudioFocus (call interruptions),
+              AudioDecoder (any file → 16 kHz PCM), AudioEncoder (PCM → AAC .m4a),
+              whisper/ (JNI, WhisperTranscriber, model per RAM)
+transcribe/   Transcriptions (import, recordings, job status, startup recovery) +
+              TranscriptionWorker (WorkManager) + Chunking
 cpp/          CMake build of whisper.cpp + whisper_jni.cpp
 ai/           LlmRunner interface + LiteRtLlmRunner (downloaded Qwen3), LlmRunnerProvider,
               ModelStore/HttpModelDownloader for the weights, AnalysisPrompt,
@@ -119,8 +153,8 @@ ui/theme/     OutLoud design tokens (Color, Type, Shape, Spacing, Elevation, Mot
 ui/components/ the ported design system kit
 ui/home/      HomeScreen + HomeViewModel — hero task, then/coming-up strip, latest note
 ui/tasks/     TasksScreen + TasksViewModel — grouped by source transcript, done checkbox
-ui/capture/   CaptureScreen — Listening and Processing
-ui/record/    RecordViewModel (still named for its old screen)
+ui/capture/   CaptureScreen — recording, paused
+ui/record/    RecordViewModel + RecordUiState over RecordingController (still named for its old screen)
 ui/onboarding/ OnboardingScreen + OnboardingSteps (the 5 first-run screens), OnboardingViewModel
 ui/profile/   ProfileScreen (the Profile tab) + ProfileViewModel, SettingsScreen +
               SettingsViewModel, HistoryScreen + HistoryViewModel
@@ -131,8 +165,6 @@ notify/       RecordingNotifier (+ RecordingActionReceiver, BootReceiver), Model
               (+ ModelDownloadActionReceiver)
 AppContainer manual DI, no Hilt
 ```
-
-Engine sits behind an interface so a different backend (e.g. Whisper) can replace it without touching UI.
 
 Four tabs: Home / Tasks — record button — Notes / Profile, Home the start destination. There is no
 separate Transcripts tab — Notes is the one browsable list (former Transcripts content merged into it,
@@ -151,10 +183,6 @@ Home, so tapping Home restored it and landed on the last tab. Cost: tab scroll p
 
 ## Notes
 
-- Languages come from the device via `checkRecognitionSupport()` — never hardcode locales. This phone has only `en-GB` installed; `sl-SI` is unsupported on-device.
-- `SpeechRecognizer` ends on silence; `AndroidSpeechEngine` restarts sessions to stay continuous. `ERROR_NO_MATCH` is silence, not failure.
-- Live recording writes no audio — `SpeechRecognizer` streams straight to text. Imported files
-  are kept (see Import and Whisper); recording to file comes in Phase 3.
 - No Room: KSP has no release matching Kotlin 2.4.10.
 - **Fully offline, no account.** Google sign-in, Supabase auth and sync were removed
   (2026-10-29). The only network traffic left is the LLM weights download (`HttpModelDownloader`,
@@ -273,8 +301,8 @@ Home, so tapping Home restored it and landed on the last tab. Cost: tab scroll p
   until a manual Analyze. The worker runs on `AppContainer`'s `appScope`, not a ViewModel scope —
   navigating away no longer cancels an in-flight analysis, which used to happen with
   the old `_analyzingId` on `viewModelScope`. Three triggers call
-  `worker.requestDrain()`: `RecordViewModel.stopRecording()` after saving (awaited inline, so the
-  Processing screen's perceived flow is unchanged), `AppContainer`'s collector on
+  `worker.requestDrain()`: `Transcriptions.run` once a transcript's text is in,
+  `AppContainer`'s collector on
   `modelStore.state` (collapsed to the state's kind, not raw equality, so download progress ticks
   don't retrigger it), and `MainActivity.onStart()` via `container.onAppForegrounded()`. Both of
   the latter two also call `LlmRunnerProvider.invalidate()` first — without it a resolved
@@ -304,8 +332,8 @@ Home, so tapping Home restored it and landed on the last tab. Cost: tab scroll p
   calendar day (zone-aware) — the first empty day stops the streak. `AiViewModel` is gone: its
   Download/Cancel/Remove UI moved into `SettingsScreen`'s ON-DEVICE AI card, and `SettingsViewModel`
   now takes the same `aiCardState`/`onDownloadModel`/`onCancelDownload`/`onDeleteModel` shape
-  directly from `AppContainer`. `SettingsStore` beyond `languageTag`: `autoAnalyze` (gates the
-  enqueue in `RecordViewModel.stopRecording()` — off means every note waits for a manual Analyze),
+  directly from `AppContainer`. `SettingsStore` beyond `transcriptionLanguage`: `autoAnalyze` (gates the
+  enqueue after transcription — off means every note waits for a manual Analyze),
   `wifiOnlyDownload` (checked in `AppContainer.downloadModel()` via `ConnectivityManager`, download
   is skipped rather than queued if off Wi-Fi), `snoozeMinutes` (Settings' TASKS section, Home's
   snooze pill). The ON-DEVICE AI card shows the one model, no backend picker. Settings' FEEL section (Haptics, Reduce
@@ -380,9 +408,7 @@ Onboarding is ported from the separate "Echo Onboarding" Design artifact
 - Haptics live in `ui/theme/Haptics.kt`, reached with `rememberEchoHaptics()`. Four calls:
   `tick()` (every button, icon button and tab tap), `engage()` / `release()` (record button down
   and stop), `success()` (the take is filed away, on leaving Capture). Everything but `success()`
-  goes through `View.performHapticFeedback`, which already honours the system haptic setting;
-  `pulse()` beats once per `SPINNER_PERIOD_MS` under the Processing screen, so the haptic and the
-  outer spinner arc share one period; it is ambient, so it checks `LocalReducedMotion`.
+  goes through `View.performHapticFeedback`, which already honours the system haptic setting.
   `success()` needs `VibrationEffect.EFFECT_DOUBLE_CLICK` and so needs the `VIBRATE` permission
   and its own check of `Settings.System.HAPTIC_FEEDBACK_ENABLED`.
 - `EchoTopBar` has three forms: a `title`/`subtitle` one, a slot one taking arbitrary centre
@@ -392,10 +418,6 @@ Onboarding is ported from the separate "Echo Onboarding" Design artifact
 - Home has its own `HomeViewModel` now (see "Home (1b reworked)" above); with no transcripts at
   all it still falls back to the mascot empty state ("Upload audio" opens the import picker,
   "Type a note" is inert).
-- `RecordViewModel.stopRecording` saves the transcript and then runs
-  `TranscriptAnalyzer`, writing `TodoItem` rows and a title and summary back onto the
-  transcript. The Processing screen holds for that work — `STUB_PROCESSING_DELAY_MS` is gone.
-  The transcript is saved *before* analysis, so no model failure can cost a recording.
 
 ## Notifications
 
@@ -415,9 +437,12 @@ model download progress (`ModelDownloadNotifier`), and transcription progress (p
   config-change recreation doesn't renavigate) and passes it to `MainApp`'s `NavHost`.
   `FLAG_ACTIVITY_SINGLE_TOP` as an *Intent* flag gets `onNewIntent` delivery against the default
   `standard` launch mode.
-- `POST_NOTIFICATIONS` is still requested from `TasksScreen` the first time its item list goes
-  non-empty (`askedForNotifications`, once per process) — a leftover placement from reminders;
-  move it with the recording rework. Denied means `notify()` silently no-ops.
+- `POST_NOTIFICATIONS` is requested by Capture together with `RECORD_AUDIO` (API 33+): the
+  recording controls and transcription progress live in notifications. Only the mic is required
+  to record; denied notifications mean `notify()` silently no-ops.
+- The recording notification is Idle ("tap to record"), Recording or Paused (`RecordingMode`),
+  with Pause/Resume and Stop actions into `RecordingService`; tapping it opens Capture. It is
+  re-posted only when the mode changes — the controller's state ticks ten times a second.
 - **`R.drawable.ic_notification_echo`** is the one `smallIcon` on every channel — the launcher's
   stroked ghost closes into a grey blob at 12–24dp, so this is the same silhouette flattened to a
   solid shape with the eyes cut out via `fillType="evenOdd"`.
@@ -444,6 +469,13 @@ is the user's call), so a smaller per-tier model (Phase 2) slots in as one more 
 - The model is Qwen3-1.7B int4 `.litertlm` (977MB) via LiteRT-LM. The format must be `.litertlm`,
   never GGUF — the wrong format fails silently on load. Gemma repos on HuggingFace are
   `gated: auto` and 401 an anonymous download; `litert-community/Qwen3-1.7B` is not gated.
+- **The model URL is pinned to an HF commit** (`ModelStore.kt`), because the file's metadata can
+  outrun the library. On 2026-10-11 the repo rewrote the chat template for LiteRT-LM 0.18
+  (content parts); under 0.16.1 it rendered an empty user turn and every analysis came back
+  "Please provide the details…" — on GPU and CPU alike, at any prompt length. Fixed by LiteRT-LM
+  0.18.1. That answer in the `TranscriptAnalyzer` log means the template, not the prompt. Move
+  the pin and the library together, and don't take the repo's `gpu_composites` file: it needs a
+  LiteRT-LM newer than 0.18.1.
 - `Engine.initialize()` costs ~19s against ~5s of inference, so it is held open for the life of
   the process and warmed up when Capture opens, from an application-scoped coroutine in
   `AppContainer` — leaving Capture must not cancel a half-finished init.
@@ -459,9 +491,9 @@ hard cuts like the rest of the app; system back steps back, and leaves the app o
 
 - **Gate:** `AppContainer.onboardingDone` = `SettingsStore.onboardingDone`, or any transcript
   already on disk — an install that predates onboarding goes straight to Home.
-- **Downloads start on "Get started", never block.** `startOnboardingDownloads()` fetches the
-  device language's speech pack if none is installed (`LanguageSupport.toPrefetch`) and starts
-  the LLM download only on Wi-Fi and only when `aiCardState` says `NeedsDownload`. On mobile data nothing starts; step 4 shows a "Download AI · 977 MB" button (not in
+- **Downloads start on "Get started", never block.** `startOnboardingDownloads()` starts the
+  Whisper model and (when `aiCardState` says `NeedsDownload`) the LLM, both only on Wi-Fi. On
+  mobile data nothing starts — the first recording's transcription job fetches Whisper itself; step 4 shows a "Download AI · 977 MB" button (not in
   the design) so the first note isn't stuck "waiting for model" with no way forward. A note
   recorded mid-download queues and auto-analyses when the model lands (existing drain trigger).
 - **Paths:** Skip (steps 1–2) → Microphone, never past it. Allow → system dialog; granted →

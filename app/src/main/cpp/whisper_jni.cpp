@@ -114,3 +114,15 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_dev_andrej_echo_speech_whisper_WhisperNative_detectedLanguage(JNIEnv *env, jobject, jlong handle) {
     return env->NewStringUTF(whisper_lang_str(whisper_full_lang_id(from(handle)->ctx)));
 }
+
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_dev_andrej_echo_speech_whisper_WhisperNative_languages(JNIEnv *env, jobject) {
+    const int count = whisper_lang_max_id() + 1;
+    jobjectArray codes = env->NewObjectArray(count, env->FindClass("java/lang/String"), nullptr);
+    for (int i = 0; i < count; i++) {
+        jstring code = env->NewStringUTF(whisper_lang_str(i));
+        env->SetObjectArrayElement(codes, i, code);
+        env->DeleteLocalRef(code);
+    }
+    return codes;
+}

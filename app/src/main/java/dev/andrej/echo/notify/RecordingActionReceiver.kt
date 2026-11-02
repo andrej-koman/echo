@@ -23,9 +23,7 @@ class RecordingActionReceiver : BroadcastReceiver() {
             PackageManager.PERMISSION_GRANTED
 
         if (granted) {
-            context.startForegroundService(
-                Intent(context, RecordingService::class.java).setAction(RecordingService.ACTION_START),
-            )
+            RecordingService.start(context)
         } else {
             context.startActivity(
                 Intent(context, MainActivity::class.java).apply {

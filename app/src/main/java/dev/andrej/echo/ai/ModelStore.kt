@@ -115,9 +115,13 @@ class ModelStore(
 /**
  * Apache-2.0 and ungated, which matters: the obvious choice, Gemma 3 1B, sits behind a
  * HuggingFace licence gate that returns 401 to an anonymous download.
+ *
+ * Pinned to a commit: the repo rewrites the file's chat template for newer LiteRT-LM releases,
+ * and a template newer than the library makes every prompt arrive empty.
  */
 val QWEN3_1_7B_INT4 = ModelSpec(
-    url = "https://huggingface.co/litert-community/Qwen3-1.7B/resolve/main/" +
+    url = "https://huggingface.co/litert-community/Qwen3-1.7B/resolve/" +
+        "761c0c8e5e5a8ff6ff5ca4e4702762b1c9bf9966/" +
         "Qwen3-1.7B_dynamic_wi4b32_afp32.litertlm",
     fileName = "Qwen3-1.7B_dynamic_wi4b32_afp32.litertlm",
     bytes = 977_000_000,

@@ -3,10 +3,10 @@ package dev.andrej.echo.data
 import android.content.Context
 
 interface SettingsStore {
-    /** BCP-47 tag, null before the user has picked one. */
-    var languageTag: String?
+    /** Whisper language code such as `sl`; null auto-detects. */
+    var transcriptionLanguage: String?
 
-    /** Gates auto-enqueue in RecordViewModel.stopRecording() — off means every note waits for a manual Analyze. */
+    /** Gates the analysis enqueue after transcription — off means every note waits for a manual Analyze. */
     var autoAnalyze: Boolean
 
     /** Gates AppContainer.downloadModel() — on, a download started off Wi-Fi is skipped. */
@@ -22,7 +22,7 @@ class SharedPreferencesSettingsStore(context: Context) : SettingsStore {
 
     private val preferences = context.getSharedPreferences("echo_settings", Context.MODE_PRIVATE)
 
-    override var languageTag: String?
+    override var transcriptionLanguage: String?
         get() = preferences.getString(KEY_LANGUAGE, null)
         set(value) = preferences.edit().putString(KEY_LANGUAGE, value).apply()
 
@@ -43,7 +43,7 @@ class SharedPreferencesSettingsStore(context: Context) : SettingsStore {
         set(value) = preferences.edit().putBoolean(KEY_ONBOARDING_DONE, value).apply()
 
     private companion object {
-        const val KEY_LANGUAGE = "language"
+        const val KEY_LANGUAGE = "transcription_language"
         const val KEY_AUTO_ANALYZE = "auto_analyze"
         const val KEY_WIFI_ONLY_DOWNLOAD = "wifi_only_download"
         const val KEY_SNOOZE_MINUTES = "snooze_minutes"

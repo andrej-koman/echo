@@ -6,18 +6,20 @@ import dev.andrej.echo.ai.AiCardState
 import dev.andrej.echo.data.DerivedRepository
 import dev.andrej.echo.data.SettingsStore
 import dev.andrej.echo.data.TranscriptRepository
-import dev.andrej.echo.speech.TranscriptionEngine
-import dev.andrej.echo.ui.record.LanguageOption
-import dev.andrej.echo.ui.record.displayName
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/** [code] is a Whisper language code such as `sl`; empty means auto-detect. */
+data class LanguageOption(val code: String, val label: String)
 
 data class SettingsUiState(
-    val languageTag: String? = null,
+    val languageCode: String = "",
     val languageLabel: String = "",
     val languages: List<LanguageOption> = emptyList(),
     val litertModelBytes: Long = 0,
@@ -31,7 +33,7 @@ data class SettingsUiState(
 
 class SettingsViewModel(
     private val settings: SettingsStore,
-    private val engine: TranscriptionEngine,
+    private val whisperLanguages: () -> List<String>,
     transcripts: TranscriptRepository,
     derived: DerivedRepository,
     val aiCardState: Flow<AiCardState>,
@@ -60,8 +62,8 @@ class SettingsViewModel(
     }
 
     private fun fromSettings(notesCount: Int, tasksCount: Int) = SettingsUiState(
-        languageTag = settings.languageTag,
-        languageLabel = settings.languageTag?.let(::displayLanguage) ?: "Not set",
+        languageCode = settings.transcriptionLanguage.orEmpty(),
+        languageLabel = settings.transcriptionLanguage?.let(::displayLanguage) ?: AUTO_DETECT,
         litertModelBytes = litertModelBytes,
         autoAnalyze = settings.autoAnalyze,
         wifiOnlyDownload = settings.wifiOnlyDownload,
@@ -73,21 +75,20 @@ class SettingsViewModel(
 
     private fun refreshLanguages() {
         viewModelScope.launch {
-            val support = engine.languageSupport()
-            val options = support.all.map { tag ->
-                LanguageOption(tag = tag, label = tag.displayName(), installed = tag in support.installed)
+            val languages = withContext(Dispatchers.Default) {
+                whisperLanguages().map { LanguageOption(it, displayLanguage(it)) }.sortedBy { it.label }
             }
-            _state.value = _state.value.copy(languages = options)
+            _state.value = _state.value.copy(languages = listOf(LanguageOption("", AUTO_DETECT)) + languages)
         }
     }
 
-    fun setLanguage(tag: String) {
-        val option = _state.value.languages.firstOrNull { it.tag == tag } ?: return
-        settings.languageTag = tag
-        _state.value = _state.value.copy(languageTag = tag, languageLabel = displayLanguage(tag))
-        if (!option.installed) {
-            engine.requestModelDownload(tag)
-        }
+    /** Empty [code] means auto-detect. */
+    fun setLanguage(code: String) {
+        settings.transcriptionLanguage = code.ifEmpty { null }
+        _state.value = _state.value.copy(
+            languageCode = code,
+            languageLabel = if (code.isEmpty()) AUTO_DETECT else displayLanguage(code),
+        )
     }
 
     fun setAutoAnalyze(value: Boolean) {
@@ -110,8 +111,12 @@ class SettingsViewModel(
     }
 }
 
-internal fun displayLanguage(tag: String): String =
-    java.util.Locale.forLanguageTag(tag).getDisplayName(java.util.Locale.getDefault()).ifBlank { tag }
+private const val AUTO_DETECT = "Auto-detect"
+
+internal fun displayLanguage(code: String): String =
+    java.util.Locale.forLanguageTag(code).getDisplayName(java.util.Locale.getDefault())
+        .ifBlank { code }
+        .replaceFirstChar { it.titlecase() }
 
 internal fun formatBytes(bytes: Long): String {
     val mb = bytes / 1_000_000.0

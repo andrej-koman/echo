@@ -3,7 +3,6 @@ package dev.andrej.echo.data
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import dev.andrej.echo.data.db.EchoDatabase
-import java.util.UUID
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -21,6 +20,7 @@ class SqlTranscriptRepository(
         queries.selectAll(::Transcript).asFlow().mapToList(ioDispatcher)
 
     override suspend fun save(
+        id: String,
         text: String,
         language: String,
         durationMs: Long,
@@ -28,7 +28,7 @@ class SqlTranscriptRepository(
         title: String?,
     ): Transcript {
         val transcript = Transcript(
-            id = UUID.randomUUID().toString(),
+            id = id,
             text = text,
             language = language,
             createdAt = createdAt,

@@ -233,10 +233,8 @@ fun SettingsScreen(
     PickerSheet(
         visible = pickingLanguage,
         title = "Language",
-        options = state.languages.map { option ->
-            (if (option.installed) option.label else "${option.label} ↓") to option.tag
-        },
-        selected = state.languageTag.orEmpty(),
+        options = state.languages.map { it.label to it.code },
+        selected = state.languageCode,
         onPick = {
             onLanguageChange(it)
             pickingLanguage = false

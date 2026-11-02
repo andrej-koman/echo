@@ -5,8 +5,6 @@ import dev.andrej.echo.data.FakeSettingsStore
 import dev.andrej.echo.data.SqlDerivedRepository
 import dev.andrej.echo.data.SqlTranscriptRepository
 import dev.andrej.echo.data.testDatabase
-import dev.andrej.echo.speech.FakeTranscriptionEngine
-import dev.andrej.echo.speech.LanguageSupport
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
@@ -17,7 +15,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 
@@ -33,11 +31,10 @@ class SettingsViewModelTest {
     fun tearDown() = Dispatchers.resetMain()
 
     private fun viewModel(
-        engine: FakeTranscriptionEngine = FakeTranscriptionEngine(),
         settings: FakeSettingsStore = FakeSettingsStore(),
     ) = SettingsViewModel(
         settings = settings,
-        engine = engine,
+        whisperLanguages = { listOf("en", "sl") },
         transcripts = SqlTranscriptRepository(testDatabase(), dispatcher),
         derived = SqlDerivedRepository(testDatabase(), dispatcher),
         aiCardState = flowOf(AiCardState.Checking),
@@ -49,34 +46,36 @@ class SettingsViewModelTest {
     )
 
     @Test
-    fun `choosing a language that needs downloading requests the model`() = runTest {
-        val engine = FakeTranscriptionEngine(
-            support = LanguageSupport(installed = listOf("en-GB"), supported = listOf("en-US")),
-        )
-        val viewModel = viewModel(engine)
+    fun `languages come from Whisper, after auto-detect`() = runTest {
+        val viewModel = viewModel()
         advanceUntilIdle()
 
-        viewModel.setLanguage("en-US")
-        advanceUntilIdle()
-
-        assertEquals(listOf("en-US"), engine.downloadRequests)
+        val codes = viewModel.state.value.languages.map { it.code }
+        assertEquals("", codes.first())
+        assertEquals(setOf("en", "sl"), codes.drop(1).toSet())
     }
 
     @Test
     fun `chosen language is persisted and reflected in state`() = runTest {
         val settings = FakeSettingsStore()
-        val viewModel = viewModel(
-            engine = FakeTranscriptionEngine(
-                support = LanguageSupport(installed = listOf("en-GB", "de-DE"), supported = emptyList()),
-            ),
-            settings = settings,
-        )
+        val viewModel = viewModel(settings)
         advanceUntilIdle()
 
-        viewModel.setLanguage("de-DE")
+        viewModel.setLanguage("sl")
+
+        assertEquals("sl", settings.transcriptionLanguage)
+        assertEquals("sl", viewModel.state.value.languageCode)
+    }
+
+    @Test
+    fun `choosing auto-detect clears the setting`() = runTest {
+        val settings = FakeSettingsStore().apply { transcriptionLanguage = "sl" }
+        val viewModel = viewModel(settings)
         advanceUntilIdle()
 
-        assertEquals("de-DE", settings.languageTag)
-        assertEquals("de-DE", viewModel.state.value.languageTag)
+        viewModel.setLanguage("")
+
+        assertNull(settings.transcriptionLanguage)
+        assertEquals("Auto-detect", viewModel.state.value.languageLabel)
     }
 }

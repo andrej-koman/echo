@@ -1,5 +1,6 @@
 package dev.andrej.echo.data
 
+import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 
 interface TranscriptRepository {
@@ -7,6 +8,7 @@ interface TranscriptRepository {
     val transcripts: Flow<List<Transcript>>
 
     suspend fun save(
+        id: String = UUID.randomUUID().toString(),
         text: String,
         language: String,
         durationMs: Long,

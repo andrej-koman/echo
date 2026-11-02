@@ -144,7 +144,7 @@ private fun MainApp(
 
     LaunchedEffect(pendingOpenCapture) {
         if (pendingOpenCapture) {
-            navController.navigate(Routes.CAPTURE)
+            navController.navigate(Routes.CAPTURE) { launchSingleTop = true }
             onOpenCaptureHandled()
         }
     }
@@ -324,7 +324,7 @@ private fun BottomBar(
             )
             RecordButton(
                 state = RecordButtonState.Idle,
-                onClick = { navController.navigate(Routes.CAPTURE) },
+                onClick = { navController.navigate(Routes.CAPTURE) { launchSingleTop = true } },
                 size = RecordButtonSize.Sm,
             )
         }

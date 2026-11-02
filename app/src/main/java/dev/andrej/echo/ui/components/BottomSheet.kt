@@ -25,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.remember
@@ -121,6 +122,9 @@ fun <T> PickerSheet(
  * screen, so the bar hides while this is above zero rather than covering the sheet's buttons.
  */
 val LocalOpenSheets = staticCompositionLocalOf { mutableIntStateOf(0) }
+
+/** Height of the tab bar under a screen that lays out above it rather than behind it. */
+val LocalBottomBarHeight = compositionLocalOf { 0.dp }
 
 @Composable
 internal fun Sheet(

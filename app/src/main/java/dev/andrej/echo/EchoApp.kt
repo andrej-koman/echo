@@ -18,6 +18,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
+import dev.andrej.echo.ui.components.LocalBottomBarHeight
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.LaunchedEffect
@@ -136,6 +140,13 @@ private fun MainApp(
     val route = backStackEntry?.destination?.route
 
     val onTabs = route in Tabs.map { it.route }
+    val onNote = route == Routes.DETAIL
+    val stack by navController.currentBackStack.collectAsState()
+    // A note keeps the tab it was opened from lit.
+    val selectedTab = stack.lastOrNull { entry -> Tabs.any { it.route == entry.destination.route } }
+        ?.destination?.route.orEmpty()
+    val density = LocalDensity.current
+    var barHeight by remember { mutableStateOf(0.dp) }
 
     val foldersViewModel: FoldersViewModel = viewModel(factory = viewModelFactory)
     val notesViewModel: NotesViewModel = viewModel(factory = viewModelFactory)
@@ -260,6 +271,7 @@ private fun MainApp(
 
                 composable(Routes.DETAIL) { entry ->
                     val notesViewModel: NotesViewModel = viewModel(factory = viewModelFactory)
+                    CompositionLocalProvider(LocalBottomBarHeight provides barHeight) {
                     NoteDetailScreen(
                         viewModel = notesViewModel,
                         noteId = entry.arguments?.getString("id").orEmpty(),
@@ -267,6 +279,7 @@ private fun MainApp(
                         onBack = { navController.popBackStack() },
                         onEditTask = { navController.navigate(Routes.editTask(it)) },
                     )
+                    }
                 }
 
                 composable(Routes.EDIT_TASK) { entry ->
@@ -280,7 +293,7 @@ private fun MainApp(
                 }
             }
 
-            if (onTabs) {
+            if (onTabs || onNote) {
                 AnimatedVisibility(
                     visible = openSheets.intValue == 0,
                     enter = fadeIn(),
@@ -288,8 +301,11 @@ private fun MainApp(
                     modifier = Modifier.align(Alignment.BottomCenter),
                 ) {
                     BottomBar(
-                        selected = route.orEmpty(),
+                        selected = selectedTab,
                         navController = navController,
+                        showRecord = !onNote,
+                        onSelect = { tab -> if (tab != route) navController.selectTab(tab) },
+                        modifier = Modifier.onSizeChanged { barHeight = with(density) { it.height.toDp() } },
                     )
                 }
             }
@@ -316,6 +332,8 @@ private fun NavHostController.selectTab(route: String) {
 private fun BottomBar(
     selected: String,
     navController: NavHostController,
+    showRecord: Boolean,
+    onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxWidth()) {
@@ -324,9 +342,7 @@ private fun BottomBar(
                 items = Tabs,
                 selected = selected,
                 centerGap = true,
-                onSelect = { route ->
-                    if (route != selected) navController.selectTab(route)
-                },
+                onSelect = onSelect,
             )
             Box(
                 modifier = Modifier
@@ -336,6 +352,7 @@ private fun BottomBar(
             )
         }
 
+        if (showRecord) {
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -354,6 +371,7 @@ private fun BottomBar(
                 onClick = { navController.navigate(Routes.CAPTURE) { launchSingleTop = true } },
                 size = RecordButtonSize.Sm,
             )
+        }
         }
     }
 }

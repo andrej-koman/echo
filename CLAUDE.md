@@ -13,7 +13,7 @@ pulls out a note and tasks. Kotlin, Compose, minSdk 29.
 ## Rebuild in progress (v1 spec)
 
 `Echo — Feature Spec (v1).pdf` (repo root, untracked) is the target: LoroNote parity on Android —
-on-device Whisper, speaker diarization, AI summary/tasks/polishing on every phone, import,
+on-device Whisper, speaker diarization, AI summary/tasks on every phone, import,
 TXT/SRT/audio export, playback-synced editor, widget + Quick Settings tile, Wear OS, Play Billing.
 The phased roadmap is in `~/.claude-personal/plans/hi-please-use-echo-swift-gray.md`. Each phase
 builds one feature and redesigns its UI only when that phase arrives. Decisions made for it:
@@ -126,10 +126,11 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
   renumbered by first appearance. Tables: `segment.speaker` (an index, nullable) and `speaker`
   (`transcriptId`, `idx`, `name`; null name shows "Speaker N"). Renaming touches only `speaker`.
   `setTranscription` drops a transcript's speakers; `editSegments` keeps them.
-- Reassigning, in the editor: tap a speaker label (that line), long-press lines to select several
-  then "Speaker…", or in Edit mode select text and "Speaker for selection" — the line is split
-  around the selection, times interpolated by character offset (Whisper segments have no word
-  times). The sheet also renames and adds a speaker. Colours: `EchoColors.speakers`, by index,
+- "Who is this?" (tap a speaker header): names that speaker — chips suggest names given in
+  other notes (`speakerNames`, most used first) — and moves the run to another speaker or a new
+  one. Long-press lines then "Speaker…" moves just those; in Edit mode select text and "Speaker
+  for selection" — the line is split around the selection, times interpolated by character
+  offset (Whisper segments have no word times). Colours: `EchoColors.speakers`, by index,
   wrapping.
 
 ## Storage
@@ -189,7 +190,7 @@ transcribe/   Transcriptions (import, recordings, job status, startup recovery) 
 cpp/          CMake build of whisper.cpp + whisper_jni.cpp, diarize_jni.cpp over sherpa-onnx's C API
 ai/           LlmRunner interface + LiteRtLlmRunner (downloaded Qwen3), LlmRunnerProvider,
               ModelStore/HttpModelDownloader for the weights, AnalysisPrompt (summary, merge
-              and tasks prompts + parsers), TextChunks, PolishPrompt + TranscriptPolisher,
+              and tasks prompts + parsers), TextChunks,
               TranscriptAnalyzer, AnalysisOutcome/AnalysisBlock, PendingAnalysisWorker
 data/         Transcript + Segment, TranscriptRepository, TodoItem + DerivedRepository, FolderRepository,
               PendingAnalysis + AnalysisQueueRepository, each Sql*Repository over one
@@ -209,9 +210,10 @@ ui/profile/   ProfileScreen (the Profile tab) + ProfileViewModel, SettingsScreen
               DictionaryViewModel
 ui/notes/     NotesScreen + NotesViewModel (the Notes tab, search; NoteRow, NoteStage,
               PendingBadge, PendingCopy), NoteCard (+ its ··· sheets: move, delete)
-ui/detail/    NoteDetailScreen (NOTE + tasks-from-this-note + segment editor, bar-icon actions),
-              NotePlayer (ExoPlayer), TranscriptEdits (find/replace/edit/speaker logic),
-              SpeakerSheet
+ui/detail/    NoteDetailScreen (header, By speaker / Full text / Tasks tabs, sheets), TranscriptViews
+              (rows, find/edit bars), PlayerBar, NotePlayer (ExoPlayer), TranscriptEdits
+              (find/replace/edit/speaker logic), SpeakerSheet ("Who is this?"), ShareSheet
+export/       ExportFormats (txt/md/srt, pure) + Exporter (cache file → FileProvider → share sheet)
 notify/       RecordingNotifier (+ RecordingActionReceiver, BootReceiver), ModelDownloadNotifier
               (+ ModelDownloadActionReceiver)
 AppContainer manual DI, no Hilt
@@ -248,10 +250,9 @@ to the start tab, so tapping it restored the stack and landed on the last tab. C
   project was left as-is; nothing in the app talks to it.
 - `ui.notes.title()` derives a title from the opening of the text (first sentence, or
   six words) — the fallback for a transcript analysis has not named yet, not a permanent scheme.
-  `Transcript.asRow()` prefers `title`/`summary` when present. Since Phase 5 `summary` is the
-  gist — a sentence or two, a short paragraph or bullets for a long note — and the full
-  cleaned-up text is polishing's job (see On-device AI). Row excerpts and `NoteDetailScreen`'s
-  NOTE section render it as-is.
+  Note cards prefer `title`/`summary` when present. Since Phase 5 `summary` is the
+  gist — a sentence or two, a short paragraph or bullets for a long note. Card excerpts and the
+  note's Tasks tab render it as-is.
 - Task and Reminder unified into one `TodoItem` (`text`, `dueAt` — never null, `hasTime`,
   `done`). A speaker who names no date at all still gets an item due **today**; `hasTime`
   records only whether a clock time was stated. `resolveDue` (in `ai/AnalysisPrompt.kt`)
@@ -302,34 +303,27 @@ to the start tab, so tapping it restored the stack and landed on the last tab. C
   minted fresh, so re-analysis lands on the same ids and `Task.done` survives it. Before this,
   Analyze silently un-ticked every task. Two rows with the same text under one transcript collapse
   to one (`distinctBy`) — a repeated task from a single note is noise.
-- **Editor and playback** (Phase 7, `ui/detail/`): `NotePlayer` wraps a Media3 ExoPlayer over
-  `recordings/<id>/source` (`Transcriptions.audioFile`; a recording has one only once transcribed),
-  released with the screen and paused on `ON_STOP`. The transcript renders as segment rows in a
-  `LazyColumn` with the player bar pinned below: the playing segment is highlighted
-  (`transcriptHighlight`), tapping a row plays from it. **Edit** turns rows into text fields, saved
-  on Done; **Replace** is a case-insensitive literal find & replace-all. Both go through
-  `TranscriptRepository.editSegments`, which rejoins `transcript.text`; a segment emptied is
-  dropped. Neither is offered while the note is still transcribing (each chunk rewrites the
-  segments) or while polished text is shown (it isn't segmented). Tapping a task with a
-  `sourceOffsetMs` plays from there; long-press opens `EditTaskScreen`. Pure logic in
-  `TranscriptEdits.kt`. No auto-scroll to the playing segment.
-- `NoteDetailScreen` (redesigned from the OutLoud "Transcript Page" doc): the bar carries
-  back / delete / re-analyze as icons instead of three stacked bottom buttons, so the body is
-  content, not chrome. Re-analyze (`ic_audio_waveform`) re-runs `TranscriptAnalyzer` through
-  `NotesViewModel.analyze()`; it goes `IconButtonVariant.Ghost` and no-ops while the entry's
-  `PendingCopy.severity` is `Parked` (nothing to retry yet — `WaitingForModel`/`NoBackend` are
-  preconditions), otherwise `Soft` (bronze) and calls `analyze()`. One in flight at a time
-  (`analyzingId`, sourced from `PendingAnalysisWorker.activeId`). Body: NOTE (the summary) then a
-  "TASKS FROM THIS NOTE" section reusing `TaskGroupCard` from `ui/tasks/TaskRows.kt` — made
-  `internal` (was `private`) so the detail screen can render the same rows, checkbox and
-  bronze/clay time labels everywhere, tapping one seeking the player (see Editor above)
-  (`sourceTitleFor = { null }` since the source is already the screen you're on). Below that,
-  "WHAT WAS SAID": the segments (see Editor above), with Edit / Replace / Copy / Polish
-  ("Restore original" once polished; polished text then replaces the segments in a card,
-  captioned "· POLISHED"). A `pending` entry (parked or failed) replaces NOTE/TASKS
-  with a status card (icon avatar + copy + a retry button when `Failed`) — analysis hasn't
-  produced a note yet, so there is nothing to show there. `NotesViewModel.tasks` (all
-  `DerivedRepository.items`, unfiltered) backs this screen's per-transcript filter.
+- **Note screen** (2026-11-02 design, `ui/detail/`): back button, then a pill of Find / Edit /
+  Share / ···, a large title, `date · duration · [folder ▾]` (the chip opens the folder picker),
+  and a status card while transcription or analysis is pending. Sticky tabs: **By speaker** (runs
+  of one speaker under `● Speaker 1  0:00 – 0:14`; the playing run gets a card), **Full text**
+  (the same segments as paragraphs) and **Tasks** (the summary, then the note's tasks — tap
+  plays from `sourceOffsetMs`, long-press opens `EditTaskScreen`). ··· holds Re-analyze, Copy
+  text, Delete. The tab bar stays on a note, without the record button, lit on the tab the note
+  came from; the screen sits above it via `LocalBottomBarHeight` rather than behind it.
+  `PlayerBar`: elapsed / slider / remaining, ±15 s, speed 1 → 1.25 → 1.5 → 2 → 0.75×.
+  `NotePlayer` wraps a Media3 ExoPlayer over `recordings/<id>/source` (`Transcriptions.audioFile`;
+  a recording has one only once transcribed), released with the screen and paused on `ON_STOP`.
+  **Edit** turns lines into text fields, saved on Done; **Find** highlights and replaces all
+  (case-insensitive literal). Both go through `TranscriptRepository.editSegments`, which rejoins
+  `transcript.text`; a segment emptied is dropped. Not offered while still transcribing (each
+  chunk rewrites the segments). Pure logic in `TranscriptEdits.kt`. No auto-scroll.
+- **Share = export** (Phase 9, pulled in with the note screen): Text `.txt`, Markdown `.md`
+  (title, date, summary, tasks as a checklist, transcript), Subtitles `.srt` (only with
+  segments), Audio (the `source` file, its MIME read with `MediaMetadataRetriever` since `source`
+  has no extension). Speaker names and Timestamps toggles; timestamps split one speaker's run into
+  a line per segment, srt is always timed. Files go to `cache/export/` (cleared each time) and out
+  through `FileProvider` (`${applicationId}.files`).
 - **Pending analysis queue.** `TranscriptAnalyzer.analyze()` returns `AnalysisOutcome`
   (`Success` or `Blocked(AnalysisBlock)`) instead of a nullable `Analysis`, so a failed analysis
   carries a reason instead of vanishing: `EmptyTranscript`, `WaitingForModel(bytes)`,
@@ -541,13 +535,10 @@ is the user's call), so a smaller per-tier model (Phase 2) slots in as one more 
   whole transcript (Whisper's segments, or sentences for a transcript without them) and asks for
   each task's `line`; `parseTasks` turns that into `TodoItem.sourceOffsetMs`, the segment's
   start. Phase 7's player will seek to it.
-- **Polishing is on demand** (the note's Polish button), not automatic: it rewrites the whole
-  transcript, one call per 900-word chunk, where analysis only reads it. The result goes to
-  `transcript.polishedText`; segments and `text` keep the original, so Restore is setting it
-  back to null, and re-transcribing clears it. `parsePolish` rejects a reply under half or over
-  1.3× the chunk's words — a summary, or an answer to the transcript, not a cleanup.
-  `TranscriptPolisher` runs on the app scope like analysis; `LiteRtLlmRunner` holds a mutex so
-  the two never share the engine at once.
+- **Polishing was removed** (2026-11-02, Andrej's call): a note is By speaker and Full text,
+  nothing more. `transcript.polishedText` stays in the schema unread — platform SQLite before
+  3.35 can't `DROP COLUMN` and a table rebuild wasn't worth it; `selectAll` names its columns so
+  the model class doesn't carry it.
 
 ## Onboarding
 

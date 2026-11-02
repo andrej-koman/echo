@@ -7,26 +7,24 @@ CREATE TABLE transcript (
     title TEXT,
     summary TEXT,
     analyzedAt INTEGER,
-    -- Polishing's output. The segments keep the original, so restoring is clearing this.
+    -- Unused: polishing was removed. Platform SQLite before 3.35 cannot DROP COLUMN.
     polishedText TEXT,
     folderId TEXT
 );
 
 selectAll:
-SELECT * FROM transcript ORDER BY createdAt DESC;
+SELECT id, text, language, createdAt, durationMs, title, summary, analyzedAt, folderId
+FROM transcript ORDER BY createdAt DESC;
 
 insert:
 INSERT INTO transcript (id, text, language, createdAt, durationMs, title)
 VALUES (?, ?, ?, ?, ?, ?);
 
 setTranscription:
-UPDATE transcript SET text = ?, language = ?, durationMs = ?, polishedText = NULL WHERE id = ?;
+UPDATE transcript SET text = ?, language = ?, durationMs = ? WHERE id = ?;
 
 attachAnalysis:
 UPDATE transcript SET title = ?, summary = ?, analyzedAt = ? WHERE id = ?;
-
-setPolished:
-UPDATE transcript SET polishedText = ? WHERE id = ?;
 
 delete:
 DELETE FROM transcript WHERE id = ?;

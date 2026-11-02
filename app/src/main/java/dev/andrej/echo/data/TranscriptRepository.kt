@@ -37,6 +37,9 @@ interface TranscriptRepository {
 
     fun speakers(id: String): Flow<List<Speaker>>
 
+    /** Every name given to a speaker, most used first. */
+    val speakerNames: Flow<List<String>>
+
     /** Returns the new speaker's index. */
     suspend fun addSpeaker(id: String): Int
 
@@ -54,7 +57,6 @@ interface TranscriptRepository {
     )
 
     /** Null restores the original. */
-    suspend fun setPolished(id: String, text: String?)
 
     /** Null takes it out of any folder. */
     suspend fun moveToFolder(id: String, folderId: String?)

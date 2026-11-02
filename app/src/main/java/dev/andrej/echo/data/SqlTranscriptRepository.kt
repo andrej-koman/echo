@@ -87,6 +87,9 @@ class SqlTranscriptRepository(
     override fun speakers(id: String): Flow<List<Speaker>> =
         speakerQueries.selectFor(id) { idx, name -> Speaker(idx.toInt(), name) }.asFlow().mapToList(ioDispatcher)
 
+    override val speakerNames: Flow<List<String>> =
+        speakerQueries.names().asFlow().mapToList(ioDispatcher)
+
     override suspend fun addSpeaker(id: String): Int = withContext(ioDispatcher) {
         database.transactionWithResult {
             val next = speakerQueries.nextIdx(id).executeAsOne()
@@ -119,10 +122,6 @@ class SqlTranscriptRepository(
         Unit
     }
 
-    override suspend fun setPolished(id: String, text: String?) = withContext(ioDispatcher) {
-        queries.setPolished(text, id)
-        Unit
-    }
 
     override suspend fun moveToFolder(id: String, folderId: String?) = withContext(ioDispatcher) {
         queries.setFolder(folderId, id)

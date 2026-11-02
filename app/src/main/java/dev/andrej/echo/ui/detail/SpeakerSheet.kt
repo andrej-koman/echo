@@ -5,17 +5,15 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -27,17 +25,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import dev.andrej.echo.R
+import dev.andrej.echo.data.Segment
 import dev.andrej.echo.data.Speaker
-import dev.andrej.echo.ui.components.ButtonSize
-import dev.andrej.echo.ui.components.ButtonVariant
 import dev.andrej.echo.ui.components.EchoButton
 import dev.andrej.echo.ui.components.EchoIconButton
+import dev.andrej.echo.ui.components.IconButtonVariant
 import dev.andrej.echo.ui.components.Sheet
+import dev.andrej.echo.ui.notes.clock
 import dev.andrej.echo.ui.theme.EchoTheme
+import dev.andrej.echo.ui.theme.hairline
 
 @Composable
 internal fun speakerColor(index: Int?): Color {
@@ -55,115 +54,146 @@ internal fun SpeakerDot(index: Int?, size: Int = 8) {
     )
 }
 
-/** Pick who said it — an existing speaker, or a new one — and rename speakers in place. */
+/**
+ * Names [speaker] (when the lines have one), and moves the lines to another speaker.
+ * [moveLabel] says which lines move: "this line", "3 lines", "the selection".
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun SpeakerSheet(
     visible: Boolean,
-    speakers: List<Speaker>,
-    current: Int?,
-    onPick: (Int?) -> Unit,
-    onRename: (Int, String) -> Unit,
+    speaker: Speaker?,
+    lineCount: Int,
+    quote: Segment?,
+    suggestions: List<String>,
+    others: List<Speaker>,
+    moveLabel: String,
+    onPlay: (Segment) -> Unit,
+    onRename: (String) -> Unit,
+    onMove: (Int?) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var renaming by remember { mutableStateOf<Int?>(null) }
-    var name by remember { mutableStateOf("") }
+    val colors = EchoTheme.colors
+    var name by remember(visible, speaker) { mutableStateOf(speaker?.name.orEmpty()) }
 
-    Sheet(visible = visible, onDismiss = { renaming = null; onDismiss() }) {
-        Text(text = "Who said this?", style = EchoTheme.typography.heading, color = EchoTheme.colors.textPrimary)
-        Column(
-            Modifier
-                .heightIn(max = 420.dp)
-                .verticalScroll(rememberScrollState()),
-        ) {
-            speakers.forEach { speaker ->
-                if (renaming == speaker.index) {
-                    RenameRow(
-                        index = speaker.index,
-                        value = name,
-                        onValueChange = { name = it },
-                        onSave = {
-                            onRename(speaker.index, name)
-                            renaming = null
-                        },
+    Sheet(visible = visible, onDismiss = onDismiss) {
+        if (speaker != null) {
+            Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s2)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SpeakerDot(speaker.index)
+                    Text(
+                        text = "${speaker.label} · " + if (lineCount == 1) "1 segment" else "$lineCount segments",
+                        style = EchoTheme.typography.micro,
+                        color = colors.textTertiary,
                     )
-                } else {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onPick(speaker.index) }
-                            .padding(vertical = EchoTheme.spacing.s3),
-                        horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        SpeakerDot(speaker.index, size = 12)
+                }
+                Text(text = "Who is this?", style = EchoTheme.typography.heading, color = colors.textPrimary)
+            }
+            if (quote != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(EchoTheme.radii.md)
+                        .background(colors.surfaceSunken)
+                        .padding(EchoTheme.spacing.s4),
+                    horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    EchoIconButton(
+                        iconRes = R.drawable.ic_play,
+                        contentDescription = "Play",
+                        onClick = { onPlay(quote) },
+                        variant = IconButtonVariant.Inverse,
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s2)) {
                         Text(
-                            text = speaker.label,
-                            style = EchoTheme.typography.body,
-                            color = EchoTheme.colors.textPrimary,
-                            modifier = Modifier.weight(1f),
+                            text = "“${quote.text.trim()}”",
+                            style = EchoTheme.typography.bodySm,
+                            color = colors.textPrimary,
+                            maxLines = 3,
                         )
-                        if (speaker.index == current) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_check),
-                                contentDescription = null,
-                                tint = EchoTheme.colors.textAccent,
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
-                        EchoIconButton(
-                            iconRes = R.drawable.ic_pen_line,
-                            contentDescription = "Rename ${speaker.label}",
-                            tint = EchoTheme.colors.textTertiary,
-                            onClick = {
-                                name = speaker.name.orEmpty()
-                                renaming = speaker.index
-                            },
+                        Text(
+                            text = "${clock(quote.startMs)} – ${clock(quote.endMs)}",
+                            style = EchoTheme.typography.micro,
+                            color = colors.textTertiary,
                         )
                     }
                 }
             }
+            Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3)) {
+                Text(text = "Name", style = EchoTheme.typography.micro, color = colors.textSecondary)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(EchoTheme.radii.md)
+                            .background(colors.surfaceCard)
+                            .hairline(colors.borderStrong, cornerRadius = 12.dp)
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                    ) {
+                        if (name.isEmpty()) {
+                            Text(text = speaker.label, style = EchoTheme.typography.body, color = colors.textTertiary)
+                        }
+                        BasicTextField(
+                            value = name,
+                            onValueChange = { name = it },
+                            singleLine = true,
+                            textStyle = EchoTheme.typography.body.copy(color = colors.textPrimary),
+                            cursorBrush = SolidColor(colors.textAccent),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(onDone = { onRename(name) }),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    EchoButton(text = "Save", onClick = { onRename(name) })
+                }
+                val chips = suggestions.filter { it != name.trim() }.take(8)
+                if (chips.isNotEmpty()) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s2),
+                        verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s2),
+                    ) {
+                        chips.forEach { Chip(text = it, onClick = { name = it }) }
+                    }
+                }
+            }
         }
-        EchoButton(
-            text = "New speaker",
-            onClick = { onPick(null) },
-            variant = ButtonVariant.Secondary,
-            fullWidth = true,
-        )
+
+        Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3)) {
+            Text(
+                text = "Move $moveLabel to",
+                style = EchoTheme.typography.micro,
+                color = colors.textSecondary,
+            )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s2),
+                verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s2),
+            ) {
+                others.forEach { other -> Chip(text = other.label, dot = other.index, onClick = { onMove(other.index) }) }
+                Chip(text = "New speaker", onClick = { onMove(null) })
+            }
+        }
     }
 }
 
 @Composable
-private fun RenameRow(index: Int, value: String, onValueChange: (String) -> Unit, onSave: () -> Unit) {
-    val colors = EchoTheme.colors
+private fun Chip(text: String, onClick: () -> Unit, dot: Int? = null) {
     Row(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = EchoTheme.spacing.s3),
-        horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
+            .clip(EchoTheme.radii.pill)
+            .background(EchoTheme.colors.surfaceAccentSoft)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SpeakerDot(index, size = 12)
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .clip(EchoTheme.radii.xs)
-                .background(colors.surfaceSunken)
-                .padding(horizontal = 8.dp, vertical = 6.dp),
-        ) {
-            if (value.isEmpty()) {
-                Text(text = "Speaker ${index + 1}", style = EchoTheme.typography.body, color = colors.textTertiary)
-            }
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                singleLine = true,
-                textStyle = EchoTheme.typography.body.copy(color = colors.textPrimary),
-                cursorBrush = SolidColor(colors.textAccent),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { onSave() }),
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-        EchoButton(text = "Save", onClick = onSave, variant = ButtonVariant.Soft, size = ButtonSize.Sm)
+        if (dot != null) SpeakerDot(dot)
+        Text(text = text, style = EchoTheme.typography.micro, color = EchoTheme.colors.textAccent)
     }
 }

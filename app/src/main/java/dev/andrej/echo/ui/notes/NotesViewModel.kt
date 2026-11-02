@@ -82,9 +82,6 @@ class NotesViewModel(
     private val onImport: (List<Uri>) -> Unit = {},
     private val onRetryTranscription: (String) -> Unit = {},
     private val onDeleted: (String) -> Unit = {},
-    polishingId: Flow<String?> = flowOf(null),
-    polishFailed: Flow<Set<String>> = flowOf(emptySet()),
-    private val onPolish: (String) -> Unit = {},
     private val audioFile: (String) -> File? = { null },
     folders: Flow<List<Folder>> = flowOf(emptyList()),
     private val now: () -> Long = System::currentTimeMillis,
@@ -93,12 +90,6 @@ class NotesViewModel(
     private val query = MutableStateFlow("")
 
     val analyzingId: StateFlow<String?> = worker.activeId
-
-    val polishingId: StateFlow<String?> = polishingId
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
-
-    val polishFailed: StateFlow<Set<String>> = polishFailed
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
     val transcripts: StateFlow<List<Transcript>> = repository.transcripts
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -121,6 +112,9 @@ class NotesViewModel(
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
     val tasks: StateFlow<List<TodoItem>> = derived.items
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val speakerNames: StateFlow<List<String>> = repository.speakerNames
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val folders: StateFlow<List<Folder>> = folders
@@ -169,8 +163,6 @@ class NotesViewModel(
         viewModelScope.launch { derived.setDone(itemId, done) }
     }
 
-    fun polish(transcriptId: String) = onPolish(transcriptId)
-
     fun segments(transcriptId: String): Flow<List<Segment>> = repository.segmentsFlow(transcriptId)
 
     fun saveSegments(transcriptId: String, segments: List<Segment>) {
@@ -193,10 +185,6 @@ class NotesViewModel(
 
     /** The recording or imported file, once there is one to play. */
     fun audio(transcriptId: String): File? = audioFile(transcriptId)
-
-    fun restoreOriginal(transcriptId: String) {
-        viewModelScope.launch { repository.setPolished(transcriptId, null) }
-    }
 
     /** The detail screen's one retry button: a failed transcription retries that, not analysis. */
     fun analyze(transcriptId: String) {

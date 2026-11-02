@@ -3,77 +3,90 @@ package dev.andrej.echo.ui.detail
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import dev.andrej.echo.data.Segment
-import dev.andrej.echo.ui.components.EchoSearchField
-import dev.andrej.echo.ui.components.IconButtonSize
-import dev.andrej.echo.ui.components.PickerSheet
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.andrej.echo.R
-import dev.andrej.echo.ui.components.ButtonVariant
+import dev.andrej.echo.data.Folder
+import dev.andrej.echo.data.Segment
+import dev.andrej.echo.data.Speaker
+import dev.andrej.echo.data.TodoItem
+import dev.andrej.echo.export.ExportFormat
+import dev.andrej.echo.export.ExportNote
+import dev.andrej.echo.export.ExportOptions
+import dev.andrej.echo.export.Exporter
 import dev.andrej.echo.ui.components.ButtonSize
+import dev.andrej.echo.ui.components.ButtonVariant
+import dev.andrej.echo.ui.components.ConfirmSheet
 import dev.andrej.echo.ui.components.EchoButton
 import dev.andrej.echo.ui.components.EchoCard
 import dev.andrej.echo.ui.components.EchoIconButton
-import dev.andrej.echo.ui.components.EchoTopBar
-import dev.andrej.echo.ui.components.IconButtonVariant
+import dev.andrej.echo.ui.components.IconButtonSize
+import dev.andrej.echo.ui.components.LocalBottomBarHeight
+import dev.andrej.echo.ui.components.PickerSheet
+import dev.andrej.echo.ui.components.Sheet
+import dev.andrej.echo.ui.folders.FolderIcon
+import dev.andrej.echo.ui.folders.folderColor
 import dev.andrej.echo.ui.notes.NotesViewModel
 import dev.andrej.echo.ui.notes.PendingCopy
 import dev.andrej.echo.ui.notes.PendingSeverity
 import dev.andrej.echo.ui.notes.clock
+import dev.andrej.echo.ui.notes.dateLabel
 import dev.andrej.echo.ui.notes.title
 import dev.andrej.echo.ui.tasks.TaskGroupCard
 import dev.andrej.echo.ui.theme.EchoTheme
+import dev.andrej.echo.ui.theme.hairline
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.launch
 
+private enum class NoteTab(val label: String, val icon: Int) {
+    BySpeaker("By speaker", R.drawable.ic_users),
+    FullText("Full text", R.drawable.ic_file_text),
+    Tasks("Tasks", R.drawable.ic_list_checks),
+}
+
+private enum class NoteSheet { More, Delete, Share, Folder }
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun NoteDetailScreen(
     noteId: String,
@@ -87,292 +100,313 @@ fun NoteDetailScreen(
     val analyzingId by viewModel.analyzingId.collectAsStateWithLifecycle()
     val pending by viewModel.pending.collectAsStateWithLifecycle()
     val tasks by viewModel.tasks.collectAsStateWithLifecycle()
-    val polishingId by viewModel.polishingId.collectAsStateWithLifecycle()
-    val polishFailed by viewModel.polishFailed.collectAsStateWithLifecycle()
+    val folders by viewModel.folders.collectAsStateWithLifecycle()
+    val transcribing by viewModel.transcribing.collectAsStateWithLifecycle()
+    val speakerNames by viewModel.speakerNames.collectAsStateWithLifecycle()
     val transcript = transcripts.firstOrNull { it.id == noteId }
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
-    val transcribing by viewModel.transcribing.collectAsStateWithLifecycle()
     val segments by remember(noteId) { viewModel.segments(noteId) }
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val speakers by remember(noteId) { viewModel.speakers(noteId) }
         .collectAsStateWithLifecycle(initialValue = emptyList())
     val audio = remember(noteId, transcribing) { viewModel.audio(noteId) }
     val player = rememberNotePlayer(audio)
 
+    var tab by rememberSaveable { mutableStateOf(NoteTab.BySpeaker) }
+    var sheet by remember { mutableStateOf<NoteSheet?>(null) }
     var finding by remember { mutableStateOf(false) }
     var findQuery by remember { mutableStateOf("") }
     var replacement by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf(false) }
     val edits = remember { mutableStateMapOf<Int, TextFieldValue>() }
-    val speakers by remember(noteId) { viewModel.speakers(noteId) }
-        .collectAsStateWithLifecycle(initialValue = emptyList())
     val selected = remember { mutableStateListOf<Int>() }
     var speakerTarget by remember { mutableStateOf<SpeakerTarget?>(null) }
-    val folders by viewModel.folders.collectAsStateWithLifecycle()
-    var movingFolder by remember { mutableStateOf(false) }
+    var exportOptions by remember { mutableStateOf(ExportOptions()) }
 
-    Column(modifier = modifier.fillMaxSize()) {
-        val entryPending = pending[noteId]
-        val analyzing = analyzingId == noteId
-
-        EchoTopBar(
-            title = transcript?.let { it.title ?: title(it.text) } ?: "Note",
-            subtitle = transcript?.let {
-                listOfNotNull(
-                    folders.firstOrNull { f -> f.id == it.folderId }?.name,
-                    detailDate.format(Date(it.createdAt)),
-                    clock(it.durationMs),
-                    "${wordCount(it.text)} words",
-                ).joinToString(" · ")
-            },
-            leading = {
-                EchoIconButton(
-                    iconRes = R.drawable.ic_chevron_left,
-                    contentDescription = "Back",
-                    onClick = onBack,
-                )
-            },
-            trailing = {
-                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    EchoIconButton(
-                        iconRes = R.drawable.ic_folder,
-                        contentDescription = "Move to folder",
-                        onClick = { movingFolder = true },
-                    )
-                    EchoIconButton(
-                        iconRes = R.drawable.ic_trash,
-                        contentDescription = "Delete",
-                        tint = EchoTheme.colors.textDanger,
-                        onClick = {
-                            viewModel.delete(noteId)
-                            onDeleted()
-                        },
-                    )
-                    EchoIconButton(
-                        iconRes = R.drawable.ic_audio_waveform,
-                        contentDescription = "Re-analyze",
-                        variant = if (entryPending?.severity == PendingSeverity.Parked) {
-                            IconButtonVariant.Ghost
-                        } else {
-                            IconButtonVariant.Soft
-                        },
-                        tint = if (entryPending?.severity == PendingSeverity.Parked) {
-                            EchoTheme.colors.textTertiary
-                        } else {
-                            null
-                        },
-                        onClick = {
-                            if (!analyzing && entryPending?.severity != PendingSeverity.Parked) {
-                                viewModel.analyze(noteId)
-                            }
-                        },
-                    )
+    Box(modifier = modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (transcript == null) {
+                DetailHeader(onBack = onBack, actions = {})
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(text = "Note not found.", style = EchoTheme.typography.body, color = EchoTheme.colors.textTertiary)
                 }
-            },
-        )
-
-        if (transcript == null) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    text = "Note not found.",
-                    style = EchoTheme.typography.body,
-                    color = EchoTheme.colors.textTertiary,
-                )
+                return@Column
             }
-            return@Column
-        }
 
-        val polished = transcript.polishedText != null
-        val editable = !polished && segments.isNotEmpty() && noteId !in transcribing
-        val textSelection = edits.entries.firstOrNull { !it.value.selection.collapsed }
-        val current = player?.takeIf { it.playing || it.positionMs > 0 }?.let { segmentAt(segments, it.positionMs) } ?: -1
-        val gutter = EchoTheme.spacing.gutterScreen
+            val entryPending = pending[noteId]
+            val editable = segments.isNotEmpty() && noteId !in transcribing
+            val textSelection = edits.entries.firstOrNull { !it.value.selection.collapsed }
+            val current = player?.takeIf { it.playing || it.positionMs > 0 }
+                ?.let { segmentAt(segments, it.positionMs) } ?: -1
+            val highlight = if (finding) findQuery else ""
 
-        LazyColumn(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
-            contentPadding = PaddingValues(gutter),
-            verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5),
-        ) {
-            item(key = "note") {
-                Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5)) {
-                    if (entryPending != null) {
-                        AnalysisStatusCard(
-                            pending = entryPending,
-                            retrying = analyzing,
-                            onRetry = { viewModel.analyze(noteId) },
-                        )
-                    } else {
-                        transcript.summary?.let { summary ->
-                            SectionCaption(label = "NOTE")
-                            Text(
-                                text = summary,
-                                style = EchoTheme.typography.body,
-                                color = EchoTheme.colors.textPrimary,
-                            )
+            DetailHeader(onBack = onBack) {
+                HeaderAction(R.drawable.ic_search, "Find", active = finding) {
+                    finding = !finding
+                    if (!finding) findQuery = ""
+                    if (finding && tab == NoteTab.Tasks) tab = NoteTab.BySpeaker
+                }
+                if (editable) {
+                    HeaderAction(R.drawable.ic_pen_line, "Edit", active = editing) {
+                        if (editing) {
+                            if (edits.isNotEmpty()) {
+                                viewModel.saveSegments(noteId, applyEdits(segments, edits.mapValues { it.value.text }))
+                            }
+                            edits.clear()
+                        } else if (tab == NoteTab.Tasks) {
+                            tab = NoteTab.BySpeaker
                         }
-
-                        val notesTasks = tasks.filter { it.sourceTranscriptId == noteId }
-                        if (notesTasks.isNotEmpty()) {
-                            SectionCaption(label = "TASKS FROM THIS NOTE", trailingCount = notesTasks.size)
-                            TaskGroupCard(
-                                items = notesTasks,
-                                showDate = false,
-                                sourceTitleFor = { null },
-                                onToggle = { viewModel.setTaskDone(it.id, !it.done) },
-                                onEdit = { task ->
-                                    val offset = task.sourceOffsetMs
-                                    if (player != null && offset != null) player.playFrom(offset) else onEditTask(task.id)
-                                },
-                                onLongPress = { onEditTask(it.id) },
-                            )
-                        }
+                        editing = !editing
                     }
+                }
+                HeaderAction(R.drawable.ic_share, "Share") { sheet = NoteSheet.Share }
+                HeaderAction(R.drawable.ic_ellipsis, "More") { sheet = NoteSheet.More }
+            }
 
-                    SectionCaption(
-                        label = if (polished) "WHAT WAS SAID · POLISHED" else "WHAT WAS SAID",
-                        trailingText = transcript.language,
-                    )
-
-                    val shown = transcript.polishedText ?: transcript.text
-                    if (selected.isNotEmpty()) {
-                        SelectionBar(
-                            count = selected.size,
-                            onAssign = { speakerTarget = SpeakerTarget.Segments(selected.toSet()) },
-                            onCancel = { selected.clear() },
-                        )
-                    } else TranscriptActions(
-                        editable = editable,
-                        editing = editing,
-                        canAssignSelection = textSelection != null,
-                        onAssignSelection = {
-                            textSelection?.let { (i, value) ->
-                                speakerTarget = SpeakerTarget.Selection(i, value.selection.min until value.selection.max)
-                            }
-                        },
-                        finding = finding,
-                        polished = polished,
-                        polishing = polishingId == noteId,
-                        onFind = {
-                            finding = !finding
-                            if (!finding) findQuery = ""
-                        },
-                        onEdit = {
-                            if (editing) {
-                                if (edits.isNotEmpty()) {
-                                    viewModel.saveSegments(noteId, applyEdits(segments, edits.mapValues { it.value.text }))
-                                }
-                                edits.clear()
-                            }
-                            editing = !editing
-                        },
-                        onCopy = { context.copyToClipboard(shown) },
-                        onPolish = { if (polishingId == null) viewModel.polish(noteId) },
-                        onRestore = { viewModel.restoreOriginal(noteId) },
-                    )
-                    if (noteId in polishFailed) {
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .testTag(TAG_DETAIL_TEXT),
+                contentPadding = PaddingValues(bottom = EchoTheme.spacing.s6),
+            ) {
+                item(key = "title") {
+                    Column(
+                        modifier = Modifier.padding(
+                            start = EchoTheme.spacing.gutterScreen,
+                            end = EchoTheme.spacing.gutterScreen,
+                            top = EchoTheme.spacing.s3,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3),
+                    ) {
                         Text(
-                            text = "Couldn't polish this one. The transcript is unchanged.",
-                            style = EchoTheme.typography.micro,
-                            color = EchoTheme.colors.statusWarningFg,
+                            text = transcript.title ?: title(transcript.text),
+                            style = EchoTheme.typography.title,
+                            color = EchoTheme.colors.textPrimary,
                         )
-                    }
-                    if (finding && editable) {
-                        FindReplaceBar(
-                            query = findQuery,
-                            onQueryChange = { findQuery = it },
-                            replacement = replacement,
-                            onReplacementChange = { replacement = it },
-                            matches = countMatches(segments, findQuery),
-                            onReplaceAll = {
-                                viewModel.saveSegments(noteId, replaceAll(segments, findQuery, replacement))
-                            },
-                        )
-                    }
-                    if (polished || segments.isEmpty()) {
-                        EchoCard(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             Text(
-                                text = shown,
-                                style = EchoTheme.typography.body,
-                                color = EchoTheme.colors.textPrimary,
-                                modifier = Modifier.testTag(TAG_DETAIL_TEXT),
+                                text = "${dateLabel(transcript.createdAt, System.currentTimeMillis())} · ${clock(transcript.durationMs)}",
+                                style = EchoTheme.typography.micro,
+                                color = EchoTheme.colors.textTertiary,
+                            )
+                            FolderChip(
+                                folder = folders.firstOrNull { it.id == transcript.folderId },
+                                onClick = { sheet = NoteSheet.Folder },
+                            )
+                        }
+                        if (entryPending != null) {
+                            StatusCard(
+                                pending = entryPending,
+                                retrying = analyzingId == noteId,
+                                onRetry = { viewModel.analyze(noteId) },
                             )
                         }
                     }
                 }
-            }
 
-            if (!polished) {
-                itemsIndexed(segments, key = { i, _ -> "segment$i" }) { i, segment ->
-                    val speakerChanged = i == 0 || segments[i - 1].speaker != segment.speaker
-                    SegmentRow(
-                        segment = segment,
-                        speakerLabel = if (segment.speaker != null && speakerChanged) {
-                            speakers.firstOrNull { it.index == segment.speaker }?.label
-                                ?: "Speaker ${segment.speaker + 1}"
-                        } else {
-                            null
-                        },
-                        value = edits[i] ?: TextFieldValue(segment.text),
-                        current = i == current,
-                        editing = editing,
-                        selected = i in selected,
-                        highlight = if (finding) findQuery else "",
-                        onValueChange = { edits[i] = it },
-                        onClick = {
+                stickyHeader(key = "tabs") {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(EchoTheme.colors.surfacePage)
+                            .padding(horizontal = EchoTheme.spacing.gutterScreen, vertical = EchoTheme.spacing.s4),
+                    ) {
+                        Tabs(selected = tab, onSelect = { tab = it })
+                    }
+                }
+
+                if (tab != NoteTab.Tasks) {
+                    item(key = "tools") {
+                        Column(
+                            modifier = Modifier.padding(horizontal = EchoTheme.spacing.gutterScreen),
+                            verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3),
+                        ) {
                             when {
-                                selected.isEmpty() -> player?.playFrom(segment.startMs)
-                                i in selected -> selected.remove(i)
-                                else -> selected.add(i)
+                                selected.isNotEmpty() -> SelectionBar(
+                                    count = selected.size,
+                                    onAssign = { speakerTarget = SpeakerTarget.Segments(selected.toSet()) },
+                                    onCancel = { selected.clear() },
+                                )
+                                editing -> EditBar(
+                                    canAssignSelection = textSelection != null,
+                                    onAssignSelection = {
+                                        textSelection?.let { (i, value) ->
+                                            speakerTarget = SpeakerTarget.Selection(i, value.selection.min until value.selection.max)
+                                        }
+                                    },
+                                    onDone = {
+                                        if (edits.isNotEmpty()) {
+                                            viewModel.saveSegments(noteId, applyEdits(segments, edits.mapValues { it.value.text }))
+                                        }
+                                        edits.clear()
+                                        editing = false
+                                    },
+                                )
                             }
-                        },
-                        onLongClick = { if (editable && i !in selected) selected.add(i) },
-                        onSpeakerClick = { if (editable) speakerTarget = SpeakerTarget.Segments(setOf(i)) },
+                            if (finding) {
+                                FindReplaceBar(
+                                    query = findQuery,
+                                    onQueryChange = { findQuery = it },
+                                    replacement = replacement,
+                                    onReplacementChange = { replacement = it },
+                                    matches = if (segments.isEmpty()) {
+                                        matchRanges(transcript.text, findQuery).size
+                                    } else {
+                                        countMatches(segments, findQuery)
+                                    },
+                                    canReplace = editable && !editing,
+                                    onReplaceAll = {
+                                        viewModel.saveSegments(noteId, replaceAll(segments, findQuery, replacement))
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+
+                when {
+                    tab == NoteTab.Tasks -> tasksTab(
+                        summary = transcript.summary,
+                        tasks = tasks.filter { it.sourceTranscriptId == noteId },
+                        analyzed = transcript.analyzedAt != null,
+                        onToggle = { viewModel.setTaskDone(it.id, !it.done) },
+                        onPlay = { task -> task.sourceOffsetMs?.let { player?.playFrom(it) } },
+                        onEdit = { onEditTask(it.id) },
                     )
+                    segments.isEmpty() -> item(key = "plain") {
+                        Paragraph(
+                            text = transcript.text.ifBlank { "Nothing transcribed yet." },
+                            current = false,
+                            highlight = highlight,
+                            onClick = {},
+                            modifier = Modifier.padding(horizontal = EchoTheme.spacing.gutterScreen),
+                        )
+                    }
+                    tab == NoteTab.FullText -> items(segments.indices.toList(), key = { "p$it" }) { i ->
+                        Paragraph(
+                            text = segments[i].text.trim(),
+                            current = i == current,
+                            highlight = highlight,
+                            onClick = { player?.playFrom(segments[i].startMs) },
+                            modifier = Modifier.padding(horizontal = EchoTheme.spacing.gutterScreen),
+                        )
+                    }
+                    else -> items(runs(segments), key = { "run${it.first}" }) { run ->
+                        SpeakerRun(
+                            run = run,
+                            segments = segments,
+                            speakers = speakers,
+                            current = current,
+                            editing = editing,
+                            selected = selected,
+                            highlight = highlight,
+                            edits = edits,
+                            onHeaderClick = { if (editable) speakerTarget = SpeakerTarget.Segments(run.toSet()) },
+                            onLineClick = { i ->
+                                when {
+                                    selected.isEmpty() -> player?.playFrom(segments[i].startMs)
+                                    i in selected -> selected.remove(i)
+                                    else -> selected.add(i)
+                                }
+                            },
+                            onLineLongClick = { i -> if (editable && i !in selected) selected.add(i) },
+                        )
+                    }
                 }
             }
+
+            player?.let { PlayerBar(it) }
+            Spacer(Modifier.height(LocalBottomBarHeight.current))
         }
 
-        player?.let { PlayerBar(it) }
-    }
+        if (transcript != null) {
+            DetailSheets(
+                sheet = sheet,
+                onSheet = { sheet = it },
+                title = transcript.title ?: title(transcript.text),
+                folderId = transcript.folderId,
+                folders = folders,
+                canAnalyze = pending[noteId]?.severity != PendingSeverity.Parked,
+                analyzing = analyzingId == noteId,
+                audioSize = audio?.let { megabytes(it.length()) },
+                timed = segments.isNotEmpty(),
+                exportOptions = exportOptions,
+                onExportOptions = { exportOptions = it },
+                onShare = { format ->
+                    val note = ExportNote(
+                        title = transcript.title ?: title(transcript.text),
+                        date = exportDate.format(Date(transcript.createdAt)),
+                        text = transcript.text,
+                        segments = segments,
+                        speakers = speakers,
+                        summary = transcript.summary,
+                        tasks = tasks.filter { it.sourceTranscriptId == noteId },
+                    )
+                    scope.launch { Exporter(context).share(format, note, exportOptions, audio) }
+                },
+                onMove = { viewModel.moveToFolder(noteId, it) },
+                onAnalyze = { viewModel.analyze(noteId) },
+                onCopy = { context.copyToClipboard(transcript.text) },
+                onDelete = {
+                    viewModel.delete(noteId)
+                    onDeleted()
+                },
+            )
+        }
 
-    PickerSheet(
-        visible = movingFolder,
-        title = "Move to folder",
-        options = listOf("No folder" to null) + folders.map { it.name to it.id },
-        selected = transcript?.folderId,
-        onPick = {
-            viewModel.moveToFolder(noteId, it)
-            movingFolder = false
-        },
-        onDismiss = { movingFolder = false },
-    )
-
-    val target = speakerTarget
-    SpeakerSheet(
-        visible = target != null,
-        speakers = speakers,
-        current = (target as? SpeakerTarget.Segments)?.indices?.singleOrNull()?.let { segments.getOrNull(it)?.speaker },
-        onPick = { speaker ->
-            when (target) {
-                is SpeakerTarget.Segments -> viewModel.assignSpeaker(noteId, speaker) { assignSpeaker(segments, target.indices, it) }
-                is SpeakerTarget.Selection -> {
-                    val withEdits = segments.mapIndexed { i, segment -> edits[i]?.let { segment.copy(text = it.text) } ?: segment }
-                    viewModel.assignSpeaker(noteId, speaker) {
-                        applyEdits(assignSelection(withEdits, target.index, target.range, it), emptyMap())
+        val target = speakerTarget
+        val targetIndices = when (target) {
+            is SpeakerTarget.Segments -> target.indices
+            is SpeakerTarget.Selection -> setOf(target.index)
+            null -> emptySet()
+        }
+        val targetSpeaker = (target as? SpeakerTarget.Segments)
+            ?.let { t -> t.indices.map { segments.getOrNull(it)?.speaker }.distinct().singleOrNull() }
+            ?.let { index -> speakers.firstOrNull { it.index == index } ?: Speaker(index, null) }
+        SpeakerSheet(
+            visible = target != null,
+            speaker = targetSpeaker,
+            lineCount = targetSpeaker?.let { s -> segments.count { it.speaker == s.index } } ?: 0,
+            quote = targetSpeaker?.let { s -> segments.firstOrNull { it.speaker == s.index } },
+            suggestions = speakerNames.filter { name -> speakers.none { it.name == name } },
+            others = speakers.filter { it.index != targetSpeaker?.index },
+            moveLabel = when {
+                target is SpeakerTarget.Selection -> "the selection"
+                targetIndices.size == 1 -> "this line"
+                else -> "these ${targetIndices.size} lines"
+            },
+            onPlay = { player?.playFrom(it.startMs) },
+            onRename = { name ->
+                targetSpeaker?.let { viewModel.renameSpeaker(noteId, it.index, name) }
+                selected.clear()
+                speakerTarget = null
+            },
+            onMove = { speaker ->
+                when (target) {
+                    is SpeakerTarget.Segments -> viewModel.assignSpeaker(noteId, speaker) { assignSpeaker(segments, target.indices, it) }
+                    is SpeakerTarget.Selection -> {
+                        val withEdits = segments.mapIndexed { i, segment -> edits[i]?.let { segment.copy(text = it.text) } ?: segment }
+                        viewModel.assignSpeaker(noteId, speaker) {
+                            applyEdits(assignSelection(withEdits, target.index, target.range, it), emptyMap())
+                        }
+                        // The split shifts every index after it, so the open fields would point at the wrong segments.
+                        edits.clear()
+                        editing = false
                     }
-                    // The split shifts every index after it, so the open fields would point at the wrong segments.
-                    edits.clear()
-                    editing = false
+                    null -> Unit
                 }
-                null -> Unit
-            }
-            selected.clear()
-            speakerTarget = null
-        },
-        onRename = { index, name -> viewModel.renameSpeaker(noteId, index, name) },
-        onDismiss = { speakerTarget = null },
-    )
+                selected.clear()
+                speakerTarget = null
+            },
+            onDismiss = { speakerTarget = null },
+        )
+    }
 }
 
 private sealed interface SpeakerTarget {
@@ -380,312 +414,305 @@ private sealed interface SpeakerTarget {
     data class Selection(val index: Int, val range: IntRange) : SpeakerTarget
 }
 
-@Composable
-private fun SelectionBar(count: Int, onAssign: () -> Unit, onCancel: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = if (count == 1) "1 line selected" else "$count lines selected",
-            style = EchoTheme.typography.bodySm,
-            color = EchoTheme.colors.textSecondary,
-            modifier = Modifier.weight(1f),
-        )
-        EchoButton(text = "Speaker…", onClick = onAssign, variant = ButtonVariant.Soft, size = ButtonSize.Sm)
-        EchoButton(text = "Cancel", onClick = onCancel, variant = ButtonVariant.Ghost, size = ButtonSize.Sm)
+/** Consecutive segments from one speaker, as index ranges. */
+internal fun runs(segments: List<Segment>): List<IntRange> {
+    val runs = mutableListOf<IntRange>()
+    var start = 0
+    for (i in 1..segments.size) {
+        if (i == segments.size || segments[i].speaker != segments[start].speaker) {
+            runs += start until i
+            start = i
+        }
     }
+    return runs
 }
 
 @Composable
-private fun TranscriptActions(
-    editable: Boolean,
+private fun SpeakerRun(
+    run: IntRange,
+    segments: List<Segment>,
+    speakers: List<Speaker>,
+    current: Int,
     editing: Boolean,
-    canAssignSelection: Boolean,
-    onAssignSelection: () -> Unit,
-    finding: Boolean,
-    polished: Boolean,
-    polishing: Boolean,
-    onFind: () -> Unit,
-    onEdit: () -> Unit,
-    onCopy: () -> Unit,
-    onPolish: () -> Unit,
-    onRestore: () -> Unit,
+    selected: List<Int>,
+    highlight: String,
+    edits: MutableMap<Int, TextFieldValue>,
+    onHeaderClick: () -> Unit,
+    onLineClick: (Int) -> Unit,
+    onLineLongClick: (Int) -> Unit,
 ) {
-    Row(
-        modifier = Modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3),
+    val first = segments[run.first]
+    val playing = current in run && !editing
+    Column(
+        modifier = Modifier
+            .padding(horizontal = EchoTheme.spacing.s4, vertical = EchoTheme.spacing.s1)
+            .fillMaxWidth()
+            .clip(EchoTheme.radii.lg)
+            .background(if (playing) EchoTheme.colors.surfaceCard else Color.Transparent)
+            .padding(horizontal = EchoTheme.spacing.s2, vertical = EchoTheme.spacing.s2),
     ) {
-        if (editable) {
-            EchoButton(
-                text = if (editing) "Done" else "Edit",
-                onClick = onEdit,
-                variant = if (editing) ButtonVariant.Soft else ButtonVariant.Secondary,
-                size = ButtonSize.Sm,
+        SpeakerHeader(
+            speaker = first.speaker,
+            label = first.speaker?.let { index -> speakers.firstOrNull { it.index == index }?.label ?: "Speaker ${index + 1}" },
+            startMs = first.startMs,
+            endMs = segments[run.last].endMs,
+            playing = playing,
+            onClick = onHeaderClick,
+        )
+        run.forEach { i ->
+            SegmentLine(
+                value = edits[i] ?: TextFieldValue(segments[i].text.trim()),
+                current = false,
+                editing = editing,
+                selected = i in selected,
+                highlight = highlight,
+                onValueChange = { edits[i] = it },
+                onClick = { onLineClick(i) },
+                onLongClick = { onLineLongClick(i) },
             )
-            if (editing) {
-                EchoButton(
-                    text = "Speaker for selection",
-                    onClick = onAssignSelection,
-                    variant = ButtonVariant.Secondary,
-                    size = ButtonSize.Sm,
-                    enabled = canAssignSelection,
+        }
+    }
+}
+
+private fun LazyListScope.tasksTab(
+    summary: String?,
+    tasks: List<TodoItem>,
+    analyzed: Boolean,
+    onToggle: (TodoItem) -> Unit,
+    onPlay: (TodoItem) -> Unit,
+    onEdit: (TodoItem) -> Unit,
+) {
+    item(key = "tasks") {
+        Column(
+            modifier = Modifier.padding(horizontal = EchoTheme.spacing.gutterScreen),
+            verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5),
+        ) {
+            if (summary != null) {
+                Text(text = summary, style = EchoTheme.typography.body, color = EchoTheme.colors.textPrimary)
+            }
+            if (tasks.isNotEmpty()) {
+                TaskGroupCard(
+                    items = tasks,
+                    showDate = false,
+                    sourceTitleFor = { null },
+                    onToggle = onToggle,
+                    onEdit = onPlay,
+                    onLongPress = onEdit,
                 )
-            } else {
-                EchoButton(
-                    text = if (finding) "Close" else "Replace",
-                    onClick = onFind,
-                    variant = ButtonVariant.Secondary,
-                    size = ButtonSize.Sm,
+            } else if (analyzed) {
+                Text(
+                    text = "No tasks in this note.",
+                    style = EchoTheme.typography.bodySm,
+                    color = EchoTheme.colors.textTertiary,
                 )
             }
         }
-        if (!editing) {
-            EchoButton(
-                text = "Copy",
-                onClick = onCopy,
-                variant = ButtonVariant.Secondary,
-                size = ButtonSize.Sm,
-            )
-            EchoButton(
-                text = when {
-                    polished -> "Restore original"
-                    polishing -> "Polishing…"
-                    else -> "Polish"
-                },
-                onClick = if (polished) onRestore else onPolish,
-                variant = ButtonVariant.Secondary,
-                size = ButtonSize.Sm,
-                loading = polishing,
-            )
-        }
     }
 }
 
 @Composable
-private fun FindReplaceBar(
-    query: String,
-    onQueryChange: (String) -> Unit,
-    replacement: String,
-    onReplacementChange: (String) -> Unit,
-    matches: Int,
-    onReplaceAll: () -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3)) {
-        EchoSearchField(value = query, onValueChange = onQueryChange, placeholder = "Find in transcript")
-        EchoSearchField(
-            value = replacement,
-            onValueChange = onReplacementChange,
-            placeholder = "Replace with",
-            iconRes = R.drawable.ic_pen_line,
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = when {
-                    query.isEmpty() -> ""
-                    matches == 1 -> "1 match"
-                    else -> "$matches matches"
-                },
-                style = EchoTheme.typography.micro,
-                color = EchoTheme.colors.textTertiary,
-                modifier = Modifier.weight(1f),
-            )
-            EchoButton(
-                text = "Replace all",
-                onClick = onReplaceAll,
-                variant = ButtonVariant.Soft,
-                size = ButtonSize.Sm,
-                enabled = matches > 0,
-            )
-        }
-    }
-}
-
-@Composable
-private fun SegmentRow(
-    segment: Segment,
-    speakerLabel: String?,
-    value: TextFieldValue,
-    current: Boolean,
-    editing: Boolean,
-    selected: Boolean,
-    highlight: String,
-    onValueChange: (TextFieldValue) -> Unit,
-    onClick: () -> Unit,
-    onLongClick: () -> Unit,
-    onSpeakerClick: () -> Unit,
-) {
+private fun DetailHeader(onBack: () -> Unit, actions: @Composable () -> Unit) {
     val colors = EchoTheme.colors
-    if (speakerLabel != null) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .padding(horizontal = EchoTheme.spacing.gutterScreen, vertical = EchoTheme.spacing.s3),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .clip(EchoTheme.radii.pill)
+                .background(colors.surfaceCard)
+                .hairline(colors.borderSubtle, cornerRadius = 20.dp),
+        ) {
+            EchoIconButton(
+                iconRes = R.drawable.ic_chevron_left,
+                contentDescription = "Back",
+                onClick = onBack,
+                size = IconButtonSize.Md,
+            )
+        }
+        Spacer(Modifier.weight(1f))
         Row(
             modifier = Modifier
-                .padding(top = EchoTheme.spacing.s3)
                 .clip(EchoTheme.radii.pill)
-                .clickable(onClick = onSpeakerClick)
-                .padding(horizontal = EchoTheme.spacing.s3, vertical = 2.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            SpeakerDot(segment.speaker)
-            Text(
-                text = speakerLabel,
-                style = EchoTheme.typography.micro.copy(fontWeight = FontWeight.Medium),
-                color = speakerColor(segment.speaker),
-            )
-        }
+                .background(colors.surfaceCard)
+                .hairline(colors.borderSubtle, cornerRadius = 20.dp)
+                .padding(horizontal = EchoTheme.spacing.s2, vertical = EchoTheme.spacing.s1),
+            horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s1),
+        ) { actions() }
     }
+}
+
+@Composable
+private fun HeaderAction(icon: Int, description: String, active: Boolean = false, onClick: () -> Unit) {
+    EchoIconButton(
+        iconRes = icon,
+        contentDescription = description,
+        onClick = onClick,
+        tint = if (active) EchoTheme.colors.textAccent else null,
+    )
+}
+
+@Composable
+private fun FolderChip(folder: Folder?, onClick: () -> Unit) {
+    val color = folder?.let { folderColor(it.color) } ?: EchoTheme.colors.textTertiary
+    Row(
+        modifier = Modifier
+            .clip(EchoTheme.radii.sm)
+            .background(color.copy(alpha = 0.14f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = EchoTheme.spacing.s3, vertical = 3.dp),
+        horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s2),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            painter = painterResource(folder?.let { FolderIcon.of(it.icon).drawable } ?: R.drawable.ic_folder),
+            contentDescription = null,
+            tint = color,
+            modifier = Modifier.size(12.dp),
+        )
+        Text(
+            text = folder?.name ?: "No folder",
+            style = EchoTheme.typography.micro.copy(fontWeight = FontWeight.Medium),
+            color = color,
+        )
+        Icon(
+            painter = painterResource(R.drawable.ic_chevron_down),
+            contentDescription = null,
+            tint = color,
+            modifier = Modifier.size(12.dp),
+        )
+    }
+}
+
+@Composable
+private fun Tabs(selected: NoteTab, onSelect: (NoteTab) -> Unit) {
+    val colors = EchoTheme.colors
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(EchoTheme.radii.sm)
-            .background(
-                when {
-                    selected -> colors.surfaceAccentSoft
-                    current && !editing -> colors.transcriptHighlight
-                    else -> Color.Transparent
-                },
-            )
-            .then(if (editing) Modifier else Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick))
-            .padding(horizontal = EchoTheme.spacing.s3, vertical = EchoTheme.spacing.s2),
-        horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
+            .clip(EchoTheme.radii.pill)
+            .background(colors.surfaceSunken)
+            .padding(3.dp),
     ) {
-        Text(
-            text = clock(segment.startMs),
-            style = EchoTheme.typography.micro,
-            color = colors.textTertiary,
-            modifier = Modifier.padding(top = 3.dp).width(36.dp),
-        )
-        if (editing) {
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                textStyle = EchoTheme.typography.body.copy(color = colors.textPrimary),
-                cursorBrush = SolidColor(colors.textAccent),
+        NoteTab.entries.forEach { tab ->
+            val active = tab == selected
+            Row(
                 modifier = Modifier
                     .weight(1f)
-                    .clip(EchoTheme.radii.xs)
-                    .background(colors.surfaceSunken)
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
-            )
-        } else {
-            Text(
-                text = highlighted(value.text, highlight, colors.surfaceAccentSoft),
-                style = EchoTheme.typography.body,
-                color = colors.textPrimary,
-                modifier = Modifier.weight(1f),
-            )
-        }
-    }
-}
-
-private fun highlighted(text: String, query: String, background: Color): AnnotatedString =
-    buildAnnotatedString {
-        append(text)
-        matchRanges(text, query).forEach { range ->
-            addStyle(SpanStyle(background = background), range.first, range.last + 1)
-        }
-    }
-
-@Composable
-private fun PlayerBar(player: NotePlayer) {
-    val colors = EchoTheme.colors
-    var dragging by remember { mutableStateOf<Float?>(null) }
-    val duration = player.durationMs.coerceAtLeast(1)
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(colors.surfaceBar)
-            .drawBehind {
-                drawLine(colors.borderSubtle, Offset(0f, 0f), Offset(size.width, 0f), 1.dp.toPx())
+                    .clip(EchoTheme.radii.pill)
+                    .background(if (active) colors.surfaceRaised else Color.Transparent)
+                    .clickable { onSelect(tab) }
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    painter = painterResource(tab.icon),
+                    contentDescription = null,
+                    tint = if (active) colors.textPrimary else colors.textTertiary,
+                    modifier = Modifier.size(14.dp),
+                )
+                Text(
+                    text = tab.label,
+                    style = EchoTheme.typography.micro.copy(fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium),
+                    color = if (active) colors.textPrimary else colors.textSecondary,
+                )
             }
-            .navigationBarsPadding()
-            .padding(horizontal = EchoTheme.spacing.gutterScreen, vertical = EchoTheme.spacing.s3),
-        horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        EchoIconButton(
-            iconRes = if (player.playing) R.drawable.ic_pause else R.drawable.ic_play,
-            contentDescription = if (player.playing) "Pause" else "Play",
-            onClick = player::toggle,
-            variant = IconButtonVariant.Soft,
-            size = IconButtonSize.Md,
-        )
-        val shownMs = dragging?.let { (it * duration).toLong() } ?: player.positionMs
-        Text(
-            text = clock(shownMs),
-            style = EchoTheme.typography.micro,
-            color = colors.textSecondary,
-        )
-        Slider(
-            value = dragging ?: (player.positionMs.toFloat() / duration).coerceIn(0f, 1f),
-            onValueChange = { dragging = it },
-            onValueChangeFinished = {
-                dragging?.let { player.seekTo((it * duration).toLong()) }
-                dragging = null
-            },
-            colors = SliderDefaults.colors(
-                thumbColor = colors.textAccent,
-                activeTrackColor = colors.textAccent,
-                inactiveTrackColor = colors.controlTrack,
-            ),
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            text = clock(player.durationMs),
-            style = EchoTheme.typography.micro,
-            color = colors.textTertiary,
-        )
-    }
-}
-
-@Composable
-private fun SectionCaption(
-    label: String,
-    trailingText: String? = null,
-    trailingCount: Int? = null,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = label,
-            style = EchoTheme.typography.microCaps,
-            color = EchoTheme.colors.textTertiary,
-        )
-        HorizontalDivider(
-            modifier = Modifier.weight(1f),
-            color = EchoTheme.colors.borderSubtle,
-        )
-        if (trailingText != null) {
-            Text(
-                text = trailingText,
-                style = EchoTheme.typography.micro,
-                color = EchoTheme.colors.textTertiary,
-            )
-        }
-        if (trailingCount != null) {
-            Text(
-                text = trailingCount.toString(),
-                style = EchoTheme.typography.caption,
-                color = EchoTheme.colors.textTertiary,
-            )
         }
     }
 }
 
 @Composable
-private fun AnalysisStatusCard(
-    pending: PendingCopy,
-    retrying: Boolean,
-    onRetry: () -> Unit,
+private fun DetailSheets(
+    sheet: NoteSheet?,
+    onSheet: (NoteSheet?) -> Unit,
+    title: String,
+    folderId: String?,
+    folders: List<Folder>,
+    canAnalyze: Boolean,
+    analyzing: Boolean,
+    audioSize: String?,
+    timed: Boolean,
+    exportOptions: ExportOptions,
+    onExportOptions: (ExportOptions) -> Unit,
+    onShare: (ExportFormat) -> Unit,
+    onMove: (String?) -> Unit,
+    onAnalyze: () -> Unit,
+    onCopy: () -> Unit,
+    onDelete: () -> Unit,
 ) {
+    val dismiss = { onSheet(null) }
+    Sheet(visible = sheet == NoteSheet.More, onDismiss = dismiss) {
+        Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3)) {
+            EchoButton(
+                text = if (analyzing) "Analyzing…" else "Re-analyze",
+                onClick = {
+                    onAnalyze()
+                    dismiss()
+                },
+                variant = ButtonVariant.Secondary,
+                enabled = canAnalyze && !analyzing,
+                fullWidth = true,
+            )
+            EchoButton(
+                text = "Copy text",
+                onClick = {
+                    onCopy()
+                    dismiss()
+                },
+                variant = ButtonVariant.Secondary,
+                fullWidth = true,
+            )
+            EchoButton(
+                text = "Delete",
+                onClick = { onSheet(NoteSheet.Delete) },
+                variant = ButtonVariant.Danger,
+                fullWidth = true,
+            )
+        }
+    }
+    ConfirmSheet(
+        visible = sheet == NoteSheet.Delete,
+        title = "Delete this note?",
+        message = "The recording, transcript and its tasks are removed. This can't be undone.",
+        confirmLabel = "Delete",
+        onConfirm = {
+            dismiss()
+            onDelete()
+        },
+        onDismiss = dismiss,
+    )
+    PickerSheet(
+        visible = sheet == NoteSheet.Folder,
+        title = "Move to folder",
+        options = listOf("No folder" to null) + folders.map { it.name to it.id },
+        selected = folderId,
+        onPick = {
+            onMove(it)
+            dismiss()
+        },
+        onDismiss = dismiss,
+    )
+    ShareSheet(
+        visible = sheet == NoteSheet.Share,
+        title = title,
+        audioSize = audioSize,
+        timed = timed,
+        options = exportOptions,
+        onOptions = onExportOptions,
+        onShare = {
+            onShare(it)
+            dismiss()
+        },
+        onDismiss = dismiss,
+    )
+}
+
+@Composable
+private fun StatusCard(pending: PendingCopy, retrying: Boolean, onRetry: () -> Unit) {
     val failed = pending.severity == PendingSeverity.Failed
     val iconBg = if (failed) EchoTheme.colors.statusWarningBg else EchoTheme.colors.statusNeutralBg
     val iconFg = if (failed) EchoTheme.colors.statusWarningFg else EchoTheme.colors.textSecondary
@@ -716,7 +743,7 @@ private fun AnalysisStatusCard(
                     text = if (failed) {
                         "The recording is safe — retry when the phone is idle, or leave it as a plain recording."
                     } else {
-                        "Echo keeps recording either way. The note and its tasks appear here as soon as the model finishes."
+                        "The summary and tasks appear under Tasks as soon as Echo is done."
                     },
                     style = EchoTheme.typography.micro,
                     color = EchoTheme.colors.textSecondary,
@@ -735,9 +762,9 @@ private fun AnalysisStatusCard(
     }
 }
 
-private val detailDate = SimpleDateFormat("d MMM, HH:mm", Locale.getDefault())
+private val exportDate = SimpleDateFormat("d MMM yyyy, HH:mm", Locale.getDefault())
 
-private fun wordCount(text: String) = text.trim().split(Regex("\\s+")).count { it.isNotBlank() }
+private fun megabytes(bytes: Long) = "%.1f MB".format(bytes / 1_000_000.0)
 
 private fun Context.copyToClipboard(text: String) {
     val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager

@@ -15,6 +15,9 @@ INSERT INTO speaker (transcriptId, idx, name) VALUES (?, ?, NULL);
 nextIdx:
 SELECT coalesce(max(idx) + 1, 0) FROM speaker WHERE transcriptId = ?;
 
+names:
+SELECT name FROM speaker WHERE name IS NOT NULL GROUP BY name ORDER BY count(*) DESC, name;
+
 rename:
 UPDATE speaker SET name = ? WHERE transcriptId = ? AND idx = ?;
 

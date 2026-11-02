@@ -158,4 +158,18 @@ class SqlTranscriptRepositoryTest {
         assertEquals(emptyList<Speaker>(), repository.speakers("a").first())
         assertEquals(listOf(null), repository.segments("a").map { it.speaker })
     }
+
+    @Test
+    fun `speaker names across notes, most used first`() = runTest {
+        val repository = repository()
+        listOf("a", "b").forEach { id ->
+            repository.save(id = id, text = "", language = "en", durationMs = 0)
+            repository.setSpeakers(id, emptyList(), count = 2)
+        }
+        repository.renameSpeaker("a", 0, "Mark")
+        repository.renameSpeaker("a", 1, "Ana")
+        repository.renameSpeaker("b", 0, "Ana")
+
+        assertEquals(listOf("Ana", "Mark"), repository.speakerNames.first())
+    }
 }

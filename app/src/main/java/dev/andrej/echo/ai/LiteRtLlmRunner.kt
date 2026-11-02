@@ -23,8 +23,8 @@ class LiteRtLlmRunner(
     private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : LlmRunner {
 
-    // Only touched inside the slot, which also keeps analysis and polishing to one
-    // conversation at a time on the one engine.
+    // Only touched inside the slot, which also keeps analysis to one conversation at a time
+    // on the one engine.
     private var engine: Engine? = null
 
     init {

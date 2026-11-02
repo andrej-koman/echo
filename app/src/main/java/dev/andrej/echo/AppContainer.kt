@@ -15,7 +15,6 @@ import dev.andrej.echo.ai.ModelStore
 import dev.andrej.echo.ai.PendingAnalysisWorker
 import dev.andrej.echo.ai.QWEN3_1_7B_INT4
 import dev.andrej.echo.ai.TranscriptAnalyzer
-import dev.andrej.echo.ai.TranscriptPolisher
 import dev.andrej.echo.ai.toCardState
 import dev.andrej.echo.data.AnalysisQueueRepository
 import dev.andrej.echo.data.DerivedRepository
@@ -148,13 +147,6 @@ class AppContainer(context: Context) {
         transcripts = repository,
         derived = derived,
         analyzer = analyzer,
-        scope = appScope,
-    )
-
-    private val polisher = TranscriptPolisher(
-        runners = llmRunners::runner,
-        transcripts = repository,
-        segments = repository::segments,
         scope = appScope,
     )
 
@@ -307,9 +299,6 @@ class AppContainer(context: Context) {
                     onImport = transcriptions::import,
                     onRetryTranscription = transcriptions::transcribe,
                     onDeleted = transcriptions::discard,
-                    polishingId = polisher.activeId,
-                    polishFailed = polisher.failed,
-                    onPolish = polisher::polishAsync,
                     audioFile = transcriptions::audioFile,
                     folders = folders.folders,
                 ) as T

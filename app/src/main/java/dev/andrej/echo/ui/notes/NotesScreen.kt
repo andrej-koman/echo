@@ -1,39 +1,31 @@
 package dev.andrej.echo.ui.notes
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.andrej.echo.R
 import dev.andrej.echo.ui.components.BadgeTone
-import dev.andrej.echo.ui.components.CardPadding
-import dev.andrej.echo.ui.components.EchoBadge
 import dev.andrej.echo.ui.components.ButtonSize
 import dev.andrej.echo.ui.components.ButtonVariant
+import dev.andrej.echo.ui.components.EchoBadge
 import dev.andrej.echo.ui.components.EchoButton
-import dev.andrej.echo.ui.components.EchoCard
 import dev.andrej.echo.ui.components.EchoIconButton
 import dev.andrej.echo.ui.components.EchoTopBar
 import dev.andrej.echo.ui.components.EmptyState
@@ -50,30 +42,46 @@ fun NotesScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val folders by viewModel.folders.collectAsStateWithLifecycle()
+    var acting by remember { mutableStateOf<NoteRow?>(null) }
 
-    Column(modifier = modifier.fillMaxSize()) {
-        EchoTopBar(
-            title = "Notes",
-            query = state.query,
-            onQueryChange = viewModel::search,
-            searchPlaceholder = "Search all notes…",
-            subtitle = if (!state.loaded) {
-                ""
-            } else if (state.total == 0) {
-                "Nothing recorded yet"
-            } else {
-                "${state.total} recordings · ${state.totalDuration} of speech"
-            },
-            leading = { Mascot(size = 30.dp, variant = MascotVariant.Notes) },
-            actions = {
-                EchoIconButton(
-                    iconRes = R.drawable.ic_upload,
-                    contentDescription = "Import audio",
-                    onClick = onImport,
-                )
-            },
+    Box(modifier = modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            EchoTopBar(
+                title = "Echo",
+                query = state.query,
+                onQueryChange = viewModel::search,
+                searchPlaceholder = "Search all notes…",
+                leading = { Mascot(size = 30.dp) },
+                actions = {
+                    EchoIconButton(
+                        iconRes = R.drawable.ic_upload,
+                        contentDescription = "Import audio",
+                        onClick = onImport,
+                    )
+                },
+            )
+            NotesBody(state = state, onOpen = onOpen, onImport = onImport, onMore = { acting = it })
+        }
+
+        NoteActionsSheets(
+            note = acting,
+            folders = folders,
+            onMove = viewModel::moveToFolder,
+            onDelete = viewModel::delete,
+            onDismiss = { acting = null },
         )
+    }
+}
 
+@Composable
+private fun NotesBody(
+    state: NotesUiState,
+    onOpen: (String) -> Unit,
+    onImport: () -> Unit,
+    onMore: (NoteRow) -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
         if (!state.loaded) {
             Box(
                 modifier = Modifier.fillMaxSize().padding(bottom = 150.dp),
@@ -115,7 +123,7 @@ fun NotesScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
         ) {
-            if (state.groups.isEmpty()) {
+            if (state.notes.isEmpty()) {
                 item {
                     Text(
                         text = "Nothing matches “${state.query.trim()}”.",
@@ -125,134 +133,8 @@ fun NotesScreen(
                     )
                 }
             }
-
-            state.groups.forEach { group ->
-                item(key = "header-${group.label}") {
-                    NotesGroupHeader(
-                        label = group.label,
-                        count = group.items.size,
-                        modifier = Modifier.padding(start = 2.dp, top = EchoTheme.spacing.s4),
-                    )
-                }
-                item(key = "group-${group.label}") {
-                    NotesGroupCard(items = group.items, onOpen = onOpen)
-                }
-            }
-        }
-    }
-}
-
-/** One shared card per day, rows separated by a hairline — same rhythm as Tasks' grouped list. */
-@Composable
-internal fun NotesGroupCard(items: List<NoteRow>, onOpen: (String) -> Unit) {
-    EchoCard(modifier = Modifier.fillMaxWidth(), padding = CardPadding.None) {
-        Column(modifier = Modifier.padding(vertical = EchoTheme.spacing.s2, horizontal = EchoTheme.spacing.s4)) {
-            items.forEachIndexed { index, row ->
-                NoteRow(row = row, onOpen = { onOpen(row.id) })
-                if (index != items.lastIndex) {
-                    HorizontalDivider(color = EchoTheme.colors.borderSubtle)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-internal fun NotesGroupHeader(label: String, count: Int, modifier: Modifier = Modifier) {
-    Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-        Text(
-            text = label,
-            style = EchoTheme.typography.titleSm,
-            color = EchoTheme.colors.textPrimary,
-        )
-        Box(modifier = Modifier.weight(1f))
-        Text(
-            text = count.toString(),
-            style = EchoTheme.typography.caption.copy(fontWeight = FontWeight.Bold),
-            color = EchoTheme.colors.textTertiary,
-        )
-    }
-}
-
-@Composable
-internal fun NoteRow(
-    row: NoteRow,
-    onOpen: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onOpen)
-            .padding(vertical = EchoTheme.spacing.s4, horizontal = EchoTheme.spacing.s2),
-        horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5),
-    ) {
-        val (iconRes, iconBg, iconFg) = when (row.pending?.severity) {
-            PendingSeverity.Failed -> Triple(R.drawable.ic_x, EchoTheme.colors.statusWarningBg, EchoTheme.colors.statusWarningFg)
-            PendingSeverity.Parked -> Triple(R.drawable.ic_clock, EchoTheme.colors.statusNeutralBg, EchoTheme.colors.statusNeutralFg)
-            null -> Triple(R.drawable.ic_audio_waveform, EchoTheme.colors.surfaceAccentSoft, EchoTheme.colors.textAccent)
-        }
-
-        Box(
-            modifier = Modifier
-                .size(32.dp)
-                .clip(EchoTheme.radii.pill)
-                .background(iconBg),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                painter = painterResource(iconRes),
-                contentDescription = null,
-                tint = iconFg,
-                modifier = Modifier.size(15.dp),
-            )
-        }
-
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
-        ) {
-            Text(
-                text = row.title,
-                style = EchoTheme.typography.bodySm.copy(fontWeight = FontWeight.Medium),
-                color = EchoTheme.colors.textPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-
-            Text(
-                text = row.excerpt,
-                style = EchoTheme.typography.micro,
-                color = EchoTheme.colors.textSecondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "${row.time} · ${row.duration}",
-                    style = EchoTheme.typography.micro,
-                    color = EchoTheme.colors.textTertiary,
-                )
-                Box(modifier = Modifier.weight(1f))
-                when {
-                    row.pending != null -> Text(
-                        text = row.pending.text,
-                        style = EchoTheme.typography.micro,
-                        color = iconFg,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                    row.taskCount > 0 -> Text(
-                        text = if (row.taskCount == 1) "1 task" else "${row.taskCount} tasks",
-                        style = EchoTheme.typography.micro.copy(fontWeight = FontWeight.Bold),
-                        color = EchoTheme.colors.textTertiary,
-                    )
-                }
+            items(state.notes, key = { it.id }) { row ->
+                NoteCard(row = row, onOpen = { onOpen(row.id) }, onMore = { onMore(row) })
             }
         }
     }

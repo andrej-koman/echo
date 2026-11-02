@@ -207,8 +207,8 @@ ui/onboarding/ OnboardingScreen + OnboardingSteps (the 5 first-run screens), Onb
 ui/profile/   ProfileScreen (the Profile tab) + ProfileViewModel, SettingsScreen +
               SettingsViewModel, HistoryScreen + HistoryViewModel (the Calendar tab), DictionaryScreen +
               DictionaryViewModel
-ui/notes/     NotesScreen + NotesViewModel (the Notes tab — one shared card per day, hairline
-              dividers; search; NoteRow, PendingBadge, PendingCopy)
+ui/notes/     NotesScreen + NotesViewModel (the Notes tab, search; NoteRow, NoteStage,
+              PendingBadge, PendingCopy), NoteCard (+ its ··· sheets: move, delete)
 ui/detail/    NoteDetailScreen (NOTE + tasks-from-this-note + segment editor, bar-icon actions),
               NotePlayer (ExoPlayer), TranscriptEdits (find/replace/edit/speaker logic),
               SpeakerSheet
@@ -218,6 +218,14 @@ AppContainer manual DI, no Hilt
 ```
 
 Four tabs: Notes / Folders — record button — Calendar / Profile, Notes the start destination.
+**Notes list** (2026-11-02 design): a flat list of `NoteCard`s, newest first, no day headings —
+title, summary (3 lines), then `date · duration · folder` (folder name and icon in the folder's
+own colour; a `PendingBadge` takes that slot while anything is pending). The left stripe is
+progress (`NoteStage`, from `stage()`): empty grey while waiting (queued, getting a model, parked,
+or never analyzed), fills top to bottom with Whisper's %, pulses while finding speakers or
+analyzing, solid bronze once `analyzedAt` is set, clay on failure. ··· opens Move to folder /
+Delete. `FolderScreen` uses the same cards without the folder label; Calendar keeps its rows.
+Header is the mascot + "Echo"; the "Pro" badge in the design waits for billing.
 Notes is the one list of everything; Folders lists folders, each opening its notes (no folder
 filter on Notes); Calendar is `HistoryScreen` (month heat grid, the picked day's notes open on
 tap), also reached from Profile's week card. A note is moved from its own screen (folder icon in
@@ -321,8 +329,7 @@ to the start tab, so tapping it restored the stack and landed on the last tab. C
   captioned "· POLISHED"). A `pending` entry (parked or failed) replaces NOTE/TASKS
   with a status card (icon avatar + copy + a retry button when `Failed`) — analysis hasn't
   produced a note yet, so there is nothing to show there. `NotesViewModel.tasks` (all
-  `DerivedRepository.items`, unfiltered) backs both this screen's per-transcript filter and the
-  Notes list's per-row task counts.
+  `DerivedRepository.items`, unfiltered) backs this screen's per-transcript filter.
 - **Pending analysis queue.** `TranscriptAnalyzer.analyze()` returns `AnalysisOutcome`
   (`Success` or `Blocked(AnalysisBlock)`) instead of a nullable `Analysis`, so a failed analysis
   carries a reason instead of vanishing: `EmptyTranscript`, `WaitingForModel(bytes)`,
@@ -355,7 +362,7 @@ to the start tab, so tapping it restored the stack and landed on the last tab. C
   `EchoBadge`: `Parked` (waiting on a model or backend) in `BadgeTone.Neutral`, `Failed`
   (`GenerationFailed`/`EmptyResult`, exhausted or not — the badge doesn't distinguish) in
   `BadgeTone.Warning`. `EmptyTranscript` never renders — it's never enqueued. No dedicated
-  first-run modal; the badge is the only affordance, on note rows and the detail screen, which already has the Analyze button to retry with.
+  first-run modal; the badge is the only affordance, on note cards and the detail screen, which already has the Analyze button to retry with.
 - **Profile, Settings, History** implement the OutLoud design's three-screen exploration
   (Claude Design project `582866bc-4d0a-4f8f-a6bc-dbb7efb86455`). `ProfileScreen` replaced the old
   `AccountScreen` stub: a NOTES/TASKS DONE/CAPTURED stats grid and a "This week" bar-chart card
@@ -383,7 +390,9 @@ to the start tab, so tapping it restored the stack and landed on the last tab. C
   `ConfirmSheet` (destructive confirmation) and `PickerSheet` (single-choice list with a check
   mark) are both hand-rolled `Box`/`AnimatedVisibility` scrim+sheet overlays, not Material's
   `ModalBottomSheet` — nothing else in the app uses one, and the design's plain white sheet with no
-  system scrim animation is simpler to hand-roll consistently with `echoShadow`/`hairline`.
+  system scrim animation is simpler to hand-roll consistently with `echoShadow`/`hairline`. A sheet draws inside its
+  screen, under `EchoApp`'s tab bar, so every open `Sheet` counts itself in `LocalOpenSheets`
+  and the bar fades out while any is open — otherwise the bar covers the sheet's buttons.
 
 ## Design system
 

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -20,8 +21,9 @@ import dev.andrej.echo.R
 import dev.andrej.echo.ui.components.EchoIconButton
 import dev.andrej.echo.ui.components.EchoTopBar
 import dev.andrej.echo.ui.components.EmptyState
-import dev.andrej.echo.ui.notes.NotesGroupCard
-import dev.andrej.echo.ui.notes.NotesGroupHeader
+import dev.andrej.echo.ui.notes.NoteActionsSheets
+import dev.andrej.echo.ui.notes.NoteCard
+import dev.andrej.echo.ui.notes.NoteRow
 import dev.andrej.echo.ui.notes.NotesViewModel
 import dev.andrej.echo.ui.theme.EchoTheme
 
@@ -35,8 +37,10 @@ fun FolderScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by foldersViewModel.state.collectAsStateWithLifecycle()
-    val groups by remember(folderId) { notesViewModel.groupsIn(folderId) }
+    val notes by remember(folderId) { notesViewModel.notesIn(folderId) }
         .collectAsStateWithLifecycle(initialValue = emptyList())
+    val folders by notesViewModel.folders.collectAsStateWithLifecycle()
+    var acting by remember { mutableStateOf<NoteRow?>(null) }
     val row = state.folders.firstOrNull { it.folder.id == folderId }
     var editing by remember { mutableStateOf(false) }
 
@@ -63,7 +67,7 @@ fun FolderScreen(
                 },
             )
 
-            if (groups.isEmpty()) {
+            if (notes.isEmpty()) {
                 EmptyState(
                     title = "Nothing here yet",
                     body = "Open a note and use its folder button to move it here.",
@@ -77,17 +81,25 @@ fun FolderScreen(
                     contentPadding = PaddingValues(EchoTheme.spacing.gutterScreen),
                     verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
                 ) {
-                    groups.forEach { group ->
-                        item(key = "header-${group.label}") {
-                            NotesGroupHeader(label = group.label, count = group.items.size)
-                        }
-                        item(key = "group-${group.label}") {
-                            NotesGroupCard(items = group.items, onOpen = onOpen)
-                        }
+                    items(notes, key = { it.id }) { note ->
+                        NoteCard(
+                            row = note,
+                            onOpen = { onOpen(note.id) },
+                            onMore = { acting = note },
+                            showFolder = false,
+                        )
                     }
                 }
             }
         }
+
+        NoteActionsSheets(
+            note = acting,
+            folders = folders,
+            onMove = notesViewModel::moveToFolder,
+            onDelete = notesViewModel::delete,
+            onDismiss = { acting = null },
+        )
 
         FolderSheet(
             visible = editing && row != null,

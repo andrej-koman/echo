@@ -37,27 +37,39 @@ enum class PendingSeverity { Parked, Failed }
 
 data class PendingCopy(val text: String, val severity: PendingSeverity)
 
+/** How far a note has got — drawn as the card's stripe. */
+sealed interface NoteStage {
+    /** Queued, getting a model, parked on a precondition, or never analyzed. */
+    data object Waiting : NoteStage
+    data class Transcribing(val fraction: Float) : NoteStage
+    data object Analyzing : NoteStage
+    data object Failed : NoteStage
+    data object Done : NoteStage
+}
+
 data class NoteRow(
     val id: String,
     val title: String,
     val excerpt: String,
     val duration: String,
-    val time: String,
-    val taskCount: Int = 0,
+    val date: String,
+    val stage: NoteStage = NoteStage.Done,
+    val folder: Folder? = null,
     val pending: PendingCopy? = null,
-)
-
-data class NoteGroup(
-    val label: String,
-    val items: List<NoteRow>,
 )
 
 data class NotesUiState(
     val query: String = "",
-    val groups: List<NoteGroup> = emptyList(),
+    val notes: List<NoteRow> = emptyList(),
     val total: Int = 0,
-    val totalDuration: String = "",
     val loaded: Boolean = false,
+)
+
+/** Everything in flight, keyed by transcript id. */
+internal data class Work(
+    val statuses: Map<String, TranscriptionStatus> = emptyMap(),
+    val queued: Map<String, PendingAnalysis> = emptyMap(),
+    val analyzingId: String? = null,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -91,10 +103,13 @@ class NotesViewModel(
     val transcripts: StateFlow<List<Transcript>> = repository.transcripts
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val pending: StateFlow<Map<String, PendingCopy>> =
-        combine(queue.pending, transcription) { entries, statuses ->
-            pendingCopyByTranscript(entries) + statuses.mapValues { it.value.toPendingCopy() }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+    private val work: Flow<Work> = combine(transcription, queue.pending, worker.activeId) { statuses, entries, active ->
+        Work(statuses, entries.associateBy { it.transcriptId }, active)
+    }
+
+    val pending: StateFlow<Map<String, PendingCopy>> = work
+        .map { it.pendingCopies() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     /** Ids still being transcribed: their segments are rewritten per chunk, so not editable yet. */
     val transcribing: StateFlow<Set<String>> = transcription
@@ -111,15 +126,10 @@ class NotesViewModel(
     val folders: StateFlow<List<Folder>> = folders
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    /** A folder's notes, grouped by day like the Notes list. */
-    fun groupsIn(folderId: String): Flow<List<NoteGroup>> =
-        combine(repository.transcripts, pending, tasks) { transcripts, pendingByTranscript, allTasks ->
-            group(
-                transcripts.filter { it.folderId == folderId },
-                now(),
-                pendingByTranscript,
-                allTasks.groupingBy { it.sourceTranscriptId }.eachCount(),
-            )
+    /** A folder's notes, newest first like the Notes list. */
+    fun notesIn(folderId: String): Flow<List<NoteRow>> =
+        combine(repository.transcripts, work, this.folders) { transcripts, work, folders ->
+            rows(transcripts.filter { it.folderId == folderId }, now(), work, folders)
         }
 
     fun moveToFolder(transcriptId: String, folderId: String?) {
@@ -131,14 +141,12 @@ class NotesViewModel(
     }
 
     val state: StateFlow<NotesUiState> =
-        combine(repository.transcripts, query, searchHits, pending, tasks) { transcripts, text, hits, pendingByTranscript, allTasks ->
+        combine(repository.transcripts, query, searchHits, work, this.folders) { transcripts, text, hits, work, folders ->
             val matches = if (hits == null) transcripts else transcripts.filter { it.id in hits }
-            val taskCountByTranscript = allTasks.groupingBy { it.sourceTranscriptId }.eachCount()
             NotesUiState(
                 query = text,
-                groups = group(matches, now(), pendingByTranscript, taskCountByTranscript),
+                notes = rows(matches, now(), work, folders),
                 total = transcripts.size,
-                totalDuration = spokenTotal(transcripts.sumOf { it.durationMs }),
                 loaded = true,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), NotesUiState())
@@ -203,30 +211,56 @@ class NotesViewModel(
 }
 
 private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
-private val dayFormat = SimpleDateFormat("d MMM yyyy", Locale.getDefault())
+private val dayFormat = SimpleDateFormat("d MMM", Locale.getDefault())
+private val yearFormat = SimpleDateFormat("d MMM yyyy", Locale.getDefault())
 
-internal fun group(
+internal fun rows(
     transcripts: List<Transcript>,
     now: Long,
-    pending: Map<String, PendingCopy> = emptyMap(),
-    taskCounts: Map<String, Int> = emptyMap(),
-): List<NoteGroup> =
-    transcripts
+    work: Work = Work(),
+    folders: List<Folder> = emptyList(),
+): List<NoteRow> {
+    val pending = work.pendingCopies()
+    val byId = folders.associateBy { it.id }
+    return transcripts
         .sortedByDescending { it.createdAt }
-        .groupBy { dayLabel(it.createdAt, now) }
-        .map { (label, items) ->
-            NoteGroup(label, items.map { it.asRow(pending[it.id], taskCounts[it.id] ?: 0) })
+        .map { transcript ->
+            NoteRow(
+                id = transcript.id,
+                title = transcript.title ?: title(transcript.text),
+                excerpt = transcript.summary ?: transcript.text.trim(),
+                duration = clock(transcript.durationMs),
+                date = dateLabel(transcript.createdAt, now),
+                stage = stage(transcript, work),
+                folder = transcript.folderId?.let(byId::get),
+                pending = pending[transcript.id],
+            )
         }
+}
 
-internal fun Transcript.asRow(pending: PendingCopy?, taskCount: Int) = NoteRow(
-    id = id,
-    title = title ?: title(text),
-    excerpt = summary ?: text.trim(),
-    duration = clock(durationMs),
-    time = timeFormat.format(Date(createdAt)),
-    taskCount = taskCount,
-    pending = pending,
-)
+internal fun Work.pendingCopies(): Map<String, PendingCopy> =
+    pendingCopyByTranscript(queued.values.toList()) + statuses.mapValues { it.value.toPendingCopy() }
+
+/** Transcription wins over analysis: a note is analyzed only once its text is in. */
+internal fun stage(transcript: Transcript, work: Work): NoteStage {
+    when (val status = work.statuses[transcript.id]) {
+        TranscriptionStatus.Queued, is TranscriptionStatus.DownloadingModel -> return NoteStage.Waiting
+        is TranscriptionStatus.Transcribing -> return NoteStage.Transcribing(status.fraction)
+        is TranscriptionStatus.FindingSpeakers -> return NoteStage.Analyzing
+        TranscriptionStatus.Failed -> return NoteStage.Failed
+        null -> Unit
+    }
+    if (work.analyzingId == transcript.id) return NoteStage.Analyzing
+    val entry = work.queued[transcript.id]
+    if (entry != null) {
+        return when (entry.lastBlock?.toPendingCopy()?.severity) {
+            null -> if (entry.lastBlock == null) NoteStage.Analyzing else NoteStage.Done
+            PendingSeverity.Parked -> NoteStage.Waiting
+            PendingSeverity.Failed -> NoteStage.Failed
+        }
+    }
+    return if (transcript.analyzedAt != null) NoteStage.Done else NoteStage.Waiting
+}
 
 /** Only entries the drain has actually attempted carry a [PendingAnalysis.lastBlock]. */
 internal fun pendingCopyByTranscript(entries: List<PendingAnalysis>): Map<String, PendingCopy> =
@@ -289,14 +323,19 @@ internal fun spokenTotal(durationMs: Long): String {
     return if (minutes >= 60) "${minutes / 60}h ${minutes % 60}m" else "${minutes}m"
 }
 
-private fun dayLabel(createdAt: Long, now: Long): String {
-    val days = daysBetween(createdAt, now)
-    return when (days) {
+internal fun dateLabel(createdAt: Long, now: Long): String {
+    val date = Date(createdAt)
+    val day = when (daysBetween(createdAt, now)) {
         0 -> "Today"
         1 -> "Yesterday"
-        else -> dayFormat.format(Date(createdAt))
+        else -> if (sameYear(createdAt, now)) dayFormat.format(date) else yearFormat.format(date)
     }
+    return "$day, ${timeFormat.format(date)}"
 }
+
+private fun sameYear(a: Long, b: Long): Boolean =
+    Calendar.getInstance().apply { timeInMillis = a }.get(Calendar.YEAR) ==
+        Calendar.getInstance().apply { timeInMillis = b }.get(Calendar.YEAR)
 
 private fun daysBetween(then: Long, now: Long): Int {
     val start = Calendar.getInstance().apply { timeInMillis = then }.midnight()

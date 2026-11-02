@@ -2,7 +2,10 @@ package dev.andrej.echo
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -15,6 +18,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,6 +41,7 @@ import dev.andrej.echo.ui.capture.CaptureScreen
 import dev.andrej.echo.ui.components.RecordButton
 import dev.andrej.echo.ui.components.RecordButtonSize
 import dev.andrej.echo.ui.components.RecordButtonState
+import dev.andrej.echo.ui.components.LocalOpenSheets
 import dev.andrej.echo.ui.components.TabBar
 import dev.andrej.echo.ui.components.TabItem
 import dev.andrej.echo.ui.detail.NoteDetailScreen
@@ -78,7 +84,7 @@ private object Routes {
 }
 
 private val Tabs = listOf(
-    TabItem(Routes.NOTES, "Notes", R.drawable.ic_file_text),
+    TabItem(Routes.NOTES, "Notes", R.drawable.ic_home),
     TabItem(Routes.FOLDERS, "Folders", R.drawable.ic_folder),
     TabItem(Routes.CALENDAR, "Calendar", R.drawable.ic_calendar),
     TabItem(Routes.PROFILE, "Profile", R.drawable.ic_user),
@@ -150,133 +156,143 @@ private fun MainApp(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        NavHost(
-            navController = navController,
-            startDestination = Routes.NOTES,
-            modifier = Modifier.fillMaxSize(),
-            enterTransition = { EnterTransition.None },
-            exitTransition = { ExitTransition.None },
-            popEnterTransition = { EnterTransition.None },
-            popExitTransition = { ExitTransition.None },
-        ) {
-            composable(Routes.NOTES) {
-                NotesScreen(
-                    viewModel = notesViewModel,
-                    onOpen = { navController.navigate(Routes.detail(it)) },
-                    onImport = openImport,
-                )
-            }
+    val openSheets = remember { mutableIntStateOf(0) }
 
-            composable(Routes.FOLDERS) {
-                FoldersScreen(
-                    viewModel = foldersViewModel,
-                    onOpen = { navController.navigate(Routes.folder(it)) },
-                )
-            }
-
-            composable(Routes.FOLDER) { entry ->
-                FolderScreen(
-                    folderId = entry.arguments?.getString("id").orEmpty(),
-                    foldersViewModel = foldersViewModel,
-                    notesViewModel = notesViewModel,
-                    onOpen = { navController.navigate(Routes.detail(it)) },
-                    onBack = { navController.popBackStack() },
-                )
-            }
-
-            composable(Routes.CALENDAR) {
-                val historyViewModel: HistoryViewModel = viewModel(factory = viewModelFactory)
-                val historyState by historyViewModel.state.collectAsStateWithLifecycle()
-                HistoryScreen(
-                    state = historyState,
-                    onPrevMonth = historyViewModel::prevMonth,
-                    onNextMonth = historyViewModel::nextMonth,
-                    onPickDay = historyViewModel::pick,
-                    onOpen = { navController.navigate(Routes.detail(it)) },
-                )
-            }
-
-            composable(Routes.CAPTURE) {
-                val recordViewModel: RecordViewModel = viewModel(factory = viewModelFactory)
-                CaptureScreen(
-                    viewModel = recordViewModel,
-                    onDone = { navController.popBackStack() },
-                )
-            }
-
-            composable(Routes.PROFILE) {
-                val profileState by profileViewModel.state.collectAsStateWithLifecycle()
-                ProfileScreen(
-                    state = profileState,
-                    onOpenSettings = { navController.navigate(Routes.SETTINGS) },
-                    onOpenHistory = { navController.selectTab(Routes.CALENDAR) },
-                )
-            }
-
-            composable(Routes.SETTINGS) {
-                val settingsViewModel: SettingsViewModel = viewModel(factory = viewModelFactory)
-                val settingsState by settingsViewModel.state.collectAsStateWithLifecycle()
-                val aiState by settingsViewModel.aiCardState.collectAsStateWithLifecycle(
-                    initialValue = AiCardState.Checking,
-                )
-                SettingsScreen(
-                    state = settingsState,
-                    aiState = aiState,
-                    onBack = { navController.popBackStack() },
-                    onLanguageChange = settingsViewModel::setLanguage,
-                    onAutoAnalyzeChange = settingsViewModel::setAutoAnalyze,
-                    onDetectSpeakersChange = settingsViewModel::setDetectSpeakers,
-                    onWifiOnlyDownloadChange = settingsViewModel::setWifiOnlyDownload,
-                    onDeleteAllData = settingsViewModel::deleteAllData,
-                    onDownloadModel = settingsViewModel.onDownloadModel,
-                    onCancelDownload = settingsViewModel.onCancelDownload,
-                    onDeleteModel = settingsViewModel.onDeleteModel,
-                    onTestModelDownloadNotification = settingsViewModel.onTestModelDownloadNotification,
-                    onReplayOnboarding = settingsViewModel.onReplayOnboarding,
-                    onOpenDictionary = { navController.navigate(Routes.DICTIONARY) },
-                )
-            }
-
-            composable(Routes.DICTIONARY) {
-                val dictionaryViewModel: DictionaryViewModel = viewModel(factory = viewModelFactory)
-                val terms by dictionaryViewModel.terms.collectAsStateWithLifecycle()
-                DictionaryScreen(
-                    terms = terms,
-                    onSave = dictionaryViewModel::save,
-                    onDelete = dictionaryViewModel::delete,
-                    onBack = { navController.popBackStack() },
-                )
-            }
-
-            composable(Routes.DETAIL) { entry ->
-                val notesViewModel: NotesViewModel = viewModel(factory = viewModelFactory)
-                NoteDetailScreen(
-                    viewModel = notesViewModel,
-                    noteId = entry.arguments?.getString("id").orEmpty(),
-                    onDeleted = { navController.popBackStack() },
-                    onBack = { navController.popBackStack() },
-                    onEditTask = { navController.navigate(Routes.editTask(it)) },
-                )
-            }
-
-            composable(Routes.EDIT_TASK) { entry ->
-                val tasksViewModel: TasksViewModel = viewModel(factory = viewModelFactory)
-                EditTaskScreen(
-                    viewModel = tasksViewModel,
-                    taskId = entry.arguments?.getString("id").orEmpty(),
-                    onBack = { navController.popBackStack() },
-                    onOpenSource = { navController.navigate(Routes.detail(it)) },
-                )
-            }
-        }
-
-        if (onTabs) {
-            BottomBar(
-                selected = route.orEmpty(),
+    CompositionLocalProvider(LocalOpenSheets provides openSheets) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            NavHost(
                 navController = navController,
-                modifier = Modifier.align(Alignment.BottomCenter),
-            )
+                startDestination = Routes.NOTES,
+                modifier = Modifier.fillMaxSize(),
+                enterTransition = { EnterTransition.None },
+                exitTransition = { ExitTransition.None },
+                popEnterTransition = { EnterTransition.None },
+                popExitTransition = { ExitTransition.None },
+            ) {
+                composable(Routes.NOTES) {
+                    NotesScreen(
+                        viewModel = notesViewModel,
+                        onOpen = { navController.navigate(Routes.detail(it)) },
+                        onImport = openImport,
+                    )
+                }
+
+                composable(Routes.FOLDERS) {
+                    FoldersScreen(
+                        viewModel = foldersViewModel,
+                        onOpen = { navController.navigate(Routes.folder(it)) },
+                    )
+                }
+
+                composable(Routes.FOLDER) { entry ->
+                    FolderScreen(
+                        folderId = entry.arguments?.getString("id").orEmpty(),
+                        foldersViewModel = foldersViewModel,
+                        notesViewModel = notesViewModel,
+                        onOpen = { navController.navigate(Routes.detail(it)) },
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+
+                composable(Routes.CALENDAR) {
+                    val historyViewModel: HistoryViewModel = viewModel(factory = viewModelFactory)
+                    val historyState by historyViewModel.state.collectAsStateWithLifecycle()
+                    HistoryScreen(
+                        state = historyState,
+                        onPrevMonth = historyViewModel::prevMonth,
+                        onNextMonth = historyViewModel::nextMonth,
+                        onPickDay = historyViewModel::pick,
+                        onOpen = { navController.navigate(Routes.detail(it)) },
+                    )
+                }
+
+                composable(Routes.CAPTURE) {
+                    val recordViewModel: RecordViewModel = viewModel(factory = viewModelFactory)
+                    CaptureScreen(
+                        viewModel = recordViewModel,
+                        onDone = { navController.popBackStack() },
+                    )
+                }
+
+                composable(Routes.PROFILE) {
+                    val profileState by profileViewModel.state.collectAsStateWithLifecycle()
+                    ProfileScreen(
+                        state = profileState,
+                        onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                        onOpenHistory = { navController.selectTab(Routes.CALENDAR) },
+                    )
+                }
+
+                composable(Routes.SETTINGS) {
+                    val settingsViewModel: SettingsViewModel = viewModel(factory = viewModelFactory)
+                    val settingsState by settingsViewModel.state.collectAsStateWithLifecycle()
+                    val aiState by settingsViewModel.aiCardState.collectAsStateWithLifecycle(
+                        initialValue = AiCardState.Checking,
+                    )
+                    SettingsScreen(
+                        state = settingsState,
+                        aiState = aiState,
+                        onBack = { navController.popBackStack() },
+                        onLanguageChange = settingsViewModel::setLanguage,
+                        onAutoAnalyzeChange = settingsViewModel::setAutoAnalyze,
+                        onDetectSpeakersChange = settingsViewModel::setDetectSpeakers,
+                        onWifiOnlyDownloadChange = settingsViewModel::setWifiOnlyDownload,
+                        onDeleteAllData = settingsViewModel::deleteAllData,
+                        onDownloadModel = settingsViewModel.onDownloadModel,
+                        onCancelDownload = settingsViewModel.onCancelDownload,
+                        onDeleteModel = settingsViewModel.onDeleteModel,
+                        onTestModelDownloadNotification = settingsViewModel.onTestModelDownloadNotification,
+                        onReplayOnboarding = settingsViewModel.onReplayOnboarding,
+                        onOpenDictionary = { navController.navigate(Routes.DICTIONARY) },
+                    )
+                }
+
+                composable(Routes.DICTIONARY) {
+                    val dictionaryViewModel: DictionaryViewModel = viewModel(factory = viewModelFactory)
+                    val terms by dictionaryViewModel.terms.collectAsStateWithLifecycle()
+                    DictionaryScreen(
+                        terms = terms,
+                        onSave = dictionaryViewModel::save,
+                        onDelete = dictionaryViewModel::delete,
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+
+                composable(Routes.DETAIL) { entry ->
+                    val notesViewModel: NotesViewModel = viewModel(factory = viewModelFactory)
+                    NoteDetailScreen(
+                        viewModel = notesViewModel,
+                        noteId = entry.arguments?.getString("id").orEmpty(),
+                        onDeleted = { navController.popBackStack() },
+                        onBack = { navController.popBackStack() },
+                        onEditTask = { navController.navigate(Routes.editTask(it)) },
+                    )
+                }
+
+                composable(Routes.EDIT_TASK) { entry ->
+                    val tasksViewModel: TasksViewModel = viewModel(factory = viewModelFactory)
+                    EditTaskScreen(
+                        viewModel = tasksViewModel,
+                        taskId = entry.arguments?.getString("id").orEmpty(),
+                        onBack = { navController.popBackStack() },
+                        onOpenSource = { navController.navigate(Routes.detail(it)) },
+                    )
+                }
+            }
+
+            if (onTabs) {
+                AnimatedVisibility(
+                    visible = openSheets.intValue == 0,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                ) {
+                    BottomBar(
+                        selected = route.orEmpty(),
+                        navController = navController,
+                    )
+                }
+            }
         }
     }
 }

@@ -24,6 +24,9 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -113,6 +116,12 @@ fun <T> PickerSheet(
     }
 }
 
+/**
+ * How many sheets are open. Sheets draw inside their screen and the tab bar sits above every
+ * screen, so the bar hides while this is above zero rather than covering the sheet's buttons.
+ */
+val LocalOpenSheets = staticCompositionLocalOf { mutableIntStateOf(0) }
+
 @Composable
 internal fun Sheet(
     visible: Boolean,
@@ -120,6 +129,13 @@ internal fun Sheet(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val openSheets = LocalOpenSheets.current
+    if (visible) {
+        DisposableEffect(Unit) {
+            openSheets.intValue++
+            onDispose { openSheets.intValue-- }
+        }
+    }
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(),

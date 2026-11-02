@@ -12,6 +12,8 @@ import dev.andrej.echo.data.testDatabase
 import dev.andrej.echo.data.NewTodo
 import dev.andrej.echo.data.PendingAnalysis
 import dev.andrej.echo.data.Transcript
+import dev.andrej.echo.data.Folder
+import dev.andrej.echo.transcribe.TranscriptionStatus
 import java.time.ZoneId
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
@@ -100,11 +102,11 @@ class NotesViewModelTest {
     }
 
     @Test
-    fun `groups are labelled relative to today and ordered newest first`() {
+    fun `rows are newest first with a relative date`() {
         val now = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 12) }.timeInMillis
         val day = TimeUnit.DAYS.toMillis(1)
 
-        val groups = group(
+        val rows = rows(
             listOf(
                 transcript("older", now - 3 * day),
                 transcript("today", now),
@@ -113,28 +115,65 @@ class NotesViewModelTest {
             now,
         )
 
-        assertEquals(listOf("Today", "Yesterday"), groups.take(2).map { it.label })
-        assertEquals(3, groups.size)
-        assertEquals("today", groups[0].items.single().id)
+        assertEquals(listOf("today", "yesterday", "older"), rows.map { it.id })
+        assertTrue(rows[0].date.startsWith("Today, "))
+        assertTrue(rows[1].date.startsWith("Yesterday, "))
     }
 
     @Test
-    fun `a row picks up its pending copy from the map`() {
-        val now = 1_000L
-        val pending = mapOf("a" to PendingCopy("Analysis failed — tap retry", PendingSeverity.Failed))
+    fun `a row carries its folder`() {
+        val folder = Folder("f", "Work", 2, "Work")
 
-        val groups = group(listOf(transcript("a", now)), now, pending)
+        val row = rows(listOf(transcript("a", 1_000L).copy(folderId = "f")), 1_000L, folders = listOf(folder)).single()
 
-        assertEquals(pending["a"], groups.single().items.single().pending)
+        assertEquals(folder, row.folder)
     }
 
     @Test
-    fun `a row with no queue entry has no pending copy`() {
-        val now = 1_000L
+    fun `a row picks up its pending copy`() {
+        val work = Work(queued = mapOf("a" to PendingAnalysis("a", 0, lastBlock = AnalysisBlock.EmptyResult)))
 
-        val groups = group(listOf(transcript("a", now)), now)
+        val row = rows(listOf(transcript("a", 1_000L)), 1_000L, work).single()
 
-        assertNull(groups.single().items.single().pending)
+        assertEquals(PendingSeverity.Failed, row.pending?.severity)
+    }
+
+    @Test
+    fun `a row with nothing in flight has no pending copy`() {
+        assertNull(rows(listOf(transcript("a", 1_000L)), 1_000L).single().pending)
+    }
+
+    @Test
+    fun `transcription progress drives the stage`() {
+        val t = transcript("a", 0)
+
+        assertEquals(NoteStage.Waiting, stage(t, Work(statuses = mapOf("a" to TranscriptionStatus.Queued))))
+        assertEquals(
+            NoteStage.Transcribing(0.4f),
+            stage(t, Work(statuses = mapOf("a" to TranscriptionStatus.Transcribing(0.4f)))),
+        )
+        assertEquals(
+            NoteStage.Analyzing,
+            stage(t, Work(statuses = mapOf("a" to TranscriptionStatus.FindingSpeakers(0.5f)))),
+        )
+        assertEquals(NoteStage.Failed, stage(t, Work(statuses = mapOf("a" to TranscriptionStatus.Failed))))
+    }
+
+    @Test
+    fun `analysis queue drives the stage once transcribed`() {
+        val t = transcript("a", 0)
+        fun queued(block: AnalysisBlock?) = Work(queued = mapOf("a" to PendingAnalysis("a", 0, lastBlock = block)))
+
+        assertEquals(NoteStage.Analyzing, stage(t, Work(analyzingId = "a")))
+        assertEquals(NoteStage.Analyzing, stage(t, queued(null)))
+        assertEquals(NoteStage.Waiting, stage(t, queued(AnalysisBlock.WaitingForModel(1))))
+        assertEquals(NoteStage.Failed, stage(t, queued(AnalysisBlock.GenerationFailed("x"))))
+    }
+
+    @Test
+    fun `a note is done only once analyzed`() {
+        assertEquals(NoteStage.Waiting, stage(transcript("a", 0), Work()))
+        assertEquals(NoteStage.Done, stage(transcript("a", 0).copy(analyzedAt = 1), Work()))
     }
 
     @Test

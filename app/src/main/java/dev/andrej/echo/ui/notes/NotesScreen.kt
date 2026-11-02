@@ -144,7 +144,7 @@ fun NotesScreen(
 
 /** One shared card per day, rows separated by a hairline — same rhythm as Tasks' grouped list. */
 @Composable
-private fun NotesGroupCard(items: List<NoteRow>, onOpen: (String) -> Unit) {
+internal fun NotesGroupCard(items: List<NoteRow>, onOpen: (String) -> Unit) {
     EchoCard(modifier = Modifier.fillMaxWidth(), padding = CardPadding.None) {
         Column(modifier = Modifier.padding(vertical = EchoTheme.spacing.s2, horizontal = EchoTheme.spacing.s4)) {
             items.forEachIndexed { index, row ->
@@ -158,7 +158,7 @@ private fun NotesGroupCard(items: List<NoteRow>, onOpen: (String) -> Unit) {
 }
 
 @Composable
-private fun NotesGroupHeader(label: String, count: Int, modifier: Modifier = Modifier) {
+internal fun NotesGroupHeader(label: String, count: Int, modifier: Modifier = Modifier) {
     Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
         Text(
             text = label,

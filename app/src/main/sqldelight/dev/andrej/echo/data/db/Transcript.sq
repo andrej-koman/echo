@@ -8,7 +8,8 @@ CREATE TABLE transcript (
     summary TEXT,
     analyzedAt INTEGER,
     -- Polishing's output. The segments keep the original, so restoring is clearing this.
-    polishedText TEXT
+    polishedText TEXT,
+    folderId TEXT
 );
 
 selectAll:
@@ -41,3 +42,9 @@ SELECT transcriptId FROM segment_fts WHERE segment_fts MATCH :match;
 
 setText:
 UPDATE transcript SET text = ? WHERE id = ?;
+
+setFolder:
+UPDATE transcript SET folderId = ? WHERE id = ?;
+
+unfile:
+UPDATE transcript SET folderId = NULL WHERE folderId = ?;

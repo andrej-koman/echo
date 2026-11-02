@@ -27,6 +27,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import dev.andrej.echo.data.Segment
 import dev.andrej.echo.ui.components.EchoSearchField
 import dev.andrej.echo.ui.components.IconButtonSize
+import dev.andrej.echo.ui.components.PickerSheet
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -106,6 +107,8 @@ fun NoteDetailScreen(
         .collectAsStateWithLifecycle(initialValue = emptyList())
     val selected = remember { mutableStateListOf<Int>() }
     var speakerTarget by remember { mutableStateOf<SpeakerTarget?>(null) }
+    val folders by viewModel.folders.collectAsStateWithLifecycle()
+    var movingFolder by remember { mutableStateOf(false) }
 
     Column(modifier = modifier.fillMaxSize()) {
         val entryPending = pending[noteId]
@@ -114,7 +117,12 @@ fun NoteDetailScreen(
         EchoTopBar(
             title = transcript?.let { it.title ?: title(it.text) } ?: "Note",
             subtitle = transcript?.let {
-                "${detailDate.format(Date(it.createdAt))} · ${clock(it.durationMs)} · ${wordCount(it.text)} words"
+                listOfNotNull(
+                    folders.firstOrNull { f -> f.id == it.folderId }?.name,
+                    detailDate.format(Date(it.createdAt)),
+                    clock(it.durationMs),
+                    "${wordCount(it.text)} words",
+                ).joinToString(" · ")
             },
             leading = {
                 EchoIconButton(
@@ -125,6 +133,11 @@ fun NoteDetailScreen(
             },
             trailing = {
                 Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    EchoIconButton(
+                        iconRes = R.drawable.ic_folder,
+                        contentDescription = "Move to folder",
+                        onClick = { movingFolder = true },
+                    )
                     EchoIconButton(
                         iconRes = R.drawable.ic_trash,
                         contentDescription = "Delete",
@@ -322,6 +335,18 @@ fun NoteDetailScreen(
 
         player?.let { PlayerBar(it) }
     }
+
+    PickerSheet(
+        visible = movingFolder,
+        title = "Move to folder",
+        options = listOf("No folder" to null) + folders.map { it.name to it.id },
+        selected = transcript?.folderId,
+        onPick = {
+            viewModel.moveToFolder(noteId, it)
+            movingFolder = false
+        },
+        onDismiss = { movingFolder = false },
+    )
 
     val target = speakerTarget
     SpeakerSheet(

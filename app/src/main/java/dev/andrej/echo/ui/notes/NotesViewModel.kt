@@ -7,6 +7,7 @@ import dev.andrej.echo.ai.AnalysisBlock
 import dev.andrej.echo.ai.PendingAnalysisWorker
 import dev.andrej.echo.data.AnalysisQueueRepository
 import dev.andrej.echo.data.DerivedRepository
+import dev.andrej.echo.data.Folder
 import dev.andrej.echo.data.PendingAnalysis
 import dev.andrej.echo.data.Segment
 import dev.andrej.echo.data.Speaker
@@ -73,6 +74,7 @@ class NotesViewModel(
     polishFailed: Flow<Set<String>> = flowOf(emptySet()),
     private val onPolish: (String) -> Unit = {},
     private val audioFile: (String) -> File? = { null },
+    folders: Flow<List<Folder>> = flowOf(emptyList()),
     private val now: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
 
@@ -105,6 +107,24 @@ class NotesViewModel(
 
     val tasks: StateFlow<List<TodoItem>> = derived.items
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val folders: StateFlow<List<Folder>> = folders
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** A folder's notes, grouped by day like the Notes list. */
+    fun groupsIn(folderId: String): Flow<List<NoteGroup>> =
+        combine(repository.transcripts, pending, tasks) { transcripts, pendingByTranscript, allTasks ->
+            group(
+                transcripts.filter { it.folderId == folderId },
+                now(),
+                pendingByTranscript,
+                allTasks.groupingBy { it.sourceTranscriptId }.eachCount(),
+            )
+        }
+
+    fun moveToFolder(transcriptId: String, folderId: String?) {
+        viewModelScope.launch { repository.moveToFolder(transcriptId, folderId) }
+    }
 
     private val searchHits: Flow<Set<String>?> = query.flatMapLatest { text ->
         if (text.isBlank()) flowOf(null) else repository.search(text)

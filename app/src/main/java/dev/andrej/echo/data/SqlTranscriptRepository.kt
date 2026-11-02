@@ -124,6 +124,11 @@ class SqlTranscriptRepository(
         Unit
     }
 
+    override suspend fun moveToFolder(id: String, folderId: String?) = withContext(ioDispatcher) {
+        queries.setFolder(folderId, id)
+        Unit
+    }
+
     override suspend fun delete(id: String) = withContext(ioDispatcher) {
         database.transaction {
             segmentQueries.deleteFor(id)

@@ -1,0 +1,9 @@
+ALTER TABLE transcript ADD COLUMN folderId TEXT;
+
+CREATE TABLE folder (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    color INTEGER NOT NULL,
+    icon TEXT NOT NULL,
+    createdAt INTEGER NOT NULL
+);

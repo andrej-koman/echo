@@ -20,9 +20,11 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
 
 - **Reminders, the daily brief and Gemini Nano are gone** (Phase 0, 2026-10-30). Not in the spec,
   and `USE_EXACT_ALARM` is a Play policy risk once reminders aren't the app's core function. Tasks
-  keep due dates and Home's snooze pill, but nothing rings. Nano: the spec forbids depending on a
+  keep due dates, but nothing rings. Nano: the spec forbids depending on a
   vendor AI platform, and the S24 can't run it anyway.
-- **The Home task dashboard stays**, although the spec's app is library-first.
+- **Home and the Tasks tab are gone** (Phase 8, 2026-11-02, Andrej's call): the app is
+  library-first. Notes is the start tab; tasks live only inside their note's screen
+  (`EditTaskScreen` still edits one). Snooze went with Home.
 - **Storage → SQLDelight** (Phase 1, done 2026-10-30; see Storage). Room is blocked by KSP;
   SQLDelight needs no compiler plugin. FTS4, not FTS5 — FTS5 isn't guaranteed in platform SQLite
   on older Android.
@@ -133,14 +135,17 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
 ## Storage
 
 - One SQLite database, `echo.db`, through SQLDelight 2.4.1 (`app/src/main/sqldelight/`).
-  Tables: `transcript`, `segment`, `segment_fts`, `speaker`, `todo`, `analysis_queue`,
+  Tables: `transcript`, `segment`, `segment_fts`, `speaker`, `folder`, `todo`, `analysis_queue`,
   `dictionary_term`. The repository interfaces kept
   their shape, so ViewModels never see SQL; each `Sql*Repository` exposes `Query.asFlow()`
   flows, which re-emit on any write to their table.
-- Tables are added in the phase that uses them (folders in 8), each with a
+- Tables are added in the phase that uses them, each with a
   numbered `.sqm` migration beside the `.sq` files. `1.sqm` (Phase 5) added
   `transcript.polishedText` and `todo.sourceOffsetMs`; `2.sqm` (Phase 7) added `segment_fts` and
-  `dictionary_term`; `3.sqm` (Phase 6) added `speaker` and `segment.speaker`; schema is version 4.
+  `dictionary_term`; `3.sqm` (Phase 6) added `speaker` and `segment.speaker`; `4.sqm` (Phase 8) added `folder` and
+  `transcript.folderId`; schema is version 5. Deleting a folder un-files its notes in the same
+  transaction. A folder's `color` indexes `EchoColors.palette` (shared with speakers), its `icon`
+  is a `FolderIcon` name.
 - **Search** (`TranscriptRepository.search`, Notes' search field): `segment_fts` (FTS4,
   `tokenize=unicode61`, so `č` matches `c` and case folds) one row per segment, plus `LIKE` on
   title and summary. The repository writes `segment_fts` in the same transactions as `segment` —
@@ -186,22 +191,24 @@ ai/           LlmRunner interface + LiteRtLlmRunner (downloaded Qwen3), LlmRunne
               ModelStore/HttpModelDownloader for the weights, AnalysisPrompt (summary, merge
               and tasks prompts + parsers), TextChunks, PolishPrompt + TranscriptPolisher,
               TranscriptAnalyzer, AnalysisOutcome/AnalysisBlock, PendingAnalysisWorker
-data/         Transcript + Segment, TranscriptRepository, TodoItem + DerivedRepository,
+data/         Transcript + Segment, TranscriptRepository, TodoItem + DerivedRepository, FolderRepository,
               PendingAnalysis + AnalysisQueueRepository, each Sql*Repository over one
               EchoDatabase (Database.kt), SettingsStore
 sqldelight/   the schema, one .sq file per table (generated code in dev.andrej.echo.data.db)
 ui/theme/     OutLoud design tokens (Color, Type, Shape, Spacing, Elevation, Motion, Theme)
 ui/components/ the ported design system kit
-ui/home/      HomeScreen + HomeViewModel — hero task, then/coming-up strip, latest note
-ui/tasks/     TasksScreen + TasksViewModel — grouped by source transcript, done checkbox
+ui/folders/   FoldersScreen (the Folders tab) + FoldersViewModel (FolderIcon), FolderScreen (one
+              folder's notes), FolderSheet (create/edit/delete)
+ui/tasks/     TaskRows (TaskGroupCard/TaskRow/TaskCheckbox for the note screen), EditTaskScreen +
+              TasksViewModel
 ui/capture/   CaptureScreen — recording, paused
 ui/record/    RecordViewModel + RecordUiState over RecordingController (still named for its old screen)
 ui/onboarding/ OnboardingScreen + OnboardingSteps (the 5 first-run screens), OnboardingViewModel
 ui/profile/   ProfileScreen (the Profile tab) + ProfileViewModel, SettingsScreen +
-              SettingsViewModel, HistoryScreen + HistoryViewModel, DictionaryScreen +
+              SettingsViewModel, HistoryScreen + HistoryViewModel (the Calendar tab), DictionaryScreen +
               DictionaryViewModel
 ui/notes/     NotesScreen + NotesViewModel (the Notes tab — one shared card per day, hairline
-              dividers, same rhythm as Tasks; search; NoteRow, PendingBadge, PendingCopy)
+              dividers; search; NoteRow, PendingBadge, PendingCopy)
 ui/detail/    NoteDetailScreen (NOTE + tasks-from-this-note + segment editor, bar-icon actions),
               NotePlayer (ExoPlayer), TranscriptEdits (find/replace/edit/speaker logic),
               SpeakerSheet
@@ -210,19 +217,18 @@ notify/       RecordingNotifier (+ RecordingActionReceiver, BootReceiver), Model
 AppContainer manual DI, no Hilt
 ```
 
-Four tabs: Home / Tasks — record button — Notes / Profile, Home the start destination. There is no
-separate Transcripts tab — Notes is the one browsable list (former Transcripts content merged into it,
-`ui/notes/NotesScreen.kt`), and raw transcript text lives only in each note's detail screen
-("WHAT WAS SAID" in `NoteDetailScreen`), not as a tab of its own or anywhere in Profile.
-No header account icon
-button anywhere — Profile is reached only via its tab (Tasks' empty-state "Turn on AI" button also
-tab-switches there, via `onOpenProfile`). The record
+Four tabs: Notes / Folders — record button — Calendar / Profile, Notes the start destination.
+Notes is the one list of everything; Folders lists folders, each opening its notes (no folder
+filter on Notes); Calendar is `HistoryScreen` (month heat grid, the picked day's notes open on
+tap), also reached from Profile's week card. A note is moved from its own screen (folder icon in
+the bar, `PickerSheet`). Raw transcript text lives only in each note's screen. No header account
+icon anywhere — Profile is reached only via its tab. The record
 button sits in the bar's middle slot (`TabBar(centerGap = true)` leaves the gap, `EchoApp` overlays the
 button on a bar-coloured cradle so it pokes above the hairline). The tab bar is icon-only — no labels, no
 selection crossfade — and the NavHost runs with every transition set to `None`: the design's
-screen changes read as jank on device, so switching is a hard cut. Tab switches go through `NavHostController.selectTab`: Home pops back to Home, other tabs
-`popUpTo(HOME)` + `launchSingleTop`. Never `saveState`/`restoreState` — the saved tab stack keys to
-Home, so tapping Home restored it and landed on the last tab. Cost: tab scroll position is not kept.
+screen changes read as jank on device, so switching is a hard cut. Tab switches go through `NavHostController.selectTab`: Notes pops back to Notes, other tabs
+`popUpTo(NOTES)` + `launchSingleTop`. Never `saveState`/`restoreState` — the saved tab stack keys
+to the start tab, so tapping it restored the stack and landed on the last tab. Cost: tab scroll position is not kept.
 `EchoApp` gates on `AppContainer.onboardingDone` outside the NavHost (see Onboarding below).
 
 ## Notes
@@ -257,7 +263,8 @@ Home, so tapping Home restored it and landed on the last tab. Cost: tab scroll p
   (`"due":"..."]]}` instead of `"..."}]}`), applied only as a fallback when the brace count is
   short by exactly one — a genuinely different malformed response still returns null rather
   than being guessed at.
-  `TasksScreen`/`TasksViewModel.groupByDue` groups undone items into three buckets only: **Today**
+  `TasksViewModel.groupByDue` (from the removed Tasks tab; `EditTaskScreen` reads tasks through
+  it) groups undone items into three buckets only: **Today**
   (folds in every overdue item too, sorted ahead of the rest of today's), **Tomorrow**, and one
   flat **Upcoming** group for everything later (`DueGroup.showDate = true` there, so `TaskRow`
   formats its "when" label with `formatDue` instead of `formatTime`). Done items never appear in
@@ -267,48 +274,20 @@ Home, so tapping Home restored it and landed on the last tab. Cost: tab scroll p
   screen. `isOverdue` treats timed and date-only items differently: a timed item is overdue the
   moment its clock time passes, even earlier today, but a date-only item due today isn't overdue
   until tomorrow. Within a group, timed items come first (soonest first), then date-only items
-  (oldest-created first). Tapping a row opens `EditTaskScreen` (`onEditTask`) instead of jumping
-  straight to the source transcript — that full-screen editor lets you retitle a task, change its
+  (oldest-created first). `EditTaskScreen` (long-press a task in a note) lets you retitle a task, change its
   day/time via native `DatePickerDialog`/`TimePickerDialog`, delete it
   (`DerivedRepository.update`/`delete`, alongside `replaceFor`/`setDone`/`deleteFor`), and reach the source transcript only
   from its own "Heard in" row. `TasksViewModel` takes a `TranscriptRepository` for that lookup, on
   top of `DerivedRepository`. Due-time formatting (`formatDue`, `formatTime`, `Long.midnight()`)
-  lives in `ui/DueLabels.kt`, shared by Home and Tasks rather than copied a third time.
-  `TasksUiState.aiOff` is keyed off `items.isEmpty()` (before the search filter, so searching
-  never flips it).
-  Search is a `query` `MutableStateFlow` folded into each of Home/Tasks/Notes' `combine` before
-  grouping (`filterByQuery` for Tasks). All three tabs share one `EchoTopBar` overload
+  lives in `ui/DueLabels.kt`.
+  Notes' search is a `query` `MutableStateFlow` folded into its `combine` before grouping. It uses
+  the `EchoTopBar` overload
   (`title`/`query`/`onQueryChange`/`searchPlaceholder`) that toggles a trailing search icon into an
   inline `EchoSearchField` in place of the title, rather than each screen keeping its own
   always-visible field.
 - `derivedId` takes no `kind` — one entity, one id — but keeps the null-byte separator between
   transcript id and text: a plain concatenation would let `"t1"` + `"x"` collide with
   `"t"` + `"1x"`.
-- **Home ("1b reworked")** puts one task in a hero slot rather than a list. `HomeViewModel.buildState`
-  reuses `ui.tasks.groupByDue`/`isOverdue` (both `internal`, not `private`, for this reuse): the hero
-  is the first item of the "Today" group (overdue items sort first, so an overdue task always wins
-  the slot over a same-day timed one; a timed item wins over an untimed one). Its action pill is
-  context-dependent: a snooze pill (bg `surfaceAccentSoft`) when overdue — `HomeViewModel.snooze`
-  pushes `dueAt` forward by `SettingsStore.snoozeMinutes` (`snoozeTime`) via
-  `DerivedRepository.update`, nothing fancier — or `Add a time` (solid `actionPrimaryBg`) when the
-  hero has no time set, navigating to `EditTaskScreen` like every other "no time set" affordance.
-  When the Today group is empty, the hero slot becomes a mascot "Today is clear" card instead
-  (`HeroState.Clear`) and the strip below relabels itself "Coming up" (next `Tomorrow`+`Upcoming`
-  items, dated rather than timed) instead of "Then". The "Then"/"Coming up" strip below the hero
-  reuses `ui.tasks.TaskRow`/`TaskCheckbox` directly (both loosened to `internal`, `TaskCheckbox` given
-  a `size` param for the hero's larger 28dp circle) — same checkbox, same icon/colour rules, so ticking
-  a task behaves identically whether it's tapped from Home or Tasks. The strip caps at two rows,
-  timed items prioritized; any additional untimed items collapse into a single "+N more today with no
-  time set" row rather than being shown individually — `HomeUiState.thenMoreUntimed`/`thenTotalCount`
-  reconcile against the "See all N" link. A "N notes still need analyzing" pill (only counting
-  `PendingSeverity.Parked`, not `Failed`, entries — those already say "failed" in the badge) sits above
-  the hero when the queue has any. The "Latest note" card at the bottom reuses
-  `Transcript.asRow` from `ui.notes.NotesViewModel` (loosened to `internal`) but replaces its
-  absolute `HH:mm` with a relative stamp ("12 MIN AGO", "YESTERDAY, 18:04") computed in
-  `HomeViewModel` — that reformatting only makes sense for the single most-recent note, not the
-  Notes list, so it stays local rather than changing `NoteRow` itself. Home dropped its own search
-  field with this rework (nothing left on the screen is a list to filter); the header's search icon
-  and the "Coming up"/"See all"/"All notes" links all just switch tabs.
 - Deletes are hard deletes, no tombstones. `TodoItem.updatedAt` stays: the Completed section
   sorts by it.
 - Derived rows are keyed by `UUID.nameUUIDFromBytes(transcriptId + kind + normalized text)`, not
@@ -333,9 +312,9 @@ Home, so tapping Home restored it and landed on the last tab. Cost: tab scroll p
   `PendingCopy.severity` is `Parked` (nothing to retry yet — `WaitingForModel`/`NoBackend` are
   preconditions), otherwise `Soft` (bronze) and calls `analyze()`. One in flight at a time
   (`analyzingId`, sourced from `PendingAnalysisWorker.activeId`). Body: NOTE (the summary) then a
-  "TASKS FROM THIS NOTE" section reusing `TaskGroupCard` from `ui/tasks/TasksScreen.kt` — made
+  "TASKS FROM THIS NOTE" section reusing `TaskGroupCard` from `ui/tasks/TaskRows.kt` — made
   `internal` (was `private`) so the detail screen can render the same rows, checkbox and
-  bronze/clay time labels as the Tasks tab, tapping one seeking the player (see Editor above)
+  bronze/clay time labels everywhere, tapping one seeking the player (see Editor above)
   (`sourceTitleFor = { null }` since the source is already the screen you're on). Below that,
   "WHAT WAS SAID": the segments (see Editor above), with Edit / Replace / Copy / Polish
   ("Restore original" once polished; polished text then replaces the segments in a card,
@@ -367,21 +346,20 @@ Home, so tapping Home restored it and landed on the last tab. Cost: tab scroll p
   drop that the automatic drain applies — an explicit tap always gets a fresh run. Analysis does
   not use WorkManager yet; transcription jobs will (see Rebuild above). **No timed backoff**: drains are event-triggered,
   not a polling loop, so there is nothing to back off *from*; the attempt cap alone prevents
-  churn. `NotesViewModel.pending`/`HomeViewModel` and `ui.notes.group()` turn
+  churn. `NotesViewModel.pending` and `ui.notes.group()` turn
   each queue entry's `lastBlock` into a `PendingCopy` (`ui/notes/NotesViewModel.kt`)
   — a plain `{text, severity}` pair, no Compose types, so it stays testable without a device. An
   entry only gets copy once the drain has actually attempted it (`lastBlock != null`); a
   freshly-enqueued row shows nothing for the moment before that. `PendingBadge` (in
-  `ui/notes/NotesScreen.kt`, reused by Home and the detail screen) renders it as an
+  `ui/notes/NotesScreen.kt`, reused by the detail screen) renders it as an
   `EchoBadge`: `Parked` (waiting on a model or backend) in `BadgeTone.Neutral`, `Failed`
   (`GenerationFailed`/`EmptyResult`, exhausted or not — the badge doesn't distinguish) in
   `BadgeTone.Warning`. `EmptyTranscript` never renders — it's never enqueued. No dedicated
-  first-run modal; the badge is the only affordance, on transcript rows (Home and Notes),
-  recent-note cards, and the detail screen, which already has the Analyze button to retry with.
+  first-run modal; the badge is the only affordance, on note rows and the detail screen, which already has the Analyze button to retry with.
 - **Profile, Settings, History** implement the OutLoud design's three-screen exploration
   (Claude Design project `582866bc-4d0a-4f8f-a6bc-dbb7efb86455`). `ProfileScreen` replaced the old
   `AccountScreen` stub: a NOTES/TASKS DONE/CAPTURED stats grid and a "This week" bar-chart card
-  (tap opens History) with a streak — no identity card or account rail since the offline pivot.
+  (tap switches to the Calendar tab) with a streak — no identity card or account rail since the offline pivot.
   `ProfileViewModel.buildState` computes the
   week bars and streak by walking backward from today over `Transcript.createdAt` grouped by
   calendar day (zone-aware) — the first empty day stops the streak. `AiViewModel` is gone: its
@@ -390,8 +368,7 @@ Home, so tapping Home restored it and landed on the last tab. Cost: tab scroll p
   directly from `AppContainer`. `SettingsStore` beyond `transcriptionLanguage`: `detectSpeakers`, `autoAnalyze` (gates the
   enqueue after transcription — off means every note waits for a manual Analyze),
   `wifiOnlyDownload` (checked in `AppContainer.downloadModel()` via `ConnectivityManager`, download
-  is skipped rather than queued if off Wi-Fi), `snoozeMinutes` (Settings' TASKS section, Home's
-  snooze pill). The ON-DEVICE AI card shows the one model, no backend picker. Settings' FEEL section (Haptics, Reduce
+  is skipped rather than queued if off Wi-Fi). The ON-DEVICE AI card shows the one model, no backend picker. Settings' FEEL section (Haptics, Reduce
   motion) stays read-only by design — threading the setting through `rememberEchoHaptics()`/
   `LocalReducedMotion` would need a new CompositionLocal reaching every call site, out of scope for
   this pass; the switches render "on" but ignore taps. `AppContainer.storageUsedBytes()` backs
@@ -470,9 +447,6 @@ Onboarding is ported from the separate "Echo Onboarding" Design artifact
   content, and a searchable one (`title`/`query`/`onQueryChange`/`searchPlaceholder`) that
   delegates to the other two depending on whether its search icon has been tapped. All three draw
   the same bar chrome, so every screen header keeps one surface, hairline and height.
-- Home has its own `HomeViewModel` now (see "Home (1b reworked)" above); with no transcripts at
-  all it still falls back to the mascot empty state ("Upload audio" opens the import picker,
-  "Type a note" is inert).
 
 ## Notifications
 
@@ -573,16 +547,16 @@ Microphone (3/4), First note (4/4). One composable switches on `OnboardingStep` 
 hard cuts like the rest of the app; system back steps back, and leaves the app on Welcome.
 
 - **Gate:** `AppContainer.onboardingDone` = `SettingsStore.onboardingDone`, or any transcript
-  already on disk — an install that predates onboarding goes straight to Home.
+  already on disk — an install that predates onboarding goes straight to Notes.
 - **Downloads start on "Get started", never block.** `startOnboardingDownloads()` starts the
   Whisper model and (when `aiCardState` says `NeedsDownload`) the LLM, both only on Wi-Fi. On
   mobile data nothing starts — the first recording's transcription job fetches Whisper itself; step 4 shows a "Download AI · 977 MB" button (not in
   the design) so the first note isn't stuck "waiting for model" with no way forward. A note
   recorded mid-download queues and auto-analyses when the model lands (existing drain trigger).
 - **Paths:** Skip (steps 1–2) → Microphone, never past it. Allow → system dialog; granted →
-  First note, denied → finish → Home. Not now → finish → Home (Capture asks again later). The
+  First note, denied → finish → Notes. Not now → finish → Notes (Capture asks again later). The
   record button → finish, then `MainApp` opens straight on Capture through the same
-  pending-open-capture flag the recording notification uses. "I'll do it later" → finish → Home.
+  pending-open-capture flag the recording notification uses. "I'll do it later" → finish → Notes.
 - Voice-to-tasks' three example rows are a static `DemoItemRow` with per-kind icons
   (bell / list-checks / calendar), not `TaskRow` — real `TodoItem`s have no kind.
 - Button labels follow the design system's bumped scale: Sm/Md/Lg = 14/15/17sp semibold (was

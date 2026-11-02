@@ -20,11 +20,11 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,7 +35,6 @@ import androidx.compose.ui.unit.dp
 import dev.andrej.echo.R
 import dev.andrej.echo.ai.AiCardState
 import dev.andrej.echo.ui.components.BadgeTone
-import dev.andrej.echo.ui.components.ButtonSize
 import dev.andrej.echo.ui.components.ButtonVariant
 import dev.andrej.echo.ui.components.CardPadding
 import dev.andrej.echo.ui.components.ConfirmSheet
@@ -45,7 +44,6 @@ import dev.andrej.echo.ui.components.EchoCard
 import dev.andrej.echo.ui.components.EchoIconButton
 import dev.andrej.echo.ui.components.EchoSwitch
 import dev.andrej.echo.ui.components.EchoTopBar
-import dev.andrej.echo.ui.components.IntSliderSheet
 import dev.andrej.echo.ui.components.PickerSheet
 import dev.andrej.echo.ui.theme.EchoTheme
 
@@ -58,7 +56,6 @@ fun SettingsScreen(
     onAutoAnalyzeChange: (Boolean) -> Unit,
     onDetectSpeakersChange: (Boolean) -> Unit,
     onWifiOnlyDownloadChange: (Boolean) -> Unit,
-    onSnoozeMinutesChange: (Int) -> Unit,
     onDeleteAllData: () -> Unit,
     onDownloadModel: () -> Unit,
     onCancelDownload: () -> Unit,
@@ -70,7 +67,6 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     var pickingLanguage by remember { mutableStateOf(false) }
-    var pickingSnooze by remember { mutableStateOf(false) }
     var confirmingDeleteAll by remember { mutableStateOf(false) }
     val versionName = remember {
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }
@@ -148,20 +144,6 @@ fun SettingsScreen(
                             onDownload = onDownloadModel,
                             onCancel = onCancelDownload,
                             onDelete = onDeleteModel,
-                        )
-                    },
-                ),
-            )
-
-            Section(
-                title = "TASKS",
-                rows = listOf(
-                    {
-                        DisclosureRow(
-                            iconRes = R.drawable.ic_clock,
-                            label = "Snooze",
-                            value = "${state.snoozeMinutes} min",
-                            onClick = { pickingSnooze = true },
                         )
                     },
                 ),
@@ -259,16 +241,6 @@ fun SettingsScreen(
             pickingLanguage = false
         },
         onDismiss = { pickingLanguage = false },
-    )
-
-    IntSliderSheet(
-        visible = pickingSnooze,
-        title = "Snooze",
-        value = state.snoozeMinutes,
-        range = 5..180,
-        valueLabel = { "$it min" },
-        onValueChange = onSnoozeMinutesChange,
-        onDismiss = { pickingSnooze = false },
     )
 
     ConfirmSheet(

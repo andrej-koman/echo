@@ -12,4 +12,5 @@ data class Transcript(
     val analyzedAt: Long? = null,
     /** Null until polished; the original stays in [text]. */
     val polishedText: String? = null,
+    val folderId: String? = null,
 )

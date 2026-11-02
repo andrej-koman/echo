@@ -4,7 +4,6 @@ import android.app.ActivityManager
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import java.time.ZoneId
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import dev.andrej.echo.ai.AiCardState
@@ -21,6 +20,7 @@ import dev.andrej.echo.ai.toCardState
 import dev.andrej.echo.data.AnalysisQueueRepository
 import dev.andrej.echo.data.DerivedRepository
 import dev.andrej.echo.data.DictionaryRepository
+import dev.andrej.echo.data.FolderRepository
 import dev.andrej.echo.data.SettingsStore
 import dev.andrej.echo.data.SharedPreferencesSettingsStore
 import dev.andrej.echo.data.SqlAnalysisQueueRepository
@@ -40,7 +40,7 @@ import dev.andrej.echo.speech.speakers.SPEAKER_SEGMENTATION
 import dev.andrej.echo.speech.whisper.WhisperNative
 import dev.andrej.echo.speech.whisper.whisperModelFor
 import dev.andrej.echo.transcribe.Transcriptions
-import dev.andrej.echo.ui.home.HomeViewModel
+import dev.andrej.echo.ui.folders.FoldersViewModel
 import dev.andrej.echo.ui.profile.DictionaryViewModel
 import dev.andrej.echo.ui.profile.HistoryViewModel
 import dev.andrej.echo.ui.profile.ProfileViewModel
@@ -96,6 +96,8 @@ class AppContainer(context: Context) {
     val analysisQueue: AnalysisQueueRepository = SqlAnalysisQueueRepository(database)
 
     val dictionary = DictionaryRepository(database)
+
+    val folders = FolderRepository(database)
 
     val modelStore = ModelStore(
         directory = File(applicationContext.filesDir, "models"),
@@ -309,6 +311,7 @@ class AppContainer(context: Context) {
                     polishFailed = polisher.failed,
                     onPolish = polisher::polishAsync,
                     audioFile = transcriptions::audioFile,
+                    folders = folders.folders,
                 ) as T
 
             modelClass.isAssignableFrom(OnboardingViewModel::class.java) ->
@@ -319,8 +322,8 @@ class AppContainer(context: Context) {
                     onFinish = ::finishOnboarding,
                 ) as T
 
-            modelClass.isAssignableFrom(HomeViewModel::class.java) ->
-                HomeViewModel(repository, derived, analysisQueue, settings, transcriptions.status) as T
+            modelClass.isAssignableFrom(FoldersViewModel::class.java) ->
+                FoldersViewModel(folders, repository) as T
 
             modelClass.isAssignableFrom(TasksViewModel::class.java) ->
                 TasksViewModel(derived, repository, aiCardState) as T

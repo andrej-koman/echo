@@ -15,9 +15,6 @@ interface SettingsStore {
     /** Gates AppContainer.downloadModel() — on, a download started off Wi-Fi is skipped. */
     var wifiOnlyDownload: Boolean
 
-    /** Minutes a "Snooze" tap pushes an item's dueAt forward by. */
-    var snoozeMinutes: Int
-
     var onboardingDone: Boolean
 }
 
@@ -41,10 +38,6 @@ class SharedPreferencesSettingsStore(context: Context) : SettingsStore {
         get() = preferences.getBoolean(KEY_WIFI_ONLY_DOWNLOAD, false)
         set(value) = preferences.edit().putBoolean(KEY_WIFI_ONLY_DOWNLOAD, value).apply()
 
-    override var snoozeMinutes: Int
-        get() = preferences.getInt(KEY_SNOOZE_MINUTES, 60)
-        set(value) = preferences.edit().putInt(KEY_SNOOZE_MINUTES, value).apply()
-
     override var onboardingDone: Boolean
         get() = preferences.getBoolean(KEY_ONBOARDING_DONE, false)
         set(value) = preferences.edit().putBoolean(KEY_ONBOARDING_DONE, value).apply()
@@ -54,7 +47,6 @@ class SharedPreferencesSettingsStore(context: Context) : SettingsStore {
         const val KEY_AUTO_ANALYZE = "auto_analyze"
         const val KEY_DETECT_SPEAKERS = "detect_speakers"
         const val KEY_WIFI_ONLY_DOWNLOAD = "wifi_only_download"
-        const val KEY_SNOOZE_MINUTES = "snooze_minutes"
         const val KEY_ONBOARDING_DONE = "onboarding_done"
     }
 }

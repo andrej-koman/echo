@@ -56,6 +56,9 @@ interface TranscriptRepository {
     /** Null restores the original. */
     suspend fun setPolished(id: String, text: String?)
 
+    /** Null takes it out of any folder. */
+    suspend fun moveToFolder(id: String, folderId: String?)
+
     suspend fun delete(id: String)
 
     suspend fun clear()

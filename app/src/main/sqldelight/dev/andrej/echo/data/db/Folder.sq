@@ -1,0 +1,21 @@
+CREATE TABLE folder (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    -- Index into EchoColors.palette.
+    color INTEGER NOT NULL,
+    -- A FolderIcon name.
+    icon TEXT NOT NULL,
+    createdAt INTEGER NOT NULL
+);
+
+selectAll:
+SELECT * FROM folder ORDER BY name COLLATE NOCASE;
+
+insert:
+INSERT INTO folder VALUES ?;
+
+update:
+UPDATE folder SET name = ?, color = ?, icon = ? WHERE id = ?;
+
+delete:
+DELETE FROM folder WHERE id = ?;

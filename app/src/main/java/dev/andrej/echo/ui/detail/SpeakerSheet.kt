@@ -41,7 +41,7 @@ import dev.andrej.echo.ui.theme.EchoTheme
 
 @Composable
 internal fun speakerColor(index: Int?): Color {
-    val palette = EchoTheme.colors.speakers
+    val palette = EchoTheme.colors.palette
     return if (index == null) EchoTheme.colors.textTertiary else palette[index % palette.size]
 }
 

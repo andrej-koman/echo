@@ -10,7 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -36,23 +36,14 @@ import java.time.LocalDate
 @Composable
 fun HistoryScreen(
     state: HistoryUiState,
-    onBack: () -> Unit,
     onPrevMonth: () -> Unit,
     onNextMonth: () -> Unit,
     onPickDay: (LocalDate) -> Unit,
+    onOpen: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
-        EchoTopBar(
-            title = "History",
-            leading = {
-                EchoIconButton(
-                    iconRes = R.drawable.ic_chevron_left,
-                    contentDescription = "Back",
-                    onClick = onBack,
-                )
-            },
-        )
+        EchoTopBar(title = "Calendar")
 
         Column(
             modifier = Modifier
@@ -69,9 +60,10 @@ fun HistoryScreen(
                 MonthStats(state)
             }
 
-            SelectedDayPanel(state)
+            SelectedDayPanel(state, onOpen)
 
-            Box(Modifier.navigationBarsPadding())
+            // Clears the tab bar and its record button.
+            Box(Modifier.height(130.dp))
         }
     }
 }
@@ -224,7 +216,7 @@ private fun MonthStat(label: String, value: String) {
 }
 
 @Composable
-private fun SelectedDayPanel(state: HistoryUiState) {
+private fun SelectedDayPanel(state: HistoryUiState, onOpen: (String) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3)) {
         Text(
             text = state.selectedDayLabel,
@@ -242,7 +234,7 @@ private fun SelectedDayPanel(state: HistoryUiState) {
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3)) {
                 state.selectedDetail.forEach { row ->
-                    EchoCard(modifier = Modifier.fillMaxWidth()) {
+                    EchoCard(modifier = Modifier.fillMaxWidth().clickable { onOpen(row.id) }) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),

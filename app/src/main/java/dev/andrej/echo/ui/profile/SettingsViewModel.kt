@@ -27,7 +27,6 @@ data class SettingsUiState(
     val autoAnalyze: Boolean = true,
     val detectSpeakers: Boolean = true,
     val wifiOnlyDownload: Boolean = false,
-    val snoozeMinutes: Int = 60,
     val storageBytes: Long = 0,
     val notesCount: Int = 0,
     val tasksCount: Int = 0,
@@ -71,7 +70,6 @@ class SettingsViewModel(
         autoAnalyze = settings.autoAnalyze,
         detectSpeakers = settings.detectSpeakers,
         wifiOnlyDownload = settings.wifiOnlyDownload,
-        snoozeMinutes = settings.snoozeMinutes,
         storageBytes = storageUsedBytes(),
         notesCount = notesCount,
         tasksCount = tasksCount,
@@ -110,10 +108,6 @@ class SettingsViewModel(
         _state.value = _state.value.copy(wifiOnlyDownload = value)
     }
 
-    fun setSnoozeMinutes(value: Int) {
-        settings.snoozeMinutes = value
-        _state.value = _state.value.copy(snoozeMinutes = value)
-    }
 
     fun deleteAllData() {
         viewModelScope.launch { onDeleteAllData() }

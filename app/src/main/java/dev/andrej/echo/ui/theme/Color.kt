@@ -121,8 +121,8 @@ data class EchoColors(
     val statusInfoBg: Color = Paper200,
     val statusInfoFg: Color = Bronze700,
 
-    /** Speaker labels in a transcript, by speaker index, wrapping past the last. */
-    val speakers: List<Color> = listOf(Bronze600, Sage600, Clay500, Amber600, Ink500),
+    /** Categorical colours — speakers and folders — by index, wrapping past the last. */
+    val palette: List<Color> = listOf(Bronze600, Sage600, Clay500, Amber600, Ink500),
 )
 
 /**
@@ -181,5 +181,5 @@ val DarkEchoColors = EchoColors(
     statusInfoBg = Color(0xFF33291A),
     statusInfoFg = Bronze300,
 
-    speakers = listOf(Bronze300, Sage400, Clay300, Amber400, Ink300),
+    palette = listOf(Bronze300, Sage400, Clay300, Amber400, Ink300),
 )

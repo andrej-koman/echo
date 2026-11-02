@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
+import dev.andrej.echo.ui.components.LocalBarCenter
 import dev.andrej.echo.ui.components.LocalBottomBarHeight
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -168,8 +169,9 @@ private fun MainApp(
     }
 
     val openSheets = remember { mutableIntStateOf(0) }
+    val barCenter = remember { mutableStateOf<(@Composable () -> Unit)?>(null) }
 
-    CompositionLocalProvider(LocalOpenSheets provides openSheets) {
+    CompositionLocalProvider(LocalOpenSheets provides openSheets, LocalBarCenter provides barCenter) {
         Box(modifier = Modifier.fillMaxSize()) {
             NavHost(
                 navController = navController,
@@ -343,6 +345,7 @@ private fun BottomBar(
                 selected = selected,
                 centerGap = true,
                 onSelect = onSelect,
+                hairline = showRecord,
             )
             Box(
                 modifier = Modifier
@@ -352,7 +355,8 @@ private fun BottomBar(
             )
         }
 
-        if (showRecord) {
+        val center = LocalBarCenter.current.value
+        if (showRecord || center != null) {
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -366,11 +370,20 @@ private fun BottomBar(
                     .clip(CircleShape)
                     .background(EchoTheme.colors.surfaceBar),
             )
-            RecordButton(
-                state = RecordButtonState.Idle,
-                onClick = { navController.navigate(Routes.CAPTURE) { launchSingleTop = true } },
-                size = RecordButtonSize.Sm,
-            )
+            if (showRecord) {
+                RecordButton(
+                    state = RecordButtonState.Idle,
+                    onClick = { navController.navigate(Routes.CAPTURE) { launchSingleTop = true } },
+                    size = RecordButtonSize.Sm,
+                )
+            } else {
+                // RecordButton centres its disc in a box 1.55× its diameter (room for the pulse);
+                // the same box puts the slot's disc at the record button's height.
+                Box(
+                    modifier = Modifier.size(RecordButtonSize.Sm.diameter * 1.55f),
+                    contentAlignment = Alignment.Center,
+                ) { center?.invoke() }
+            }
         }
         }
     }

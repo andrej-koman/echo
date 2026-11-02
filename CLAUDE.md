@@ -211,7 +211,7 @@ ui/profile/   ProfileScreen (the Profile tab) + ProfileViewModel, SettingsScreen
 ui/notes/     NotesScreen + NotesViewModel (the Notes tab, search; NoteRow, NoteStage,
               PendingBadge, PendingCopy), NoteCard (+ its ··· sheets: move, delete)
 ui/detail/    NoteDetailScreen (header, By speaker / Full text / Tasks tabs, sheets), TranscriptViews
-              (rows, find/edit bars), PlayerBar, NotePlayer (ExoPlayer), TranscriptEdits
+              (rows, find/edit bars), PlayerBar (ProgressRow, PlayButton), NotePlayer (ExoPlayer), TranscriptEdits
               (find/replace/edit/speaker logic), SpeakerSheet ("Who is this?"), ShareSheet
 export/       ExportFormats (txt/md/srt, pure) + Exporter (cache file → FileProvider → share sheet)
 notify/       RecordingNotifier (+ RecordingActionReceiver, BootReceiver), ModelDownloadNotifier
@@ -309,9 +309,12 @@ to the start tab, so tapping it restored the stack and landed on the last tab. C
   of one speaker under `● Speaker 1  0:00 – 0:14`; the playing run gets a card), **Full text**
   (the same segments as paragraphs) and **Tasks** (the summary, then the note's tasks — tap
   plays from `sourceOffsetMs`, long-press opens `EditTaskScreen`). ··· holds Re-analyze, Copy
-  text, Delete. The tab bar stays on a note, without the record button, lit on the tab the note
-  came from; the screen sits above it via `LocalBottomBarHeight` rather than behind it.
-  `PlayerBar`: elapsed / slider / remaining, ±15 s, speed 1 → 1.25 → 1.5 → 2 → 0.75×.
+  text, Delete. The tab bar stays on a note, lit on the tab the note came from, with the play
+  button (`PlayButton`, the record button's bronze disc) in the record button's slot — a screen
+  fills that slot with `BarCenter { … }` (`LocalBarCenter`). Directly above the bar, no hairline
+  between, `ProgressRow`: elapsed / slider (dot thumb, thin track) / remaining. No skip buttons;
+  speed was dropped until it has a better home. The screen sits above the bar via
+  `LocalBottomBarHeight` rather than behind it.
   `NotePlayer` wraps a Media3 ExoPlayer over `recordings/<id>/source` (`Transcriptions.audioFile`;
   a recording has one only once transcribed), released with the screen and paused on `ON_STOP`.
   **Edit** turns lines into text fields, saved on Done; **Find** highlights and replaces all

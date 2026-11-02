@@ -6,7 +6,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,8 +41,6 @@ class NotePlayer(context: Context, file: File) {
         private set
     var durationMs by mutableLongStateOf(0L)
         private set
-    var speed by mutableFloatStateOf(1f)
-        private set
 
     init {
         player.addListener(object : Player.Listener {
@@ -73,13 +70,6 @@ class NotePlayer(context: Context, file: File) {
         positionMs = ms
     }
 
-    fun skip(deltaMs: Long) = seekTo((player.currentPosition + deltaMs).coerceIn(0, durationMs.coerceAtLeast(0)))
-
-    fun cycleSpeed() {
-        speed = nextSpeed(speed)
-        player.setPlaybackSpeed(speed)
-    }
-
     fun playFrom(ms: Long) {
         seekTo(ms)
         player.play()
@@ -91,10 +81,6 @@ class NotePlayer(context: Context, file: File) {
 
     internal fun release() = player.release()
 }
-
-private val speeds = listOf(1f, 1.25f, 1.5f, 2f, 0.75f)
-
-internal fun nextSpeed(current: Float): Float = speeds[(speeds.indexOf(current) + 1).mod(speeds.size)]
 
 /** Null without a [file]. Released with the screen, and paused when the app leaves the foreground. */
 @Composable

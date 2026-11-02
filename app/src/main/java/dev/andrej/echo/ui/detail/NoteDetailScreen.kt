@@ -52,6 +52,7 @@ import dev.andrej.echo.export.ExportFormat
 import dev.andrej.echo.export.ExportNote
 import dev.andrej.echo.export.ExportOptions
 import dev.andrej.echo.export.Exporter
+import dev.andrej.echo.ui.components.BarCenter
 import dev.andrej.echo.ui.components.ButtonSize
 import dev.andrej.echo.ui.components.ButtonVariant
 import dev.andrej.echo.ui.components.ConfirmSheet
@@ -321,8 +322,12 @@ fun NoteDetailScreen(
                 }
             }
 
-            player?.let { PlayerBar(it) }
-            Spacer(Modifier.height(LocalBottomBarHeight.current))
+            player?.let { player ->
+                ProgressRow(player)
+                BarCenter { PlayButton(player) }
+            }
+            val barHeight = LocalBottomBarHeight.current
+            Spacer(Modifier.height(if (player != null) (barHeight - PlayRowOverlap).coerceAtLeast(0.dp) else barHeight))
         }
 
         if (transcript != null) {

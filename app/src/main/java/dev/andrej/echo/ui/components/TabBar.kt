@@ -15,6 +15,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -27,6 +32,18 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.andrej.echo.ui.theme.EchoTheme
 import dev.andrej.echo.ui.theme.rememberEchoHaptics
+
+val LocalBarCenter = staticCompositionLocalOf { mutableStateOf<(@Composable () -> Unit)?>(null) }
+
+@Composable
+fun BarCenter(content: @Composable () -> Unit) {
+    val slot = LocalBarCenter.current
+    val latest by rememberUpdatedState(content)
+    DisposableEffect(slot) {
+        slot.value = { latest() }
+        onDispose { slot.value = null }
+    }
+}
 
 data class TabItem(
     val route: String,
@@ -42,6 +59,7 @@ fun TabBar(
     modifier: Modifier = Modifier,
     centerGap: Boolean = false,
     centerGapWidth: Dp = 72.dp,
+    hairline: Boolean = true,
 ) {
     val colors = EchoTheme.colors
 
@@ -50,7 +68,7 @@ fun TabBar(
             .fillMaxWidth()
             .background(colors.surfaceBar)
             .drawBehind {
-                drawLine(
+                if (hairline) drawLine(
                     color = colors.borderSubtle,
                     start = Offset.Zero,
                     end = Offset(size.width, 0f),

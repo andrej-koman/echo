@@ -23,16 +23,4 @@ class NoteViewTest {
     fun `no segments, no runs`() {
         assertEquals(emptyList<IntRange>(), runs(emptyList()))
     }
-
-    @Test
-    fun `speed cycles up then back to slow`() {
-        assertEquals(listOf(1.25f, 1.5f, 2f, 0.75f, 1f), generateSequence(1f, ::nextSpeed).drop(1).take(5).toList())
-    }
-
-    @Test
-    fun `speed labels drop trailing zeros`() {
-        assertEquals("1×", speedLabel(1f))
-        assertEquals("1.25×", speedLabel(1.25f))
-        assertEquals("0.75×", speedLabel(0.75f))
-    }
 }

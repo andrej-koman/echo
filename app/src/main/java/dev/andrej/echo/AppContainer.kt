@@ -11,10 +11,12 @@ import dev.andrej.echo.ai.AiCardState
 import dev.andrej.echo.ai.HttpModelDownloader
 import dev.andrej.echo.ai.LiteRtLlmRunner
 import dev.andrej.echo.ai.LlmRunnerProvider
+import dev.andrej.echo.ai.ModelSlot
 import dev.andrej.echo.ai.ModelStore
 import dev.andrej.echo.ai.PendingAnalysisWorker
 import dev.andrej.echo.ai.QWEN3_1_7B_INT4
 import dev.andrej.echo.ai.TranscriptAnalyzer
+import dev.andrej.echo.ai.TranscriptPolisher
 import dev.andrej.echo.ai.toCardState
 import dev.andrej.echo.data.AnalysisQueueRepository
 import dev.andrej.echo.data.DerivedRepository
@@ -96,7 +98,13 @@ class AppContainer(context: Context) {
 
     private val activityManager = applicationContext.getSystemService(ActivityManager::class.java)
 
-    private val liteRtRunner = LiteRtLlmRunner(store = modelStore, activityManager = activityManager)
+    private val modelSlot = ModelSlot()
+
+    private val liteRtRunner = LiteRtLlmRunner(
+        store = modelStore,
+        activityManager = activityManager,
+        slot = modelSlot,
+    )
 
     private val whisperModel = whisperModelFor(
         ActivityManager.MemoryInfo().also { activityManager.getMemoryInfo(it) }.totalMem,
@@ -110,7 +118,7 @@ class AppContainer(context: Context) {
 
     private val llmRunners = LlmRunnerProvider(listOf(liteRtRunner))
 
-    val analyzer = TranscriptAnalyzer(llmRunners::runner)
+    val analyzer = TranscriptAnalyzer(llmRunners::runner, repository::segments)
 
     val aiCardState: Flow<AiCardState> = flow {
         emit(AiCardState.Checking)
@@ -129,6 +137,13 @@ class AppContainer(context: Context) {
         scope = appScope,
     )
 
+    private val polisher = TranscriptPolisher(
+        runners = llmRunners::runner,
+        transcripts = repository,
+        segments = repository::segments,
+        scope = appScope,
+    )
+
     val transcriptions = Transcriptions(
         context = applicationContext,
         repository = repository,
@@ -136,6 +151,7 @@ class AppContainer(context: Context) {
         settings = settings,
         analysisQueue = analysisQueue,
         analysis = pendingAnalysisWorker,
+        modelSlot = modelSlot,
         scope = appScope,
     )
 
@@ -272,6 +288,9 @@ class AppContainer(context: Context) {
                     onImport = transcriptions::import,
                     onRetryTranscription = transcriptions::transcribe,
                     onDeleted = transcriptions::discard,
+                    polishingId = polisher.activeId,
+                    polishFailed = polisher.failed,
+                    onPolish = polisher::polishAsync,
                 ) as T
 
             modelClass.isAssignableFrom(OnboardingViewModel::class.java) ->

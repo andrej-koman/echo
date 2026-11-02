@@ -71,6 +71,11 @@ class SqlTranscriptRepository(
         Unit
     }
 
+    override suspend fun setPolished(id: String, text: String?) = withContext(ioDispatcher) {
+        queries.setPolished(text, id)
+        Unit
+    }
+
     override suspend fun delete(id: String) = withContext(ioDispatcher) {
         database.transaction {
             segmentQueries.deleteFor(id)

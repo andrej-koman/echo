@@ -1,18 +1,22 @@
 package dev.andrej.echo.ai
 
 import android.util.Log
+import dev.andrej.echo.data.Segment
 import dev.andrej.echo.data.Transcript
 import java.time.Instant
 import java.time.LocalDate
-import java.time.LocalDateTime
 import java.time.ZoneId
 
 /**
- * Owns the prompt and the parsing for every backend, so a new [LlmRunner] costs one class and
+ * Owns the prompts and the parsing for every backend, so a new [LlmRunner] costs one class and
  * no prompt tuning. Never throws: a failed analysis leaves the transcript as it was.
+ *
+ * Summary and tasks are separate prompts, each short: the single combined prompt was ~850 tokens
+ * of instructions before the transcript, and the 1.7B model followed little of it.
  */
 class TranscriptAnalyzer(
     private val runners: suspend () -> LlmRunner,
+    private val segments: suspend (transcriptId: String) -> List<Segment> = { emptyList() },
     private val zone: ZoneId = ZoneId.systemDefault(),
     private val logDebug: (String) -> Unit = { Log.d(TAG, it) },
     private val logWarn: (String) -> Unit = { Log.w(TAG, it) },
@@ -20,7 +24,7 @@ class TranscriptAnalyzer(
 
     /**
      * Pays the model's startup cost early. Worth ~19s on the LiteRT path, which would otherwise
-     * land on the Processing screen after the user stops recording.
+     * land on the first analysis after a recording.
      */
     suspend fun warmup() {
         try {
@@ -34,65 +38,93 @@ class TranscriptAnalyzer(
     suspend fun analyze(transcript: Transcript): AnalysisOutcome {
         if (transcript.text.isBlank()) return AnalysisOutcome.Blocked(AnalysisBlock.EmptyTranscript)
 
-        val runner = runners()
-        when (val availability = runner.availability()) {
-            LlmAvailability.Ready -> Unit
-            is LlmAvailability.NeedsDownload ->
-                return AnalysisOutcome.Blocked(AnalysisBlock.WaitingForModel(availability.bytes))
-            is LlmAvailability.Downloading ->
-                // No total size on this branch — the live fraction lives in ModelStore.state,
-                // not in this outcome, which nothing persists yet in Phase 1.
-                return AnalysisOutcome.Blocked(AnalysisBlock.WaitingForModel(0))
-            is LlmAvailability.Unsupported ->
-                return AnalysisOutcome.Blocked(AnalysisBlock.NoBackend(availability.reason))
+        val runner = when (val ready = readyRunner()) {
+            is ReadyRunner.Ready -> ready.runner
+            is ReadyRunner.Blocked -> return AnalysisOutcome.Blocked(ready.reason)
         }
 
-        val transcriptNow = Instant.ofEpochMilli(transcript.createdAt).atZone(zone).toLocalDateTime()
-        val prompt = buildAnalysisPrompt(transcript.text, transcriptNow)
+        val timed = segments(transcript.id)
+        val lines = timed.map { it.text }.ifEmpty { sentences(transcript.text) }
+        val chunks = chunkLines(lines, CHUNK_WORDS)
 
-        // Deliberately today's wall-clock day, not transcriptNow's: re-analysing a month-old note
-        // should resolve its relative phrases against that note's own moment (the prompt above),
+        val recordedAt = Instant.ofEpochMilli(transcript.createdAt).atZone(zone).toLocalDateTime()
+        // Deliberately today's wall-clock day, not recordedAt's: re-analysing a month-old note
+        // should resolve its relative phrases against that note's own moment (the prompt),
         // but an item where nobody named a date is due now, not a month ago.
         val today = LocalDate.now(zone)
 
-        val first = attempt(runner, prompt, LlmRunner.DEFAULT_TEMPERATURE, today, transcriptNow)
-        if (first is AnalysisOutcome.Success) return first
-        return attempt(runner, prompt, temperature = 0f, today, transcriptNow)
+        return try {
+            val parts = chunks.map { chunk ->
+                generate(runner, buildSummaryPrompt(chunk.joinToString(" ") { it.value }), ::parseSummary)
+            }
+            val summary = parts.singleOrNull() ?: generate(runner, buildMergePrompt(parts), ::parseSummary)
+
+            val items = chunks.flatMap { chunk ->
+                val plans = generate(runner, buildIntentPrompt(chunk.joinToString(" ") { it.value }), ::parseIntent)
+                if (!plans) return@flatMap emptyList()
+                generate(runner, buildTasksPrompt(chunk, recordedAt)) { raw ->
+                    parseTasks(raw, zone, today, recordedAt) { line -> timed.getOrNull(line)?.startMs }
+                }
+            }
+
+            AnalysisOutcome.Success(Analysis(summary.title, summary.summary, items))
+        } catch (e: StepFailed) {
+            AnalysisOutcome.Blocked(e.reason)
+        }
     }
 
-    private suspend fun attempt(
-        runner: LlmRunner,
-        prompt: String,
-        temperature: Float,
-        today: LocalDate,
-        recordedAt: LocalDateTime,
-    ): AnalysisOutcome {
-        val raw = try {
-            runner.generate(prompt, temperature)
-        } catch (e: Exception) {
-            logWarn("generate() failed at temperature=$temperature: ${e.message}")
-            return AnalysisOutcome.Blocked(AnalysisBlock.GenerationFailed(e.message))
+    private suspend fun readyRunner(): ReadyRunner {
+        val runner = runners()
+        return when (val availability = runner.availability()) {
+            LlmAvailability.Ready -> ReadyRunner.Ready(runner)
+            is LlmAvailability.NeedsDownload ->
+                ReadyRunner.Blocked(AnalysisBlock.WaitingForModel(availability.bytes))
+            is LlmAvailability.Downloading ->
+                // No total size on this branch — the live fraction lives in ModelStore.state.
+                ReadyRunner.Blocked(AnalysisBlock.WaitingForModel(0))
+            is LlmAvailability.Unsupported ->
+                ReadyRunner.Blocked(AnalysisBlock.NoBackend(availability.reason))
         }
-        logDebug("raw output (temperature=$temperature): $raw")
-
-        val analysis = parseAnalysis(raw, zone, today, recordedAt)
-        if (analysis == null) {
-            logWarn("could not parse a JSON object out of the raw output above")
-            return AnalysisOutcome.Blocked(AnalysisBlock.EmptyResult)
-        }
-
-        logDebug("parsed: $analysis")
-        if (!analysis.hasContent) {
-            logWarn("parsed but empty (no title/summary/items) — discarded")
-            return AnalysisOutcome.Blocked(AnalysisBlock.EmptyResult)
-        }
-        return AnalysisOutcome.Success(analysis)
     }
+
+    /** One prompt, retried once at zero temperature when it throws or its answer does not parse. */
+    private suspend fun <T : Any> generate(runner: LlmRunner, prompt: String, parse: (String) -> T?): T {
+        var failure: AnalysisBlock = AnalysisBlock.EmptyResult
+        for (temperature in listOf(LlmRunner.DEFAULT_TEMPERATURE, 0f)) {
+            val raw = try {
+                runner.generate(prompt, temperature)
+            } catch (e: Exception) {
+                logWarn("generate() failed at temperature=$temperature: ${e.message}")
+                failure = AnalysisBlock.GenerationFailed(e.message)
+                continue
+            }
+            logDebug("raw output (temperature=$temperature): $raw")
+
+            parse(raw)?.let {
+                logDebug("parsed: $it")
+                return it
+            }
+            logWarn("could not parse the raw output above")
+            failure = AnalysisBlock.EmptyResult
+        }
+        throw StepFailed(failure)
+    }
+
+    private sealed interface ReadyRunner {
+        data class Ready(val runner: LlmRunner) : ReadyRunner
+        data class Blocked(val reason: AnalysisBlock) : ReadyRunner
+    }
+
+    private class StepFailed(val reason: AnalysisBlock) : Exception()
 
     private companion object {
         const val TAG = "TranscriptAnalyzer"
+
+        /**
+         * Words, not tokens: there is no tokenizer on this side of the interface. About 1.4
+         * tokens a word puts a chunk near 1700 of the model's 4096, which leaves the task
+         * prompt's instructions and examples room, and its answer.
+         */
+        const val CHUNK_WORDS = 1200
     }
 }
-
-private val Analysis.hasContent: Boolean
-    get() = title != null || summary != null || items.isNotEmpty()

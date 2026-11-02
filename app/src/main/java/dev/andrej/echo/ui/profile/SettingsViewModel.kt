@@ -6,6 +6,7 @@ import dev.andrej.echo.ai.AiCardState
 import dev.andrej.echo.data.DerivedRepository
 import dev.andrej.echo.data.SettingsStore
 import dev.andrej.echo.data.TranscriptRepository
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -45,6 +46,7 @@ class SettingsViewModel(
     val onTestModelDownloadNotification: () -> Unit = {},
     private val onDeleteAllData: suspend () -> Unit = {},
     val onReplayOnboarding: () -> Unit = {},
+    private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(fromSettings(notesCount = 0, tasksCount = 0))
@@ -75,7 +77,7 @@ class SettingsViewModel(
 
     private fun refreshLanguages() {
         viewModelScope.launch {
-            val languages = withContext(Dispatchers.Default) {
+            val languages = withContext(computeDispatcher) {
                 whisperLanguages().map { LanguageOption(it, displayLanguage(it)) }.sortedBy { it.label }
             }
             _state.value = _state.value.copy(languages = listOf(LanguageOption("", AUTO_DETECT)) + languages)

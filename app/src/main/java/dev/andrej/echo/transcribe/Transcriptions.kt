@@ -13,6 +13,7 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import dev.andrej.echo.ai.ModelState
+import dev.andrej.echo.ai.ModelSlot
 import dev.andrej.echo.ai.ModelStore
 import dev.andrej.echo.ai.PendingAnalysisWorker
 import dev.andrej.echo.data.AnalysisQueueRepository
@@ -59,6 +60,7 @@ class Transcriptions(
     private val settings: SettingsStore,
     private val analysisQueue: AnalysisQueueRepository,
     private val analysis: PendingAnalysisWorker,
+    private val modelSlot: ModelSlot,
     private val scope: CoroutineScope,
 ) {
     private val workManager = WorkManager.getInstance(context)
@@ -66,7 +68,7 @@ class Transcriptions(
     private val decoder = AudioDecoder()
     private val encoder = AudioEncoder()
 
-    // One model in memory at a time; a second job waits for the first.
+    // One job at a time; a second waits for the first.
     private val lock = Mutex()
 
     /** Copying a large file takes a while, and the row must not read as failed meanwhile. */
@@ -210,25 +212,28 @@ class Transcriptions(
 
         val segments = mutableListOf<Segment>()
         var language: String? = settings.transcriptionLanguage
-        WhisperTranscriber.load(model).use { whisper ->
-            RandomAccessFile(pcm, "r").use { file ->
-                val total = file.length() / 2
-                var start = 0L
-                while (start < total) {
-                    val samples = file.readFloats(start, minOf(CHUNK_SAMPLES.toLong(), total - start).toInt())
-                    val length = if (start + samples.size < total) quietestCut(samples) else samples.size
-                    val chunkStart = start
-                    val result = whisper.transcribe(samples.copyOf(length), language) { percent ->
-                        val done = chunkStart + length * percent / 100f
-                        report(TranscriptionStatus.Transcribing(decodeShare + (1 - decodeShare) * done / total))
+        // The LLM is closed first: both models at once had the low-memory killer take the app.
+        modelSlot.whisper {
+            WhisperTranscriber.load(model).use { whisper ->
+                RandomAccessFile(pcm, "r").use { file ->
+                    val total = file.length() / 2
+                    var start = 0L
+                    while (start < total) {
+                        val samples = file.readFloats(start, minOf(CHUNK_SAMPLES.toLong(), total - start).toInt())
+                        val length = if (start + samples.size < total) quietestCut(samples) else samples.size
+                        val chunkStart = start
+                        val result = whisper.transcribe(samples.copyOf(length), language) { percent ->
+                            val done = chunkStart + length * percent / 100f
+                            report(TranscriptionStatus.Transcribing(decodeShare + (1 - decodeShare) * done / total))
+                        }
+                        // Detected once on the first chunk, then held so a quiet stretch can't flip it.
+                        language = language ?: result.language
+                        val offsetMs = start * 1000 / SAMPLE_RATE
+                        segments += result.segments.spoken()
+                            .map { it.copy(startMs = it.startMs + offsetMs, endMs = it.endMs + offsetMs) }
+                        repository.setTranscription(id, transcriptText(segments), language.orEmpty(), durationMs, segments)
+                        start += length
                     }
-                    // Detected once on the first chunk, then held so a quiet stretch can't flip it.
-                    language = language ?: result.language
-                    val offsetMs = start * 1000 / SAMPLE_RATE
-                    segments += result.segments.spoken()
-                        .map { it.copy(startMs = it.startMs + offsetMs, endMs = it.endMs + offsetMs) }
-                    repository.setTranscription(id, transcriptText(segments), language.orEmpty(), durationMs, segments)
-                    start += length
                 }
             }
         }

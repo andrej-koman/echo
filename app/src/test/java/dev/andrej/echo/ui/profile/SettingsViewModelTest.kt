@@ -43,6 +43,7 @@ class SettingsViewModelTest {
         onCancelDownload = {},
         onDeleteModel = {},
         storageUsedBytes = { 0L },
+        computeDispatcher = dispatcher,
     )
 
     @Test

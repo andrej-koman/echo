@@ -34,6 +34,9 @@ interface TranscriptRepository {
         analyzedAt: Long = System.currentTimeMillis(),
     )
 
+    /** Null restores the original. */
+    suspend fun setPolished(id: String, text: String?)
+
     suspend fun delete(id: String)
 
     suspend fun clear()

@@ -1,7 +1,6 @@
 package dev.andrej.echo.ai
 
 import java.time.LocalDate
-import java.time.LocalDateTime
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -13,162 +12,186 @@ private val UTC = ZoneId.of("UTC")
 private val TODAY = LocalDate.of(2026, 9, 4)
 private val RECORDED_AT = TODAY.atTime(11, 5)
 
-class AnalysisPromptTest {
-
-    private val clean = """
-        {"title":"Call the plumber","summary":"Kitchen tap is dripping.",
-         "items":[{"text":"Call the plumber","due":"2026-09-04T10:00"},{"text":"Buy a washer","due":null}]}
-    """.trimIndent()
-
-    private fun parse(raw: String) = parseAnalysis(raw, UTC, TODAY, RECORDED_AT)
+class SummaryParsingTest {
 
     @Test
     fun `clean json is parsed`() {
-        val analysis = parse(clean)!!
+        val summary = parseSummary("""{"title":"Call the plumber","summary":"Kitchen tap is dripping."}""")!!
 
-        assertEquals("Call the plumber", analysis.title)
-        assertEquals("Kitchen tap is dripping.", analysis.summary)
-        assertEquals(2, analysis.items.size)
-        val timed = analysis.items.single { it.text == "Call the plumber" }
-        assertTrue(timed.hasTime)
-        val untimed = analysis.items.single { it.text == "Buy a washer" }
-        assertTrue(!untimed.hasTime)
+        assertEquals("Call the plumber", summary.title)
+        assertEquals("Kitchen tap is dripping.", summary.summary)
     }
 
     @Test
-    fun `fenced json is parsed`() {
-        val analysis = parse("```json\n$clean\n```")!!
-
-        assertEquals("Call the plumber", analysis.title)
-        assertEquals(2, analysis.items.size)
+    fun `json in a fence or prose is parsed`() {
+        assertEquals("A", parseSummary("```json\n{\"title\":\"A\"}\n```")!!.title)
+        assertEquals("A", parseSummary("Sure! Here it is: {\"title\":\"A\"} Hope that helps.")!!.title)
     }
 
     @Test
-    fun `json wrapped in prose is parsed`() {
-        val raw = "Sure! Here is the JSON you asked for:\n$clean\nHope that helps."
-
-        assertEquals("Call the plumber", parse(raw)!!.title)
+    fun `blank strings become null, and nothing at all is no summary`() {
+        assertNull(parseSummary("""{"title":"A","summary":"  "}""")!!.summary)
+        assertNull(parseSummary("""{"title":"","summary":""}"""))
     }
 
     @Test
-    fun `unknown fields are ignored`() {
-        val raw = """{"title":"A","mood":"chirpy","items":[]}"""
+    fun `output with no json is null`() {
+        assertNull(parseSummary("Sure! Please provide the details you'd like me to assist with."))
+        assertNull(parseSummary(""))
+    }
+}
 
-        assertEquals("A", parse(raw)!!.title)
+class IntentParsingTest {
+
+    @Test
+    fun `yes, no and no answer`() {
+        assertEquals(true, parseIntent("""{"plans":true}"""))
+        assertEquals(false, parseIntent("Sure. {\"plans\": false}"))
+        assertNull(parseIntent("I think so"))
+    }
+}
+
+class TaskParsingTest {
+
+    private fun parse(raw: String, offsets: (Int) -> Long? = { null }) =
+        parseTasks(raw, UTC, TODAY, RECORDED_AT, offsets)
+
+    @Test
+    fun `items resolve their due and keep their text`() {
+        val items = parse(
+            """{"items":[{"text":"Call the plumber","due":"2026-09-04T10:00"},{"text":"Buy a washer","due":null}]}""",
+        )!!
+
+        assertTrue(items.single { it.text == "Call the plumber" }.hasTime)
+        assertFalse(items.single { it.text == "Buy a washer" }.hasDate)
     }
 
     @Test
-    fun `missing fields fall back to empty`() {
-        val analysis = parse("""{"title":"Only a title"}""")!!
-
-        assertEquals("Only a title", analysis.title)
-        assertNull(analysis.summary)
-        assertTrue(analysis.items.isEmpty())
+    fun `an empty array is an answer, not a failure`() {
+        assertEquals(emptyList<Any>(), parse("""{"items":[]}"""))
     }
 
     @Test
-    fun `blank strings become null`() {
-        val analysis = parse("""{"title":"   ","summary":""}""")!!
-
-        assertNull(analysis.title)
-        assertNull(analysis.summary)
+    fun `no items array at all is a failure`() {
+        assertNull(parse("""{"title":"wrong prompt"}"""))
+        assertNull(parse("no json"))
     }
 
     @Test
     fun `blank items are dropped`() {
-        val raw = """{"items":[{"text":"","due":null},{"text":"keep"}]}"""
-        val analysis = parse(raw)!!
-
-        assertEquals(listOf("keep"), analysis.items.map { it.text })
+        assertEquals(listOf("keep"), parse("""{"items":[{"text":""},{"text":"keep"}]}""")!!.map { it.text })
     }
 
     @Test
-    fun `malformed json is null`() {
-        assertNull(parse("""{"title": "unterminated"""))
+    fun `the line number becomes the moment it was said`() {
+        val items = parse(
+            """{"items":[{"text":"a","line":2},{"text":"b","line":9},{"text":"c"}]}""",
+            offsets = { line -> if (line == 2) 42_000L else null },
+        )!!
+
+        assertEquals(listOf(42_000L, null, null), items.map { it.sourceOffsetMs })
     }
 
     @Test
-    fun `due_relative_minutes flows through to a real due time and date`() {
-        val raw = """{"items":[{"text":"water plants","due":null,"due_relative_minutes":20}]}"""
-        val item = parse(raw)!!.items.single()
+    fun `due_relative_minutes flows through to a real due time`() {
+        val item = parse("""{"items":[{"text":"water plants","due_relative_minutes":20}]}""")!!.single()
 
         assertEquals(RECORDED_AT.plusMinutes(20).atZone(UTC).toInstant().toEpochMilli(), item.dueAt)
         assertTrue(item.hasTime)
-        assertTrue(item.hasDate)
-    }
-
-    @Test
-    fun `an item with nothing stated has no date`() {
-        val raw = """{"items":[{"text":"buy milk"}]}"""
-        val item = parse(raw)!!.items.single()
-
-        assertFalse(item.hasTime)
-        assertFalse(item.hasDate)
     }
 
     @Test
     fun `a missing brace before the closing array bracket is repaired`() {
         // Observed on-device: the model drops the item object's closing brace before ']'.
-        val raw = """{"title":"take out the trash","summary":"...",""" +
-            """"items":[{"text":"take out the trash","due":"2026-09-07T10:00:00"]]}"""
+        val raw = """{"items":[{"text":"take out the trash","due":"2026-09-07T10:00:00"]]}"""
 
-        val analysis = parse(raw)!!
-
-        assertEquals("take out the trash", analysis.items.single().text)
-        assertTrue(analysis.items.single().hasTime)
+        assertEquals("take out the trash", parse(raw)!!.single().text)
     }
 
     @Test
     fun `a genuinely truncated array is still null, not mis-repaired`() {
-        assertNull(parse("""{"title":"A","items":[{"text":"x","due":null}"""))
+        assertNull(parse("""{"items":[{"text":"x","due":null}"""))
     }
+}
+
+class PromptTest {
 
     @Test
-    fun `output with no json at all is null`() {
-        assertNull(parse("I'm sorry, I can't help with that."))
-        assertNull(parse(""))
-    }
-
-    @Test
-    fun `prompt carries the date, the current time and the text`() {
-        val prompt = buildAnalysisPrompt("call the plumber", LocalDate.of(2026, 9, 3).atTime(11, 5))
+    fun `the tasks prompt carries the date, the time and numbered lines`() {
+        val prompt = buildTasksPrompt(
+            listOf(IndexedValue(7, "call the plumber")),
+            LocalDate.of(2026, 9, 3).atTime(11, 5),
+        )
 
         assertTrue(prompt.contains("Today is 2026-09-03"))
         assertTrue(prompt.contains("the current time is 11:05"))
-        assertTrue(prompt.contains("call the plumber"))
+        assertTrue(prompt.contains("[7] call the plumber"))
     }
 
     @Test
-    fun `prompt asks for a reformatted note, not a short blurb`() {
-        val prompt = buildAnalysisPrompt("call the plumber", LocalDate.of(2026, 9, 3).atTime(11, 5))
+    fun `the merge prompt carries every part`() {
+        val prompt = buildMergePrompt(listOf(NoteSummary("One", "first"), NoteSummary("Two", "second")))
 
-        assertTrue(prompt.contains("clean, readable note"))
-        assertTrue(!prompt.contains("max 2 sentences"))
+        assertTrue(prompt.contains("first"))
+        assertTrue(prompt.contains("second"))
+    }
+}
+
+class ChunkLinesTest {
+
+    @Test
+    fun `short text is one chunk with its line numbers`() {
+        val chunks = chunkLines(listOf("a b", "c"), maxWords = 10)
+
+        assertEquals(listOf(listOf(IndexedValue(0, "a b"), IndexedValue(1, "c"))), chunks)
     }
 
     @Test
-    fun `prompt asks the model to compute relative minutes, not resolve them itself`() {
-        val prompt = buildAnalysisPrompt("call the plumber", LocalDate.of(2026, 9, 3).atTime(11, 5))
+    fun `lines are not split across chunks`() {
+        val chunks = chunkLines(listOf("a b c", "d e f", "g"), maxWords = 4)
 
-        assertTrue(prompt.contains("due_relative_minutes"))
+        assertEquals(listOf(listOf(0), listOf(1, 2)), chunks.map { chunk -> chunk.map { it.index } })
     }
 
     @Test
-    fun `prompt asks for capitalization, punctuation and list formatting fixes`() {
-        val prompt = buildAnalysisPrompt("call the plumber", LocalDate.of(2026, 9, 3).atTime(11, 5))
+    fun `a line longer than the limit is split, keeping its number`() {
+        val chunks = chunkLines(listOf("a b c d e"), maxWords = 2)
 
-        assertTrue(prompt.contains("capitalization"))
-        assertTrue(prompt.contains("- \" bulleted list"))
+        assertEquals(listOf("a b", "c d", "e"), chunks.map { it.single().value })
+        assertTrue(chunks.all { it.single().index == 0 })
     }
 
     @Test
-    fun `long transcripts are truncated`() {
-        val long = (1..MAX_PROMPT_WORDS + 500).joinToString(" ") { "word$it" }
+    fun `sentences split at sentence ends`() {
+        assertEquals(listOf("Buy milk.", "Call mum!", "Why?"), sentences(" Buy milk. Call mum! Why? "))
+    }
+}
 
-        val prompt = buildAnalysisPrompt(long, LocalDate.of(2026, 9, 3).atTime(11, 5))
+class PolishParsingTest {
 
-        assertTrue(prompt.contains("word$MAX_PROMPT_WORDS"))
-        assertTrue(!prompt.contains("word${MAX_PROMPT_WORDS + 1} "))
+    private val original = "so um I think we should uh go to the shop tomorrow and buy some milk"
+
+    @Test
+    fun `a cleanup a little shorter than the original is kept`() {
+        val raw = "So I think we should go to the shop tomorrow and buy some milk."
+
+        assertEquals(raw, parsePolish(raw, original))
+    }
+
+    @Test
+    fun `a code fence is stripped`() {
+        assertEquals("So I think we should go to the shop tomorrow and buy some milk.",
+            parsePolish("```\nSo I think we should go to the shop tomorrow and buy some milk.\n```", original))
+    }
+
+    @Test
+    fun `a summary is rejected`() {
+        assertNull(parsePolish("Buy milk tomorrow.", original))
+    }
+
+    @Test
+    fun `an answer far longer than the transcript is rejected`() {
+        assertNull(parsePolish((original + " ").repeat(3), original))
     }
 }
 

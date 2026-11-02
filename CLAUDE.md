@@ -106,7 +106,8 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
   their shape, so ViewModels never see SQL; each `Sql*Repository` exposes `Query.asFlow()`
   flows, which re-emit on any write to their table.
 - Tables are added in the phase that uses them (the dictionary and FTS4 search in 7, speakers in
-  6, folders in 8), each with a `.sqm` migration — none exist yet, schema is version 1.
+  6, folders in 8), each with a numbered `.sqm` migration beside the `.sq` files. `1.sqm`
+  (Phase 5) added `transcript.polishedText` and `todo.sourceOffsetMs`; schema is version 2.
 - `segment` holds Whisper's timed segments (bracketed captions already dropped);
   `transcript.text` stays as the joined text, which is all a pre-Phase-3 recording had. `TranscriptRepository.setTranscription` replaces text and segments in one transaction.
 - No foreign keys: SQLite needs `PRAGMA foreign_keys` per connection. Deleting a transcript
@@ -143,7 +144,8 @@ transcribe/   Transcriptions (import, recordings, job status, startup recovery) 
               TranscriptionWorker (WorkManager) + Chunking
 cpp/          CMake build of whisper.cpp + whisper_jni.cpp
 ai/           LlmRunner interface + LiteRtLlmRunner (downloaded Qwen3), LlmRunnerProvider,
-              ModelStore/HttpModelDownloader for the weights, AnalysisPrompt,
+              ModelStore/HttpModelDownloader for the weights, AnalysisPrompt (summary, merge
+              and tasks prompts + parsers), TextChunks, PolishPrompt + TranscriptPolisher,
               TranscriptAnalyzer, AnalysisOutcome/AnalysisBlock, PendingAnalysisWorker
 data/         Transcript + Segment, TranscriptRepository, TodoItem + DerivedRepository,
               PendingAnalysis + AnalysisQueueRepository, each Sql*Repository over one
@@ -190,10 +192,10 @@ Home, so tapping Home restored it and landed on the last tab. Cost: tab scroll p
   project was left as-is; nothing in the app talks to it.
 - `ui.notes.title()` derives a title from the opening of the text (first sentence, or
   six words) — the fallback for a transcript analysis has not named yet, not a permanent scheme.
-  `Transcript.asRow()` prefers `title`/`summary` when present. `summary` is the AI's full
-  reformatted note (a readable rewrite of the ramble, not a short blurb) — the prompt in
-  `ai/AnalysisPrompt.kt` asks for this explicitly. Row excerpts and `NoteDetailScreen`'s
-  NOTE section both just render it as-is; nothing truncates or re-summarizes it further.
+  `Transcript.asRow()` prefers `title`/`summary` when present. Since Phase 5 `summary` is the
+  gist — a sentence or two, a short paragraph or bullets for a long note — and the full
+  cleaned-up text is polishing's job (see On-device AI). Row excerpts and `NoteDetailScreen`'s
+  NOTE section render it as-is.
 - Task and Reminder unified into one `TodoItem` (`text`, `dueAt` — never null, `hasTime`,
   `done`). A speaker who names no date at all still gets an item due **today**; `hasTime`
   records only whether a clock time was stated. `resolveDue` (in `ai/AnalysisPrompt.kt`)
@@ -204,11 +206,11 @@ Home, so tapping Home restored it and landed on the last tab. Cost: tab scroll p
   down), deliberately not the transcript's own day: re-analysing a month-old note should still
   resolve *its* relative phrases against that note's day (the prompt's "Today is …" line, driven
   by `transcript.createdAt`), but an item with no named date is due now, not a month ago.
-  `buildAnalysisPrompt` takes the transcript's own `createdAt` as a `LocalDateTime`, not just a
+  `buildTasksPrompt` takes the transcript's own `createdAt` as a `LocalDateTime`, not just a
   `LocalDate` — the prompt states both "Today is …" *and* "the current time is …" so the model
   has something to add a spoken duration to. Without the current time, "in 20 minutes" is
   unanswerable and the on-device model was observed inventing an arbitrary hour (`02:20` for a
-  note recorded at 11am) rather than refusing. `parseAnalysis` also repairs one specific
+  note recorded at 11am) rather than refusing. `parseTasks`/`parseSummary` also repair one specific
   small-model JSON slip seen on-device: writing `]` where it means to close an item object
   (`"due":"..."]]}` instead of `"..."}]}`), applied only as a fallback when the brace count is
   short by exactly one — a genuinely different malformed response still returns null rather
@@ -283,8 +285,9 @@ Home, so tapping Home restored it and landed on the last tab. Cost: tab scroll p
   bronze/clay time labels as the Tasks tab, tapping one going to `EditTaskScreen`
   (`sourceTitleFor = { null }` since the source is already the screen you're on). Below that,
   "WHAT WAS SAID": the raw transcript clamped to 4 lines with a "Show all"/"Show less" toggle
-  (`remember(text)`, plain `maxLines` swap — no CSS line-clamp equivalent needed) and a "Copy"
-  chip writing to `ClipboardManager`. A `pending` entry (parked or failed) replaces NOTE/TASKS
+  (`remember(text)`, plain `maxLines` swap — no CSS line-clamp equivalent needed), a "Copy"
+  chip writing to `ClipboardManager`, and Polish / "Restore original" (polished text replaces
+  the raw text in that card, captioned "· POLISHED"). A `pending` entry (parked or failed) replaces NOTE/TASKS
   with a status card (icon avatar + copy + a retry button when `Failed`) — analysis hasn't
   produced a note yet, so there is nothing to show there. `NotesViewModel.tasks` (all
   `DerivedRepository.items`, unfiltered) backs both this screen's per-transcript filter and the
@@ -476,12 +479,40 @@ is the user's call), so a smaller per-tier model (Phase 2) slots in as one more 
   0.18.1. That answer in the `TranscriptAnalyzer` log means the template, not the prompt. Move
   the pin and the library together, and don't take the repo's `gpu_composites` file: it needs a
   LiteRT-LM newer than 0.18.1.
-- `Engine.initialize()` costs ~19s against ~5s of inference, so it is held open for the life of
-  the process and warmed up when Capture opens, from an application-scoped coroutine in
-  `AppContainer` — leaving Capture must not cancel a half-finished init.
+- `Engine.initialize()` costs ~19s against ~5s of inference, so it is held open between calls
+  and warmed up when Capture opens, from an application-scoped coroutine in `AppContainer` —
+  leaving Capture must not cancel a half-finished init.
+- **One large model in memory at a time** (`ai/ModelSlot`). Whisper Large and the LLM together
+  had the low-memory killer take the app even in the foreground, then again on every relaunch
+  as WorkManager resumed the job — it looked like a crash loop with an empty crash buffer
+  (`adb logcat | grep lmkd` shows it). Every engine use goes through `slot.llm`; Whisper runs
+  in `slot.whisper`, which waits for a running LLM call, then closes the engine first. The next
+  analysis pays the 19s load again.
 - `ModelStore.delete()` sweeps every file prefixed with the model's name: LiteRT-LM writes a
   `..._mldrift_weight_cache.bin` beside the weights that is dead without them.
 - MediaPipe LLM Inference is maintenance-only; LiteRT-LM replaces it.
+- **Three prompts, not one** (Phase 5). The old combined prompt carried ~850 tokens of
+  instructions and the 1.7B model followed little of it. `TranscriptAnalyzer` now runs a
+  summary prompt and a tasks prompt per chunk (`chunkLines`, 1200 words — about 1700 of the
+  4096-token context), and for a multi-chunk note one merge prompt over the parts' summaries;
+  each step retries once at temperature 0 and the first step to fail blocks the whole analysis.
+- **A yes/no before the tasks prompt** (`buildIntentPrompt`): "does the speaker talk about their
+  own plans?" — only a yes runs the tasks prompt for that chunk. Told in words not to list
+  steps someone explains, the 1.7B model still turned every step of an imported how-to video
+  into a task; asked the yes/no alone, it answered no. Keep the tasks prompt's examples varied
+  in line numbers: an example with only low numbers made every task point at line 0.
+  This replaced the 3000-word truncation.
+- **Tasks point into the recording.** The tasks prompt numbers its lines with their index in the
+  whole transcript (Whisper's segments, or sentences for a transcript without them) and asks for
+  each task's `line`; `parseTasks` turns that into `TodoItem.sourceOffsetMs`, the segment's
+  start. Phase 7's player will seek to it.
+- **Polishing is on demand** (the note's Polish button), not automatic: it rewrites the whole
+  transcript, one call per 900-word chunk, where analysis only reads it. The result goes to
+  `transcript.polishedText`; segments and `text` keep the original, so Restore is setting it
+  back to null, and re-transcribing clears it. `parsePolish` rejects a reply under half or over
+  1.3× the chunk's words — a summary, or an answer to the transcript, not a cleanup.
+  `TranscriptPolisher` runs on the app scope like analysis; `LiteRtLlmRunner` holds a mutex so
+  the two never share the engine at once.
 
 ## Onboarding
 

@@ -1,0 +1,2 @@
+ALTER TABLE transcript ADD COLUMN polishedText TEXT;
+ALTER TABLE todo ADD COLUMN sourceOffsetMs INTEGER;

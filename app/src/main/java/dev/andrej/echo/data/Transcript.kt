@@ -10,4 +10,6 @@ data class Transcript(
     val title: String? = null,
     val summary: String? = null,
     val analyzedAt: Long? = null,
+    /** Null until polished; the original stays in [text]. */
+    val polishedText: String? = null,
 )

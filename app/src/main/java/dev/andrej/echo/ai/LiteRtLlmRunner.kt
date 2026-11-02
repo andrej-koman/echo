@@ -11,8 +11,6 @@ import com.google.ai.edge.litertlm.SamplerConfig
 import com.google.ai.edge.litertlm.ThinkingConfig
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -21,11 +19,20 @@ import kotlinx.coroutines.withContext
 class LiteRtLlmRunner(
     private val store: ModelStore,
     private val activityManager: ActivityManager?,
+    private val slot: ModelSlot,
     private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : LlmRunner {
 
-    private val lock = Mutex()
+    // Only touched inside the slot, which also keeps analysis and polishing to one
+    // conversation at a time on the one engine.
     private var engine: Engine? = null
+
+    init {
+        slot.onEvictLlm {
+            engine?.close()
+            engine = null
+        }
+    }
 
     override suspend fun availability(): LlmAvailability {
         val memory = totalMemoryBytes()
@@ -43,36 +50,37 @@ class LiteRtLlmRunner(
 
     override suspend fun warmup() {
         try {
-            engineOrNull()
+            slot.llm { engineOrNull() }
         } catch (e: Exception) {
             Log.w(TAG, "warmup failed, the first call will be slow: ${e.message}")
         }
     }
 
-    override suspend fun generate(prompt: String, temperature: Float): String {
+    override suspend fun generate(prompt: String, temperature: Float): String = slot.llm {
         val engine = engineOrNull() ?: error("the model is not on this device yet")
+        withContext(computeDispatcher) { converse(engine, prompt, temperature) }
+    }
 
-        return withContext(computeDispatcher) {
-            val config = ConversationConfig(
-                samplerConfig = SamplerConfig(
-                    topK = TOP_K,
-                    topP = TOP_P,
-                    temperature = temperature.toDouble(),
-                ),
+    private fun converse(engine: Engine, prompt: String, temperature: Float): String {
+        val config = ConversationConfig(
+            samplerConfig = SamplerConfig(
+                topK = TOP_K,
+                topP = TOP_P,
+                temperature = temperature.toDouble(),
+            ),
+        )
+
+        return engine.createConversation(config).use { conversation ->
+            val reply = conversation.sendMessage(
+                prompt,
+                // Qwen3 reasons out loud unless told not to. The parsers survive it, but the
+                // thinking tokens cost seconds for nothing.
+                thinkingConfig = ThinkingConfig(enableThinking = false),
             )
 
-            engine.createConversation(config).use { conversation ->
-                val reply = conversation.sendMessage(
-                    prompt,
-                    // Qwen3 reasons out loud unless told not to. The parser survives it, but the
-                    // thinking tokens cost seconds on the Processing screen for nothing.
-                    thinkingConfig = ThinkingConfig(enableThinking = false),
-                )
-
-                reply.contents.contents
-                    .filterIsInstance<Content.Text>()
-                    .joinToString("") { it.text }
-            }
+            reply.contents.contents
+                .filterIsInstance<Content.Text>()
+                .joinToString("") { it.text }
         }
     }
 
@@ -81,14 +89,12 @@ class LiteRtLlmRunner(
 
         val file = store.fileOrNull() ?: return null
 
-        return lock.withLock {
-            engine ?: withContext(computeDispatcher) {
-                // initialize() reads a gigabyte off disk and sets up the accelerator, so it is
-                // held open for the life of the process rather than paid per recording.
-                Engine(EngineConfig(modelPath = file.absolutePath, backend = Backend.GPU()))
-                    .also { it.initialize() }
-            }.also { engine = it }
-        }
+        // initialize() reads a gigabyte off disk and sets up the accelerator, so it is held open
+        // until Whisper needs the memory rather than paid per call.
+        return withContext(computeDispatcher) {
+            Engine(EngineConfig(modelPath = file.absolutePath, backend = Backend.GPU()))
+                .also { it.initialize() }
+        }.also { engine = it }
     }
 
     private fun totalMemoryBytes(): Long {

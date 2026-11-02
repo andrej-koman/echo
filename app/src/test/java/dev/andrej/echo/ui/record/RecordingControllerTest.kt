@@ -70,7 +70,8 @@ class RecordingControllerTest {
         }
     }
 
-    private val repository = SqlTranscriptRepository(testDatabase())
+    // In place, not on Dispatchers.IO: advanceUntilIdle() can't wait for a real thread.
+    private val repository = SqlTranscriptRepository(testDatabase(), Dispatchers.Unconfined)
     private val recorded = mutableListOf<String>()
     private val discarded = mutableListOf<String>()
 

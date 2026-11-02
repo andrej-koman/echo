@@ -65,6 +65,8 @@ fun NoteDetailScreen(
     val analyzingId by viewModel.analyzingId.collectAsStateWithLifecycle()
     val pending by viewModel.pending.collectAsStateWithLifecycle()
     val tasks by viewModel.tasks.collectAsStateWithLifecycle()
+    val polishingId by viewModel.polishingId.collectAsStateWithLifecycle()
+    val polishFailed by viewModel.polishFailed.collectAsStateWithLifecycle()
     val transcript = transcripts.firstOrNull { it.id == noteId }
     val context = LocalContext.current
 
@@ -166,11 +168,20 @@ fun NoteDetailScreen(
                 }
             }
 
-            SectionCaption(label = "WHAT WAS SAID", trailingText = transcript.language)
+            SectionCaption(
+                label = if (transcript.polishedText != null) "WHAT WAS SAID · POLISHED" else "WHAT WAS SAID",
+                trailingText = transcript.language,
+            )
 
+            val shown = transcript.polishedText ?: transcript.text
             RawNoteCard(
-                text = transcript.text,
-                onCopy = { context.copyToClipboard(transcript.text) },
+                text = shown,
+                polished = transcript.polishedText != null,
+                polishing = polishingId == noteId,
+                polishFailed = noteId in polishFailed,
+                onCopy = { context.copyToClipboard(shown) },
+                onPolish = { if (polishingId == null) viewModel.polish(noteId) },
+                onRestore = { viewModel.restoreOriginal(noteId) },
             )
         }
     }
@@ -269,7 +280,15 @@ private fun AnalysisStatusCard(
 }
 
 @Composable
-private fun RawNoteCard(text: String, onCopy: () -> Unit) {
+private fun RawNoteCard(
+    text: String,
+    polished: Boolean,
+    polishing: Boolean,
+    polishFailed: Boolean,
+    onCopy: () -> Unit,
+    onPolish: () -> Unit,
+    onRestore: () -> Unit,
+) {
     var expanded by remember(text) { mutableStateOf(false) }
 
     EchoCard(modifier = Modifier.fillMaxWidth()) {
@@ -281,6 +300,14 @@ private fun RawNoteCard(text: String, onCopy: () -> Unit) {
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.testTag(TAG_DETAIL_TEXT),
         )
+        if (polishFailed) {
+            Text(
+                text = "Couldn't polish this one. The transcript is unchanged.",
+                style = EchoTheme.typography.micro,
+                color = EchoTheme.colors.statusWarningFg,
+                modifier = Modifier.padding(top = EchoTheme.spacing.s3),
+            )
+        }
         Row(
             modifier = Modifier.padding(top = EchoTheme.spacing.s4),
             horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3),
@@ -296,6 +323,17 @@ private fun RawNoteCard(text: String, onCopy: () -> Unit) {
                 onClick = onCopy,
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Sm,
+            )
+            EchoButton(
+                text = when {
+                    polished -> "Restore original"
+                    polishing -> "Polishing…"
+                    else -> "Polish"
+                },
+                onClick = if (polished) onRestore else onPolish,
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Sm,
+                loading = polishing,
             )
         }
     }

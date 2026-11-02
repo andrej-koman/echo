@@ -22,7 +22,7 @@ import org.junit.Before
 import org.junit.Test
 
 private val UTC = ZoneId.of("UTC")
-private val good = """{"title":"Fix the tap","summary":"It drips.","items":[{"text":"Buy a washer","due":null}]}"""
+private val good = """{"title":"Fix the tap","summary":"It drips.","items":[{"text":"Buy a washer","due":null}],"plans":true}"""
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PendingAnalysisWorkerTest {
@@ -49,7 +49,7 @@ class PendingAnalysisWorkerTest {
         queue = queue,
         transcripts = transcripts,
         derived = derived,
-        analyzer = TranscriptAnalyzer({ runner }, UTC, logDebug = {}, logWarn = {}),
+        analyzer = TranscriptAnalyzer({ runner }, zone = UTC, logDebug = {}, logWarn = {}),
         scope = CoroutineScope(dispatcher),
         now = { 42L },
     )

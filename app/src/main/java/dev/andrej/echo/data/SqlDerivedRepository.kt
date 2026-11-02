@@ -41,6 +41,7 @@ class SqlDerivedRepository(
                         done = doneBefore[id] ?: false,
                         createdAt = createdAt,
                         updatedAt = createdAt,
+                        sourceOffsetMs = newTodo.sourceOffsetMs,
                     ),
                 )
             }

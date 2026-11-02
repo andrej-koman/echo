@@ -15,74 +15,119 @@ data class Analysis(
     val items: List<NewTodo>,
 )
 
-/**
- * Words, not tokens: there is no tokenizer on this side of the interface. Long recordings are truncated until chunking exists.
- */
-const val MAX_PROMPT_WORDS = 3000
+data class NoteSummary(val title: String?, val summary: String?)
 
 private val promptDate = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 private val promptTime = DateTimeFormatter.ofPattern("HH:mm")
 
+fun buildSummaryPrompt(text: String): String = """
+    Summarize this voice note. Reply with JSON only, both keys always present:
+
+    {"title":"...","summary":"..."}
+
+    title: what the note is about, at most 6 words.
+
+    summary: the gist, in the language the speaker used. One or two sentences for a short note;
+    for a long one, a short paragraph or a few "- " bullet points. Write it as the speaker's own
+    note, never as a report about it: no "The speaker…", "Tells…", "Describes…", "Mentions…".
+
+    Example. Voice note: "ok so the tap in the kitchen is dripping again, I need to call the
+    plumber, probably tomorrow, and I should check if we still have spare washers"
+    {"title":"Dripping kitchen tap","summary":"The kitchen tap is dripping again. Call the plumber tomorrow and check for spare washers."}
+
+    Voice note:
+    ""${'"'}
+    $text
+    ""${'"'}
+""".trimIndent()
+
+/** A long note is summarized part by part; this folds the parts' summaries into one. */
+fun buildMergePrompt(parts: List<NoteSummary>): String = """
+    These are summaries of consecutive parts of one long voice note. Combine them into a single
+    summary of the whole note. Reply with JSON only, both keys always present:
+
+    {"title":"...","summary":"..."}
+
+    title: what the whole note is about, at most 6 words.
+
+    summary: a short paragraph or a few "- " bullet points covering every part, in the language
+    the parts are written in. Written as the speaker's own note, never as a report about it: no
+    "The speaker…", "Tells…", "Describes…".
+
+    ${parts.mapIndexed { i, part -> "Part ${i + 1}: ${part.title.orEmpty()}\n${part.summary.orEmpty()}" }.joinToString("\n\n")}
+""".trimIndent()
+
 /**
+ * A yes/no asked before the tasks prompt: told in words not to list steps someone explains, the
+ * 1.7B model listed every step of a how-to video as a task anyway.
+ */
+fun buildIntentPrompt(text: String): String = """
+    Does the speaker of this voice note talk about things they themselves plan to do, or want to
+    be reminded of? Explaining how to do something, teaching, telling a story or describing what
+    already happened does not count. Reply with JSON only: {"plans":true} or {"plans":false}.
+
+    Voice note:
+    ""${'"'}
+    $text
+    ""${'"'}
+""".trimIndent()
+
+/**
+ * [lines] are numbered with their index in the whole transcript, not in this chunk, so the
+ * model's `line` answer maps straight back to a segment.
+ *
  * [now] is the recording's own start time, not the device clock at prompt-build time — the two
  * can differ if analysis runs late (queued, retried). Without a current time at all, a relative
  * duration ("in 20 minutes") has nothing to add to, so the model guesses; it was seen inventing
- * `02:20` for a note recorded at 11am. The date and the time are both threaded through from the
- * same instant so they can never disagree with each other.
+ * `02:20` for a note recorded at 11am.
  */
-fun buildAnalysisPrompt(text: String, now: LocalDateTime): String {
-    val words = text.trim().split(Regex("\\s+"))
-    val body = if (words.size <= MAX_PROMPT_WORDS) text.trim() else words.take(MAX_PROMPT_WORDS).joinToString(" ")
+fun buildTasksPrompt(lines: List<IndexedValue<String>>, now: LocalDateTime): String = """
+    Today is ${promptDate.format(now)}, the current time is ${promptTime.format(now)}. List the
+    tasks in this voice note: things the speaker says they themselves will do or want to be
+    reminded of, one per stated intention. Steps the speaker explains or teaches to others
+    ("click download", "go to Applications") are not tasks; neither is anything they already
+    did. List each task once. Reply with JSON only:
 
-    return """
-        Today is ${promptDate.format(now)}, the current time is ${promptTime.format(now)}. Extract
-        structured data from this voice note. Reply with JSON only. Always include all three keys
-        below, using an empty array when there is nothing for it — never drop a key.
+    {"items":[{"text":"...","due":"ISO date, ISO datetime, or null","due_relative_minutes":123 or null,"line":0}]}
 
-        {"title":"...","summary":"...","items":[{"text":"...","due":"ISO date, ISO datetime, or null","due_relative_minutes":123 or null}]}
+    text: the action itself, imperative, no time attached, in the language the speaker used.
+    due: if an explicit clock time or date was stated ("at 10am", "tomorrow at 3", "tomorrow",
+    "on Friday") resolve it — a clock time to a full ISO8601 timestamp using today's date above,
+    a date alone to a bare ISO date; for anything else use null. due_relative_minutes: if the
+    speaker instead stated a duration from now ("in 20 minutes" -> 20, "in an hour" -> 60), the
+    number of minutes from now — and leave due null in that case, don't resolve it yourself. If
+    no date, time, or duration was stated at all, leave both null. line: the number of the line
+    the task was said on. If there are no tasks, reply {"items":[]}. No commentary.
 
-        title: max 6 words.
+    Example. Today is 2026-01-01, the current time is 08:00.
+    [0] Remind me to call the dentist tomorrow at 9am.
+    [1] Also water the plants in 20 minutes.
+    [2] Oh and I need to buy milk.
+    {"items":[{"text":"Call the dentist","due":"2026-01-02T09:00:00","due_relative_minutes":null,"line":0},{"text":"Water the plants","due":null,"due_relative_minutes":20,"line":1},{"text":"Buy milk","due":null,"due_relative_minutes":null,"line":2}]}
 
-        summary: rewrite what was said into a clean, readable note. Keep everything the speaker
-        said, do not compress it into a short blurb. The source is a speech-to-text transcript, so
-        clean up its artifacts: fix capitalization the recognizer got wrong mid-sentence (a word
-        capitalized only because it followed a fragment break), but leave real proper nouns,
-        acronyms, and the start of each sentence capitalized. Add punctuation — periods at the end
-        of sentences, commas where a reader needs the pause. If the speaker runs through a list of
-        options or items, write a short lead sentence followed by a "- " bulleted list instead of
-        leaving it as run-on prose. Otherwise use short paragraphs where that helps.
+    Example. Today is 2026-01-01, the current time is 08:00.
+    [0] I think I should start a podcast, I'm thinking about names.
+    [1] One could be Time to Be, another Let's Go Together.
+    {"items":[]}
 
-        items: things the speaker intends to do or be reminded of, one per stated action. text:
-        the action itself, imperative, no time attached. due: if an explicit clock time or date
-        was stated ("at 10am", "tomorrow at 3", "tomorrow", "on Friday") resolve it — a clock time
-        to a full ISO8601 timestamp using today's date above, a date alone to a bare ISO date; for
-        anything else use null. due_relative_minutes: if the speaker instead stated a duration
-        from now ("in 20 minutes" -> 20, "in an hour" -> 60), the number of minutes from now — and
-        leave due null in that case, don't resolve it yourself. If no date, time, or duration was
-        stated at all, leave both due and due_relative_minutes null. No commentary.
-
-        Example. Today is 2026-01-01, the current time is 08:00.
-        Voice note: "Remind me to call the dentist tomorrow at 9am. Also water the plants in 20
-        minutes. Also need to buy milk."
-        {"title":"Call dentist, water plants","summary":"Call the dentist tomorrow morning to confirm the appointment. Also water the plants soon, and remember to buy milk on the way home.","items":[{"text":"Call the dentist","due":"2026-01-02T09:00:00","due_relative_minutes":null},{"text":"Water the plants","due":null,"due_relative_minutes":20},{"text":"Buy milk","due":null,"due_relative_minutes":null}]}
-
-        Example. Today is 2026-01-01, the current time is 08:00.
-        Voice note: "I think I should start a podcast I'm thinking about three names one name
-        could be Time to be let's go together the fourth name could be I don't know"
-        {"title":"Podcast name ideas","summary":"I think I should start a podcast. Three name ideas:\n- Time to Be\n- Let's Go Together\n- (undecided)","items":[]}
-
-        Voice note:
-        ""${'"'}
-        $body
-        ""${'"'}
-    """.trimIndent()
-}
+    Voice note:
+    ${lines.joinToString("\n") { "[${it.index}] ${it.value}" }}
+""".trimIndent()
 
 @Serializable
-private data class RawAnalysis(
+private data class RawSummary(
     val title: String = "",
     val summary: String = "",
-    val items: List<RawItem> = emptyList(),
+)
+
+@Serializable
+private data class RawIntent(
+    val plans: Boolean? = null,
+)
+
+@Serializable
+private data class RawTasks(
+    val items: List<RawItem>? = null,
 )
 
 @Serializable
@@ -90,6 +135,7 @@ private data class RawItem(
     val text: String = "",
     @SerialName("due") val due: String? = null,
     @SerialName("due_relative_minutes") val dueRelativeMinutes: Int? = null,
+    val line: Int? = null,
 )
 
 private val json = Json {
@@ -98,36 +144,54 @@ private val json = Json {
     coerceInputValues = true
 }
 
+/** Null when the reply holds no JSON, or JSON with neither a title nor a summary. */
+fun parseSummary(raw: String): NoteSummary? {
+    val parsed = decodeOutermost<RawSummary>(raw) ?: return null
+    val summary = NoteSummary(
+        title = parsed.title.trim().ifBlank { null },
+        summary = parsed.summary.trim().ifBlank { null },
+    )
+    return summary.takeIf { it.title != null || it.summary != null }
+}
+
+/** Null when the reply holds no `plans` answer. */
+fun parseIntent(raw: String): Boolean? = decodeOutermost<RawIntent>(raw)?.plans
+
 /**
- * Reads the outermost braces rather than the whole string: a 1B model wraps its answer in prose
- * or a code fence often enough that both are expected, not exceptional. Null only when nothing
- * JSON-shaped was there at all.
+ * Null when the reply holds no `items` array; an empty one is a real answer. [lineOffsetMs]
+ * turns the model's line number into a moment in the recording, null for a number it never saw.
  */
-fun parseAnalysis(
+fun parseTasks(
     raw: String,
     zone: ZoneId = ZoneId.systemDefault(),
     today: LocalDate = LocalDate.now(zone),
     recordedAt: LocalDateTime = LocalDateTime.now(zone),
-): Analysis? {
+    lineOffsetMs: (Int) -> Long? = { null },
+): List<NewTodo>? {
+    val items = decodeOutermost<RawTasks>(raw)?.items ?: return null
+    return items
+        .filter { it.text.isNotBlank() }
+        .map { item ->
+            val due = resolveDue(item.due, item.dueRelativeMinutes, zone, today, recordedAt)
+            NewTodo(item.text.trim(), due.at, due.hasTime, due.hasDate, item.line?.let(lineOffsetMs))
+        }
+}
+
+/**
+ * Reads the outermost braces rather than the whole string: a small model wraps its answer in
+ * prose or a code fence often enough that both are expected, not exceptional.
+ */
+private inline fun <reified T> decodeOutermost(raw: String): T? {
     val start = raw.indexOf('{')
     val end = raw.lastIndexOf('}')
     if (start == -1 || end <= start) return null
 
     val candidate = raw.substring(start, end + 1)
-    val parsed = decode(candidate) ?: decode(repairMissingBrace(candidate)) ?: return null
-
-    return Analysis(
-        title = parsed.title.trim().ifBlank { null },
-        summary = parsed.summary.trim().ifBlank { null },
-        items = parsed.items
-            .map { it.text.trim() to resolveDue(it.due, it.dueRelativeMinutes, zone, today, recordedAt) }
-            .filter { (text, _) -> text.isNotBlank() }
-            .map { (text, due) -> NewTodo(text, due.at, due.hasTime, due.hasDate) },
-    )
+    return decode<T>(candidate) ?: decode<T>(repairMissingBrace(candidate))
 }
 
-private fun decode(candidate: String): RawAnalysis? = try {
-    json.decodeFromString<RawAnalysis>(candidate)
+private inline fun <reified T> decode(candidate: String): T? = try {
+    json.decodeFromString<T>(candidate)
 } catch (e: Exception) {
     null
 }

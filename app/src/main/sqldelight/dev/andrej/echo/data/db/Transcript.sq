@@ -6,7 +6,9 @@ CREATE TABLE transcript (
     durationMs INTEGER NOT NULL,
     title TEXT,
     summary TEXT,
-    analyzedAt INTEGER
+    analyzedAt INTEGER,
+    -- Polishing's output. The segments keep the original, so restoring is clearing this.
+    polishedText TEXT
 );
 
 selectAll:
@@ -17,10 +19,13 @@ INSERT INTO transcript (id, text, language, createdAt, durationMs, title)
 VALUES (?, ?, ?, ?, ?, ?);
 
 setTranscription:
-UPDATE transcript SET text = ?, language = ?, durationMs = ? WHERE id = ?;
+UPDATE transcript SET text = ?, language = ?, durationMs = ?, polishedText = NULL WHERE id = ?;
 
 attachAnalysis:
 UPDATE transcript SET title = ?, summary = ?, analyzedAt = ? WHERE id = ?;
+
+setPolished:
+UPDATE transcript SET polishedText = ? WHERE id = ?;
 
 delete:
 DELETE FROM transcript WHERE id = ?;

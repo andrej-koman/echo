@@ -63,12 +63,21 @@ class NotesViewModel(
     private val onImport: (List<Uri>) -> Unit = {},
     private val onRetryTranscription: (String) -> Unit = {},
     private val onDeleted: (String) -> Unit = {},
+    polishingId: Flow<String?> = flowOf(null),
+    polishFailed: Flow<Set<String>> = flowOf(emptySet()),
+    private val onPolish: (String) -> Unit = {},
     private val now: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
 
     private val query = MutableStateFlow("")
 
     val analyzingId: StateFlow<String?> = worker.activeId
+
+    val polishingId: StateFlow<String?> = polishingId
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val polishFailed: StateFlow<Set<String>> = polishFailed
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
     val transcripts: StateFlow<List<Transcript>> = repository.transcripts
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -114,6 +123,12 @@ class NotesViewModel(
 
     fun setTaskDone(itemId: String, done: Boolean) {
         viewModelScope.launch { derived.setDone(itemId, done) }
+    }
+
+    fun polish(transcriptId: String) = onPolish(transcriptId)
+
+    fun restoreOriginal(transcriptId: String) {
+        viewModelScope.launch { repository.setPolished(transcriptId, null) }
     }
 
     /** The detail screen's one retry button: a failed transcription retries that, not analysis. */

@@ -53,7 +53,7 @@ class NotesViewModelTest {
             derived = derived,
             analyzer = TranscriptAnalyzer(
                 { FakeLlmRunner(availability = LlmAvailability.Unsupported("no model")) },
-                ZoneId.of("UTC"),
+                zone = ZoneId.of("UTC"),
                 logDebug = {},
                 logWarn = {},
             ),

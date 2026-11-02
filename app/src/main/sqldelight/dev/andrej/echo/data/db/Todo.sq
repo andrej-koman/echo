@@ -9,7 +9,8 @@ CREATE TABLE todo (
     hasDate INTEGER AS Boolean NOT NULL,
     done INTEGER AS Boolean NOT NULL,
     createdAt INTEGER NOT NULL,
-    updatedAt INTEGER NOT NULL
+    updatedAt INTEGER NOT NULL,
+    sourceOffsetMs INTEGER
 );
 
 CREATE INDEX todo_source ON todo(sourceTranscriptId);

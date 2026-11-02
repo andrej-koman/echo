@@ -13,8 +13,18 @@ object WhisperNative {
     external fun init(modelPath: String): Long
     external fun free(handle: Long)
 
-    /** 16 kHz mono float samples. Null [language] auto-detects. Returns 0 on success, -1 when aborted. */
-    external fun full(handle: Long, samples: FloatArray, language: String?, threads: Int, progress: WhisperProgress): Int
+    /**
+     * 16 kHz mono float samples. Null [language] auto-detects; [prompt] primes the spelling of
+     * names. Returns 0 on success, -1 when aborted.
+     */
+    external fun full(
+        handle: Long,
+        samples: FloatArray,
+        language: String?,
+        prompt: String?,
+        threads: Int,
+        progress: WhisperProgress,
+    ): Int
     external fun abort(handle: Long)
 
     external fun segmentCount(handle: Long): Int

@@ -35,4 +35,10 @@ class ChunkingTest {
         )
         assertEquals("Hello there. Buy milk.", transcriptText(segments))
     }
+
+    @Test
+    fun `dictionary terms become one comma list, or no prompt`() {
+        assertEquals("Črnigoj, LoroNote.", whisperPrompt(listOf(" Črnigoj ", "", "LoroNote")))
+        assertEquals(null, whisperPrompt(listOf(" ")))
+    }
 }

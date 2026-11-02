@@ -41,3 +41,7 @@ internal fun List<Segment>.spoken(): List<Segment> = mapNotNull { segment ->
 internal fun transcriptText(segments: List<Segment>): String = segments.spoken().joinToString(" ") { it.text }
 
 private val BRACKETED = Regex("""^[\[(][^\])]*[\])]$""")
+
+/** Whisper copies the spelling of words it saw in the prompt; a plain list is enough for that. */
+internal fun whisperPrompt(terms: List<String>): String? =
+    terms.map { it.trim() }.filter { it.isNotEmpty() }.takeIf { it.isNotEmpty() }?.joinToString(", ", postfix = ".")

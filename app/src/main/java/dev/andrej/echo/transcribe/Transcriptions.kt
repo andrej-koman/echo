@@ -23,6 +23,7 @@ import dev.andrej.echo.speech.AudioDecoder
 import dev.andrej.echo.speech.AudioEncoder
 import dev.andrej.echo.speech.SAMPLE_RATE
 import dev.andrej.echo.speech.pcm16ToFloats
+import dev.andrej.echo.data.DictionaryRepository
 import dev.andrej.echo.data.Segment
 import dev.andrej.echo.speech.whisper.WhisperTranscriber
 import java.io.File
@@ -58,6 +59,7 @@ class Transcriptions(
     private val repository: TranscriptRepository,
     private val modelStore: ModelStore,
     private val settings: SettingsStore,
+    private val dictionary: DictionaryRepository,
     private val analysisQueue: AnalysisQueueRepository,
     private val analysis: PendingAnalysisWorker,
     private val modelSlot: ModelSlot,
@@ -119,6 +121,9 @@ class Transcriptions(
 
     /** Where a recording writes its samples. */
     fun recordingFile(id: String): File = File(dirFor(id), PCM)
+
+    /** A recording has one only after transcription, when its PCM is encoded. */
+    fun audioFile(id: String): File? = File(dirFor(id), SOURCE).takeIf { it.isFile }
 
     /**
      * A take whose process died before Stop leaves `audio.pcm` with no transcript. Raw PCM needs
@@ -212,6 +217,7 @@ class Transcriptions(
 
         val segments = mutableListOf<Segment>()
         var language: String? = settings.transcriptionLanguage
+        val prompt = whisperPrompt(dictionary.all().map { it.term })
         // The LLM is closed first: both models at once had the low-memory killer take the app.
         modelSlot.whisper {
             WhisperTranscriber.load(model).use { whisper ->
@@ -222,7 +228,7 @@ class Transcriptions(
                         val samples = file.readFloats(start, minOf(CHUNK_SAMPLES.toLong(), total - start).toInt())
                         val length = if (start + samples.size < total) quietestCut(samples) else samples.size
                         val chunkStart = start
-                        val result = whisper.transcribe(samples.copyOf(length), language) { percent ->
+                        val result = whisper.transcribe(samples.copyOf(length), language, prompt) { percent ->
                             val done = chunkStart + length * percent / 100f
                             report(TranscriptionStatus.Transcribing(decodeShare + (1 - decodeShare) * done / total))
                         }

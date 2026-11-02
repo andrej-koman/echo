@@ -27,6 +27,14 @@ interface TranscriptRepository {
 
     suspend fun segments(id: String): List<Segment>
 
+    fun segmentsFlow(id: String): Flow<List<Segment>>
+
+    /** Replaces the segments with edited ones; the transcript's text is rejoined from them. */
+    suspend fun editSegments(id: String, segments: List<Segment>)
+
+    /** Ids of transcripts whose title, summary or spoken text matches. */
+    fun search(text: String): Flow<Set<String>>
+
     suspend fun attachAnalysis(
         id: String,
         title: String?,

@@ -8,19 +8,23 @@ import dev.andrej.echo.ai.PendingAnalysisWorker
 import dev.andrej.echo.data.AnalysisQueueRepository
 import dev.andrej.echo.data.DerivedRepository
 import dev.andrej.echo.data.PendingAnalysis
+import dev.andrej.echo.data.Segment
 import dev.andrej.echo.data.TodoItem
 import dev.andrej.echo.data.Transcript
 import dev.andrej.echo.data.TranscriptRepository
 import dev.andrej.echo.transcribe.TranscriptionStatus
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -54,6 +58,7 @@ data class NotesUiState(
     val loaded: Boolean = false,
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class NotesViewModel(
     private val repository: TranscriptRepository,
     private val queue: AnalysisQueueRepository,
@@ -66,6 +71,7 @@ class NotesViewModel(
     polishingId: Flow<String?> = flowOf(null),
     polishFailed: Flow<Set<String>> = flowOf(emptySet()),
     private val onPolish: (String) -> Unit = {},
+    private val audioFile: (String) -> File? = { null },
     private val now: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
 
@@ -87,6 +93,11 @@ class NotesViewModel(
             pendingCopyByTranscript(entries) + statuses.mapValues { it.value.toPendingCopy() }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
+    /** Ids still being transcribed: their segments are rewritten per chunk, so not editable yet. */
+    val transcribing: StateFlow<Set<String>> = transcription
+        .map { statuses -> statuses.filterValues { it != TranscriptionStatus.Failed }.keys }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
     private val transcriptionFailed: StateFlow<Set<String>> = transcription
         .map { statuses -> statuses.filterValues { it == TranscriptionStatus.Failed }.keys }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
@@ -94,9 +105,13 @@ class NotesViewModel(
     val tasks: StateFlow<List<TodoItem>> = derived.items
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    private val searchHits: Flow<Set<String>?> = query.flatMapLatest { text ->
+        if (text.isBlank()) flowOf(null) else repository.search(text)
+    }
+
     val state: StateFlow<NotesUiState> =
-        combine(repository.transcripts, query, pending, tasks) { transcripts, text, pendingByTranscript, allTasks ->
-            val matches = transcripts.filter { it.text.contains(text.trim(), ignoreCase = true) }
+        combine(repository.transcripts, query, searchHits, pending, tasks) { transcripts, text, hits, pendingByTranscript, allTasks ->
+            val matches = if (hits == null) transcripts else transcripts.filter { it.id in hits }
             val taskCountByTranscript = allTasks.groupingBy { it.sourceTranscriptId }.eachCount()
             NotesUiState(
                 query = text,
@@ -126,6 +141,15 @@ class NotesViewModel(
     }
 
     fun polish(transcriptId: String) = onPolish(transcriptId)
+
+    fun segments(transcriptId: String): Flow<List<Segment>> = repository.segmentsFlow(transcriptId)
+
+    fun saveSegments(transcriptId: String, segments: List<Segment>) {
+        viewModelScope.launch { repository.editSegments(transcriptId, segments) }
+    }
+
+    /** The recording or imported file, once there is one to play. */
+    fun audio(transcriptId: String): File? = audioFile(transcriptId)
 
     fun restoreOriginal(transcriptId: String) {
         viewModelScope.launch { repository.setPolished(transcriptId, null) }

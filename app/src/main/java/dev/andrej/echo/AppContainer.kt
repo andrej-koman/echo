@@ -20,6 +20,7 @@ import dev.andrej.echo.ai.TranscriptPolisher
 import dev.andrej.echo.ai.toCardState
 import dev.andrej.echo.data.AnalysisQueueRepository
 import dev.andrej.echo.data.DerivedRepository
+import dev.andrej.echo.data.DictionaryRepository
 import dev.andrej.echo.data.SettingsStore
 import dev.andrej.echo.data.SharedPreferencesSettingsStore
 import dev.andrej.echo.data.SqlAnalysisQueueRepository
@@ -37,6 +38,7 @@ import dev.andrej.echo.speech.whisper.WhisperNative
 import dev.andrej.echo.speech.whisper.whisperModelFor
 import dev.andrej.echo.transcribe.Transcriptions
 import dev.andrej.echo.ui.home.HomeViewModel
+import dev.andrej.echo.ui.profile.DictionaryViewModel
 import dev.andrej.echo.ui.profile.HistoryViewModel
 import dev.andrej.echo.ui.profile.ProfileViewModel
 import dev.andrej.echo.ui.profile.SettingsViewModel
@@ -89,6 +91,8 @@ class AppContainer(context: Context) {
     val derived: DerivedRepository = SqlDerivedRepository(database)
 
     val analysisQueue: AnalysisQueueRepository = SqlAnalysisQueueRepository(database)
+
+    val dictionary = DictionaryRepository(database)
 
     val modelStore = ModelStore(
         directory = File(applicationContext.filesDir, "models"),
@@ -149,6 +153,7 @@ class AppContainer(context: Context) {
         repository = repository,
         modelStore = whisperStore,
         settings = settings,
+        dictionary = dictionary,
         analysisQueue = analysisQueue,
         analysis = pendingAnalysisWorker,
         modelSlot = modelSlot,
@@ -291,6 +296,7 @@ class AppContainer(context: Context) {
                     polishingId = polisher.activeId,
                     polishFailed = polisher.failed,
                     onPolish = polisher::polishAsync,
+                    audioFile = transcriptions::audioFile,
                 ) as T
 
             modelClass.isAssignableFrom(OnboardingViewModel::class.java) ->
@@ -326,6 +332,9 @@ class AppContainer(context: Context) {
                     onDeleteAllData = ::deleteAllData,
                     onReplayOnboarding = ::replayOnboarding,
                 ) as T
+
+            modelClass.isAssignableFrom(DictionaryViewModel::class.java) ->
+                DictionaryViewModel(dictionary) as T
 
             modelClass.isAssignableFrom(HistoryViewModel::class.java) ->
                 HistoryViewModel(repository, derived) as T

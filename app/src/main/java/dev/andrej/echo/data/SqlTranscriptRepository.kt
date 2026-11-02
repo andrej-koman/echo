@@ -6,6 +6,7 @@ import dev.andrej.echo.data.db.EchoDatabase
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
 class SqlTranscriptRepository(
@@ -50,11 +51,32 @@ class SqlTranscriptRepository(
     ) = withContext(ioDispatcher) {
         database.transaction {
             queries.setTranscription(text, language, durationMs, id)
-            segmentQueries.deleteFor(id)
-            segments.forEachIndexed { i, segment ->
-                segmentQueries.insert(id, i.toLong(), segment.startMs, segment.endMs, segment.text)
-            }
+            replaceSegments(id, segments)
         }
+    }
+
+    override suspend fun editSegments(id: String, segments: List<Segment>) = withContext(ioDispatcher) {
+        database.transaction {
+            queries.setText(segments.joinToString(" ") { it.text }, id)
+            replaceSegments(id, segments)
+        }
+    }
+
+    private fun replaceSegments(id: String, segments: List<Segment>) {
+        segmentQueries.deleteFor(id)
+        segmentQueries.deleteFtsFor(id)
+        segments.forEachIndexed { i, segment ->
+            segmentQueries.insert(id, i.toLong(), segment.startMs, segment.endMs, segment.text)
+            segmentQueries.insertFts(id, segment.text)
+        }
+    }
+
+    override fun segmentsFlow(id: String): Flow<List<Segment>> =
+        segmentQueries.selectFor(id, ::Segment).asFlow().mapToList(ioDispatcher)
+
+    override fun search(text: String): Flow<Set<String>> {
+        val like = text.trim().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        return queries.search(like, ftsMatch(text)).asFlow().mapToList(ioDispatcher).map { it.toSet() }
     }
 
     override suspend fun segments(id: String): List<Segment> = withContext(ioDispatcher) {
@@ -79,6 +101,7 @@ class SqlTranscriptRepository(
     override suspend fun delete(id: String) = withContext(ioDispatcher) {
         database.transaction {
             segmentQueries.deleteFor(id)
+            segmentQueries.deleteFtsFor(id)
             queries.delete(id)
         }
     }
@@ -86,7 +109,15 @@ class SqlTranscriptRepository(
     override suspend fun clear() = withContext(ioDispatcher) {
         database.transaction {
             segmentQueries.clear()
+            segmentQueries.clearFts()
             queries.clear()
         }
     }
 }
+
+/**
+ * Each word becomes a prefix term, so a half-typed word still matches. Lowercased because FTS
+ * reads a bare AND/OR/NOT as an operator; anything but letters and digits is dropped.
+ */
+internal fun ftsMatch(text: String): String =
+    text.lowercase().split(Regex("[^\\p{L}\\p{N}]+")).filter { it.isNotEmpty() }.joinToString(" ") { "$it*" }

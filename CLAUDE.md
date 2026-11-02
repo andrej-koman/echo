@@ -61,6 +61,9 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
 - **Startup recovery** (`Transcriptions.recoverInterruptedRecordings`): an `audio.pcm` with no
   transcript row is a take whose process died before Stop; it is filed with its length and
   queued. Called once from `AppContainer.init`, before any take can exist.
+- **Dictionary** (Settings → Dictionary, `DictionaryRepository`): terms joined into Whisper's
+  `initial_prompt` with `carry_initial_prompt` on, so it holds for every 30 s window of a chunk,
+  not only the first. Applies to new transcriptions only.
 - Language is a Whisper code in Settings (`SettingsStore.transcriptionLanguage`, preference key
   `transcription_language` — the old `language` key held a `SpeechRecognizer` locale), or
   auto-detect when unset. The list comes from `WhisperNative.languages()` (99 codes, no model
@@ -102,12 +105,18 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
 ## Storage
 
 - One SQLite database, `echo.db`, through SQLDelight 2.4.1 (`app/src/main/sqldelight/`).
-  Tables: `transcript`, `segment`, `todo`, `analysis_queue`. The repository interfaces kept
+  Tables: `transcript`, `segment`, `segment_fts`, `todo`, `analysis_queue`, `dictionary_term`. The repository interfaces kept
   their shape, so ViewModels never see SQL; each `Sql*Repository` exposes `Query.asFlow()`
   flows, which re-emit on any write to their table.
-- Tables are added in the phase that uses them (the dictionary and FTS4 search in 7, speakers in
-  6, folders in 8), each with a numbered `.sqm` migration beside the `.sq` files. `1.sqm`
-  (Phase 5) added `transcript.polishedText` and `todo.sourceOffsetMs`; schema is version 2.
+- Tables are added in the phase that uses them (speakers in 6, folders in 8), each with a
+  numbered `.sqm` migration beside the `.sq` files. `1.sqm` (Phase 5) added
+  `transcript.polishedText` and `todo.sourceOffsetMs`; `2.sqm` (Phase 7) added `segment_fts` and
+  `dictionary_term`; schema is version 3.
+- **Search** (`TranscriptRepository.search`, Notes' search field): `segment_fts` (FTS4,
+  `tokenize=unicode61`, so `č` matches `c` and case folds) one row per segment, plus `LIKE` on
+  title and summary. The repository writes `segment_fts` in the same transactions as `segment` —
+  no triggers. `ftsMatch` turns each typed word into a lowercased prefix term; lowercase because
+  a bare `AND`/`OR`/`NOT` is an FTS operator.
 - `segment` holds Whisper's timed segments (bracketed captions already dropped);
   `transcript.text` stays as the joined text, which is all a pre-Phase-3 recording had. `TranscriptRepository.setTranscription` replaces text and segments in one transaction.
 - No foreign keys: SQLite needs `PRAGMA foreign_keys` per connection. Deleting a transcript
@@ -159,10 +168,12 @@ ui/capture/   CaptureScreen — recording, paused
 ui/record/    RecordViewModel + RecordUiState over RecordingController (still named for its old screen)
 ui/onboarding/ OnboardingScreen + OnboardingSteps (the 5 first-run screens), OnboardingViewModel
 ui/profile/   ProfileScreen (the Profile tab) + ProfileViewModel, SettingsScreen +
-              SettingsViewModel, HistoryScreen + HistoryViewModel
+              SettingsViewModel, HistoryScreen + HistoryViewModel, DictionaryScreen +
+              DictionaryViewModel
 ui/notes/     NotesScreen + NotesViewModel (the Notes tab — one shared card per day, hairline
               dividers, same rhythm as Tasks; search; NoteRow, PendingBadge, PendingCopy)
-ui/detail/    NoteDetailScreen (NOTE + tasks-from-this-note + raw TRANSCRIPT, bar-icon actions)
+ui/detail/    NoteDetailScreen (NOTE + tasks-from-this-note + segment editor, bar-icon actions),
+              NotePlayer (ExoPlayer), TranscriptEdits (find/replace/edit logic)
 notify/       RecordingNotifier (+ RecordingActionReceiver, BootReceiver), ModelDownloadNotifier
               (+ ModelDownloadActionReceiver)
 AppContainer manual DI, no Hilt
@@ -273,6 +284,17 @@ Home, so tapping Home restored it and landed on the last tab. Cost: tab scroll p
   minted fresh, so re-analysis lands on the same ids and `Task.done` survives it. Before this,
   Analyze silently un-ticked every task. Two rows with the same text under one transcript collapse
   to one (`distinctBy`) — a repeated task from a single note is noise.
+- **Editor and playback** (Phase 7, `ui/detail/`): `NotePlayer` wraps a Media3 ExoPlayer over
+  `recordings/<id>/source` (`Transcriptions.audioFile`; a recording has one only once transcribed),
+  released with the screen and paused on `ON_STOP`. The transcript renders as segment rows in a
+  `LazyColumn` with the player bar pinned below: the playing segment is highlighted
+  (`transcriptHighlight`), tapping a row plays from it. **Edit** turns rows into text fields, saved
+  on Done; **Replace** is a case-insensitive literal find & replace-all. Both go through
+  `TranscriptRepository.editSegments`, which rejoins `transcript.text`; a segment emptied is
+  dropped. Neither is offered while the note is still transcribing (each chunk rewrites the
+  segments) or while polished text is shown (it isn't segmented). Tapping a task with a
+  `sourceOffsetMs` plays from there; long-press opens `EditTaskScreen`. Pure logic in
+  `TranscriptEdits.kt`. No auto-scroll to the playing segment.
 - `NoteDetailScreen` (redesigned from the OutLoud "Transcript Page" doc): the bar carries
   back / delete / re-analyze as icons instead of three stacked bottom buttons, so the body is
   content, not chrome. Re-analyze (`ic_audio_waveform`) re-runs `TranscriptAnalyzer` through
@@ -282,12 +304,11 @@ Home, so tapping Home restored it and landed on the last tab. Cost: tab scroll p
   (`analyzingId`, sourced from `PendingAnalysisWorker.activeId`). Body: NOTE (the summary) then a
   "TASKS FROM THIS NOTE" section reusing `TaskGroupCard` from `ui/tasks/TasksScreen.kt` — made
   `internal` (was `private`) so the detail screen can render the same rows, checkbox and
-  bronze/clay time labels as the Tasks tab, tapping one going to `EditTaskScreen`
+  bronze/clay time labels as the Tasks tab, tapping one seeking the player (see Editor above)
   (`sourceTitleFor = { null }` since the source is already the screen you're on). Below that,
-  "WHAT WAS SAID": the raw transcript clamped to 4 lines with a "Show all"/"Show less" toggle
-  (`remember(text)`, plain `maxLines` swap — no CSS line-clamp equivalent needed), a "Copy"
-  chip writing to `ClipboardManager`, and Polish / "Restore original" (polished text replaces
-  the raw text in that card, captioned "· POLISHED"). A `pending` entry (parked or failed) replaces NOTE/TASKS
+  "WHAT WAS SAID": the segments (see Editor above), with Edit / Replace / Copy / Polish
+  ("Restore original" once polished; polished text then replaces the segments in a card,
+  captioned "· POLISHED"). A `pending` entry (parked or failed) replaces NOTE/TASKS
   with a status card (icon avatar + copy + a retry button when `Failed`) — analysis hasn't
   produced a note yet, so there is nothing to show there. `NotesViewModel.tasks` (all
   `DerivedRepository.items`, unfiltered) backs both this screen's per-transcript filter and the

@@ -107,4 +107,35 @@ class SqlTranscriptRepositoryTest {
         assertTrue(repository.segments(saved.id).isEmpty())
     }
 
+
+    @Test
+    fun `search finds spoken words by prefix, titles and summaries`() = runTest {
+        val repository = repository()
+        repository.save(id = "a", text = "", language = "sl", durationMs = 0)
+        repository.setTranscription("a", "", "sl", 0, listOf(Segment(0, 1, "Pokliči Črnigoja jutri")))
+        repository.save(id = "b", text = "", language = "en", durationMs = 0)
+        repository.attachAnalysis("b", title = "Dentist 50% off", summary = "Book a check-up")
+
+        assertEquals(setOf("a"), repository.search("crni").first())
+        assertEquals(setOf("a"), repository.search("pokliči JUTRI").first())
+        assertEquals(setOf("b"), repository.search("check-up").first())
+        assertEquals(setOf("b"), repository.search("50%").first())
+        assertEquals(emptySet<String>(), repository.search("and").first())
+    }
+
+    @Test
+    fun `edited and deleted segments leave the search index`() = runTest {
+        val repository = repository()
+        repository.save(id = "a", text = "", language = "en", durationMs = 0)
+        repository.setTranscription("a", "", "en", 0, listOf(Segment(0, 1, "buy milk"), Segment(1, 2, "and eggs")))
+
+        repository.editSegments("a", listOf(Segment(0, 1, "buy oat milk"), Segment(1, 2, "and bread")))
+
+        assertEquals("buy oat milk and bread", repository.transcripts.first().single().text)
+        assertEquals(emptySet<String>(), repository.search("eggs").first())
+        assertEquals(setOf("a"), repository.search("oat").first())
+
+        repository.delete("a")
+        assertEquals(emptySet<String>(), repository.search("milk").first())
+    }
 }

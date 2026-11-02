@@ -1,0 +1,16 @@
+CREATE TABLE dictionary_term (
+    id INTEGER NOT NULL PRIMARY KEY,
+    term TEXT NOT NULL
+);
+
+selectAll:
+SELECT * FROM dictionary_term ORDER BY term COLLATE NOCASE;
+
+insert:
+INSERT INTO dictionary_term (term) VALUES (?);
+
+update:
+UPDATE dictionary_term SET term = ? WHERE id = ?;
+
+delete:
+DELETE FROM dictionary_term WHERE id = ?;

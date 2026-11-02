@@ -43,8 +43,8 @@ Java_dev_andrej_echo_speech_whisper_WhisperNative_free(JNIEnv *, jobject, jlong 
 /** The progress callback runs on the calling thread, which is what makes reusing its JNIEnv safe. */
 extern "C" JNIEXPORT jint JNICALL
 Java_dev_andrej_echo_speech_whisper_WhisperNative_full(
-        JNIEnv *env, jobject, jlong handle, jfloatArray samples, jstring language, jint threads,
-        jobject listener) {
+        JNIEnv *env, jobject, jlong handle, jfloatArray samples, jstring language, jstring prompt,
+        jint threads, jobject listener) {
     Handle *h = from(handle);
     h->abort = false;
 
@@ -57,6 +57,11 @@ Java_dev_andrej_echo_speech_whisper_WhisperNative_full(
 
     const char *lang = language == nullptr ? nullptr : env->GetStringUTFChars(language, nullptr);
     params.language = lang;
+
+    // Carried into every 30 s window, not only the first: the dictionary should hold for the whole chunk.
+    const char *initialPrompt = prompt == nullptr ? nullptr : env->GetStringUTFChars(prompt, nullptr);
+    params.initial_prompt = initialPrompt;
+    params.carry_initial_prompt = initialPrompt != nullptr;
 
     Progress progress{
             env,
@@ -77,6 +82,7 @@ Java_dev_andrej_echo_speech_whisper_WhisperNative_full(
     env->ReleaseFloatArrayElements(samples, pcm, JNI_ABORT);
 
     if (lang != nullptr) env->ReleaseStringUTFChars(language, lang);
+    if (initialPrompt != nullptr) env->ReleaseStringUTFChars(prompt, initialPrompt);
     return h->abort ? -1 : result;
 }
 

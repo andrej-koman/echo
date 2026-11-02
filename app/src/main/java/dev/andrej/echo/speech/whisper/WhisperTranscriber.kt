@@ -20,10 +20,11 @@ class WhisperTranscriber private constructor(private val handle: Long) : Closeab
     suspend fun transcribe(
         samples: FloatArray,
         language: String?,
+        prompt: String?,
         onProgress: (Int) -> Unit,
     ): WhisperResult = coroutineScope {
         val run = async(Dispatchers.Default) {
-            WhisperNative.full(handle, samples, language, threads(), onProgress::invoke)
+            WhisperNative.full(handle, samples, language, prompt, threads(), onProgress::invoke)
         }
         val code = try {
             run.await()

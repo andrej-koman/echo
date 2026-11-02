@@ -64,6 +64,7 @@ fun SettingsScreen(
     onDeleteModel: () -> Unit,
     onTestModelDownloadNotification: () -> Unit = {},
     onReplayOnboarding: () -> Unit = {},
+    onOpenDictionary: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -103,6 +104,14 @@ fun SettingsScreen(
                             label = "Language",
                             value = state.languageLabel,
                             onClick = { pickingLanguage = true },
+                        )
+                    },
+                    {
+                        DisclosureRow(
+                            iconRes = R.drawable.ic_pen_line,
+                            label = "Dictionary",
+                            value = "",
+                            onClick = onOpenDictionary,
                         )
                     },
                     {

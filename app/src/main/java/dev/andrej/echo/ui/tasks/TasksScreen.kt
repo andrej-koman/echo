@@ -3,6 +3,7 @@ package dev.andrej.echo.ui.tasks
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -245,6 +246,7 @@ internal fun TaskGroupCard(
     onToggle: (TodoItem) -> Unit,
     onEdit: (TodoItem) -> Unit,
     modifier: Modifier = Modifier,
+    onLongPress: ((TodoItem) -> Unit)? = null,
 ) {
     val now = System.currentTimeMillis()
     val zone = ZoneId.systemDefault()
@@ -258,6 +260,7 @@ internal fun TaskGroupCard(
                     sourceTitle = sourceTitleFor(task.sourceTranscriptId),
                     onToggle = { onToggle(task) },
                     onEdit = { onEdit(task) },
+                    onLongPress = onLongPress?.let { press -> { press(task) } },
                 )
                 if (index != items.lastIndex) {
                     HorizontalDivider(color = EchoTheme.colors.borderSubtle)
@@ -275,11 +278,12 @@ internal fun TaskRow(
     showDate: Boolean = false,
     overdue: Boolean = false,
     sourceTitle: String? = null,
+    onLongPress: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onEdit)
+            .combinedClickable(onClick = onEdit, onLongClick = onLongPress)
             .padding(vertical = EchoTheme.spacing.s4, horizontal = EchoTheme.spacing.s2),
         horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5),
         verticalAlignment = Alignment.CenterVertically,

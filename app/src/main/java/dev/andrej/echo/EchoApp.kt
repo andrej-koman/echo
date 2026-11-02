@@ -47,6 +47,8 @@ import dev.andrej.echo.ui.notes.NotesScreen
 import dev.andrej.echo.ui.notes.NotesViewModel
 import dev.andrej.echo.ui.onboarding.OnboardingScreen
 import dev.andrej.echo.ui.onboarding.OnboardingViewModel
+import dev.andrej.echo.ui.profile.DictionaryScreen
+import dev.andrej.echo.ui.profile.DictionaryViewModel
 import dev.andrej.echo.ui.profile.HistoryScreen
 import dev.andrej.echo.ui.profile.HistoryViewModel
 import dev.andrej.echo.ui.profile.ProfileScreen
@@ -68,6 +70,7 @@ private object Routes {
     const val PROFILE = "profile"
     const val SETTINGS = "settings"
     const val HISTORY = "history"
+    const val DICTIONARY = "dictionary"
     const val DETAIL = "detail/{id}"
     const val EDIT_TASK = "tasks/{id}/edit"
 
@@ -223,6 +226,18 @@ private fun MainApp(
                     onDeleteModel = settingsViewModel.onDeleteModel,
                     onTestModelDownloadNotification = settingsViewModel.onTestModelDownloadNotification,
                     onReplayOnboarding = settingsViewModel.onReplayOnboarding,
+                    onOpenDictionary = { navController.navigate(Routes.DICTIONARY) },
+                )
+            }
+
+            composable(Routes.DICTIONARY) {
+                val dictionaryViewModel: DictionaryViewModel = viewModel(factory = viewModelFactory)
+                val terms by dictionaryViewModel.terms.collectAsStateWithLifecycle()
+                DictionaryScreen(
+                    terms = terms,
+                    onSave = dictionaryViewModel::save,
+                    onDelete = dictionaryViewModel::delete,
+                    onBack = { navController.popBackStack() },
                 )
             }
 

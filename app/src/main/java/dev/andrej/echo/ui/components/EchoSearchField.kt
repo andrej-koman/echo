@@ -31,6 +31,7 @@ fun EchoSearchField(
     onValueChange: (String) -> Unit,
     placeholder: String,
     modifier: Modifier = Modifier,
+    iconRes: Int = R.drawable.ic_search,
 ) {
     val colors = EchoTheme.colors
     val keyboard = LocalSoftwareKeyboardController.current
@@ -47,7 +48,7 @@ fun EchoSearchField(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            painter = painterResource(R.drawable.ic_search),
+            painter = painterResource(iconRes),
             contentDescription = null,
             tint = colors.textTertiary,
             modifier = Modifier.size(17.dp),

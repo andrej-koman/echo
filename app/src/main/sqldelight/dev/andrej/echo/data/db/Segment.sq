@@ -7,14 +7,32 @@ CREATE TABLE segment (
     PRIMARY KEY (transcriptId, idx)
 );
 
+-- Global search. Kept in step with `segment` by the repository, in the same transactions.
+-- FTS4, not FTS5: FTS5 isn't guaranteed in platform SQLite on API 29.
+CREATE VIRTUAL TABLE segment_fts USING fts4(
+    transcriptId TEXT NOT NULL,
+    text TEXT NOT NULL,
+    notindexed=transcriptId,
+    tokenize=unicode61
+);
+
 selectFor:
 SELECT startMs, endMs, text FROM segment WHERE transcriptId = ? ORDER BY idx;
 
 insert:
 INSERT INTO segment (transcriptId, idx, startMs, endMs, text) VALUES (?, ?, ?, ?, ?);
 
+insertFts:
+INSERT INTO segment_fts (transcriptId, text) VALUES (?, ?);
+
 deleteFor:
 DELETE FROM segment WHERE transcriptId = ?;
 
+deleteFtsFor:
+DELETE FROM segment_fts WHERE transcriptId = ?;
+
 clear:
 DELETE FROM segment;
+
+clearFts:
+DELETE FROM segment_fts;

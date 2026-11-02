@@ -83,6 +83,7 @@ dependencies {
 
     implementation(libs.litertlm.android)
     implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.androidx.media3.exoplayer)
     implementation(libs.sqldelight.android.driver)
     implementation(libs.sqldelight.coroutines)
 

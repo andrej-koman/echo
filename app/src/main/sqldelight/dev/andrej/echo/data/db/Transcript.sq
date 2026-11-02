@@ -32,3 +32,12 @@ DELETE FROM transcript WHERE id = ?;
 
 clear:
 DELETE FROM transcript;
+
+search:
+SELECT id FROM transcript
+WHERE title LIKE '%' || :text || '%' ESCAPE '\' OR summary LIKE '%' || :text || '%' ESCAPE '\'
+UNION
+SELECT transcriptId FROM segment_fts WHERE segment_fts MATCH :match;
+
+setText:
+UPDATE transcript SET text = ? WHERE id = ?;

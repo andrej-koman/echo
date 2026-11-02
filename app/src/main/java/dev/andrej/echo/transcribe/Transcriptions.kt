@@ -25,10 +25,13 @@ import dev.andrej.echo.speech.SAMPLE_RATE
 import dev.andrej.echo.speech.pcm16ToFloats
 import dev.andrej.echo.data.DictionaryRepository
 import dev.andrej.echo.data.Segment
+import dev.andrej.echo.speech.speakers.Diarizer
+import dev.andrej.echo.speech.speakers.assignSpeakers
 import dev.andrej.echo.speech.whisper.WhisperTranscriber
 import java.io.File
 import java.io.IOException
 import java.io.RandomAccessFile
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -45,6 +48,7 @@ sealed interface TranscriptionStatus {
     data object Queued : TranscriptionStatus
     data class DownloadingModel(val fraction: Float) : TranscriptionStatus
     data class Transcribing(val fraction: Float) : TranscriptionStatus
+    data class FindingSpeakers(val fraction: Float) : TranscriptionStatus
     data object Failed : TranscriptionStatus
 }
 
@@ -63,6 +67,7 @@ class Transcriptions(
     private val analysisQueue: AnalysisQueueRepository,
     private val analysis: PendingAnalysisWorker,
     private val modelSlot: ModelSlot,
+    private val diarizer: Diarizer,
     private val scope: CoroutineScope,
 ) {
     private val workManager = WorkManager.getInstance(context)
@@ -242,6 +247,7 @@ class Transcriptions(
                     }
                 }
             }
+            if (settings.detectSpeakers) findSpeakers(id, pcm, segments, language.orEmpty(), durationMs, report)
         }
         if (recorded) {
             // Encoded beside, then renamed: a half-written `source` would be taken for an import.
@@ -255,6 +261,31 @@ class Transcriptions(
         if (exists && settings.autoAnalyze && transcriptText(segments).isNotBlank()) {
             analysisQueue.enqueue(id)
             analysis.requestDrainAndAwait()
+        }
+    }
+
+    /** Speakers are a bonus on top of the transcript: failing to find them never fails the job. */
+    private suspend fun findSpeakers(
+        id: String,
+        pcm: File,
+        segments: List<Segment>,
+        language: String,
+        durationMs: Long,
+        report: (TranscriptionStatus) -> Unit,
+    ) {
+        if (segments.isEmpty()) return
+        try {
+            report(TranscriptionStatus.FindingSpeakers(0f))
+            if (!diarizer.ready) diarizer.download { report(TranscriptionStatus.FindingSpeakers(0f)) }
+            val turns = diarizer.diarize(pcm) { report(TranscriptionStatus.FindingSpeakers(it / 100f)) }
+            val (assigned, count) = assignSpeakers(segments, turns)
+            if (count > 0 && repository.transcripts.first().any { it.id == id }) {
+                repository.setSpeakers(id, assigned, count)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(LOG_TAG, "no speakers for $id: ${e.message}")
         }
     }
 
@@ -294,6 +325,7 @@ class Transcriptions(
         internal fun TranscriptionStatus.toData(): Data = when (this) {
             is TranscriptionStatus.DownloadingModel -> workDataOf(KEY_PHASE to "download", KEY_FRACTION to fraction)
             is TranscriptionStatus.Transcribing -> workDataOf(KEY_PHASE to "transcribe", KEY_FRACTION to fraction)
+            is TranscriptionStatus.FindingSpeakers -> workDataOf(KEY_PHASE to "speakers", KEY_FRACTION to fraction)
             else -> Data.EMPTY
         }
 
@@ -302,6 +334,7 @@ class Transcriptions(
             return when (getString(KEY_PHASE)) {
                 "download" -> TranscriptionStatus.DownloadingModel(fraction)
                 "transcribe" -> TranscriptionStatus.Transcribing(fraction)
+                "speakers" -> TranscriptionStatus.FindingSpeakers(fraction)
                 else -> null
             }
         }

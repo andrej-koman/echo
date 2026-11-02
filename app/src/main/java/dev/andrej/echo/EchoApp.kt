@@ -218,6 +218,7 @@ private fun MainApp(
                     onBack = { navController.popBackStack() },
                     onLanguageChange = settingsViewModel::setLanguage,
                     onAutoAnalyzeChange = settingsViewModel::setAutoAnalyze,
+                    onDetectSpeakersChange = settingsViewModel::setDetectSpeakers,
                     onWifiOnlyDownloadChange = settingsViewModel::setWifiOnlyDownload,
                     onSnoozeMinutesChange = settingsViewModel::setSnoozeMinutes,
                     onDeleteAllData = settingsViewModel::deleteAllData,

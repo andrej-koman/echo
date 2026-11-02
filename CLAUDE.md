@@ -28,7 +28,8 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
   on older Android.
 - **Whisper → whisper.cpp over JNI** (Phase 2): the only mature Android runtime for Large V3
   Turbo quantized; language detect, `initial_prompt` and timestamps built in.
-- **Diarization → sherpa-onnx** (Phase 6), whose Silero VAD also picks Whisper chunk boundaries.
+- **Diarization → sherpa-onnx** (Phase 6, done 2026-11-02; see Speakers). Its Silero VAD is not
+  used: Whisper chunks still cut at the quietest 100 ms.
 - **Transcription jobs → WorkManager** with `setForeground`: the old "no WorkManager" reason was
   Nano's foreground-only limit, which no longer applies.
 - **minSdk 29** (Phase 3, with `SpeechRecognizer` gone). API 30+/31+/33+ calls are gated:
@@ -102,16 +103,44 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
 - `adb shell am start -a SEND --eu android.intent.extra.STREAM content://media/...` can't test the
   share target: the shell can't grant the URI. Use the Notes upload button.
 
+## Speakers
+
+- **sherpa-onnx v1.13.8** from JitPack (`com.github.k2-fsa.sherpa-onnx:sherpa-onnx`; the repo is
+  scoped to that group in `settings.gradle.kts`). Echo calls its **C API** through its own
+  `diarize_jni.cpp` (`libechodiarize.so`), not the AAR's Kotlin classes: those take a
+  `FloatArray`, and an hour of float samples (230 MB) is past the 256 MB Java heap, so the native
+  side reads `audio.pcm` itself. The AAR has no headers, so CMake downloads `c-api.h` pinned to
+  v1.13.8 by SHA256 and `dlopen`s `libsherpa-onnx-c-api.so`. Its JNI and C++ wrapper `.so`s are
+  excluded from the APK. onnxruntime adds ~22 MB to it.
+- Models (`speech/speakers/SpeakerModels.kt`, through `ModelStore`): pyannote segmentation 3.0
+  int8 (1.5 MB, HF commit-pinned) and 3D-Speaker ERes2Net base (40 MB, sherpa-onnx's GitHub
+  release — the model its own examples use with the default 0.5 clustering threshold). Fetched
+  after Whisper on "Get started", else inside the first transcription job.
+- Runs in `Transcriptions.run` after the last Whisper chunk, inside `slot.whisper`, before the
+  PCM is deleted (status `FindingSpeakers`, "Finding speakers… N%"). Off with Settings →
+  Detect speakers. A failure only logs: the transcript is never failed for want of speakers.
+  sherpa-onnx can't be aborted part way — its progress callback's return value is ignored.
+- `assignSpeakers`: each segment gets the speaker it overlaps most (the nearest turn when none),
+  renumbered by first appearance. Tables: `segment.speaker` (an index, nullable) and `speaker`
+  (`transcriptId`, `idx`, `name`; null name shows "Speaker N"). Renaming touches only `speaker`.
+  `setTranscription` drops a transcript's speakers; `editSegments` keeps them.
+- Reassigning, in the editor: tap a speaker label (that line), long-press lines to select several
+  then "Speaker…", or in Edit mode select text and "Speaker for selection" — the line is split
+  around the selection, times interpolated by character offset (Whisper segments have no word
+  times). The sheet also renames and adds a speaker. Colours: `EchoColors.speakers`, by index,
+  wrapping.
+
 ## Storage
 
 - One SQLite database, `echo.db`, through SQLDelight 2.4.1 (`app/src/main/sqldelight/`).
-  Tables: `transcript`, `segment`, `segment_fts`, `todo`, `analysis_queue`, `dictionary_term`. The repository interfaces kept
+  Tables: `transcript`, `segment`, `segment_fts`, `speaker`, `todo`, `analysis_queue`,
+  `dictionary_term`. The repository interfaces kept
   their shape, so ViewModels never see SQL; each `Sql*Repository` exposes `Query.asFlow()`
   flows, which re-emit on any write to their table.
-- Tables are added in the phase that uses them (speakers in 6, folders in 8), each with a
+- Tables are added in the phase that uses them (folders in 8), each with a
   numbered `.sqm` migration beside the `.sq` files. `1.sqm` (Phase 5) added
   `transcript.polishedText` and `todo.sourceOffsetMs`; `2.sqm` (Phase 7) added `segment_fts` and
-  `dictionary_term`; schema is version 3.
+  `dictionary_term`; `3.sqm` (Phase 6) added `speaker` and `segment.speaker`; schema is version 4.
 - **Search** (`TranscriptRepository.search`, Notes' search field): `segment_fts` (FTS4,
   `tokenize=unicode61`, so `č` matches `c` and case folds) one row per segment, plus `LIKE` on
   title and summary. The repository writes `segment_fts` in the same transactions as `segment` —
@@ -148,10 +177,11 @@ for startup recovery.
 ```
 speech/       AudioRecorder (mic → 16 kHz PCM16 file), AudioFocus (call interruptions),
               AudioDecoder (any file → 16 kHz PCM), AudioEncoder (PCM → AAC .m4a),
-              whisper/ (JNI, WhisperTranscriber, model per RAM)
+              whisper/ (JNI, WhisperTranscriber, model per RAM),
+              speakers/ (SpeakerNative JNI, Diarizer + assignSpeakers, model specs)
 transcribe/   Transcriptions (import, recordings, job status, startup recovery) +
               TranscriptionWorker (WorkManager) + Chunking
-cpp/          CMake build of whisper.cpp + whisper_jni.cpp
+cpp/          CMake build of whisper.cpp + whisper_jni.cpp, diarize_jni.cpp over sherpa-onnx's C API
 ai/           LlmRunner interface + LiteRtLlmRunner (downloaded Qwen3), LlmRunnerProvider,
               ModelStore/HttpModelDownloader for the weights, AnalysisPrompt (summary, merge
               and tasks prompts + parsers), TextChunks, PolishPrompt + TranscriptPolisher,
@@ -173,7 +203,8 @@ ui/profile/   ProfileScreen (the Profile tab) + ProfileViewModel, SettingsScreen
 ui/notes/     NotesScreen + NotesViewModel (the Notes tab — one shared card per day, hairline
               dividers, same rhythm as Tasks; search; NoteRow, PendingBadge, PendingCopy)
 ui/detail/    NoteDetailScreen (NOTE + tasks-from-this-note + segment editor, bar-icon actions),
-              NotePlayer (ExoPlayer), TranscriptEdits (find/replace/edit logic)
+              NotePlayer (ExoPlayer), TranscriptEdits (find/replace/edit/speaker logic),
+              SpeakerSheet
 notify/       RecordingNotifier (+ RecordingActionReceiver, BootReceiver), ModelDownloadNotifier
               (+ ModelDownloadActionReceiver)
 AppContainer manual DI, no Hilt
@@ -356,7 +387,7 @@ Home, so tapping Home restored it and landed on the last tab. Cost: tab scroll p
   calendar day (zone-aware) — the first empty day stops the streak. `AiViewModel` is gone: its
   Download/Cancel/Remove UI moved into `SettingsScreen`'s ON-DEVICE AI card, and `SettingsViewModel`
   now takes the same `aiCardState`/`onDownloadModel`/`onCancelDownload`/`onDeleteModel` shape
-  directly from `AppContainer`. `SettingsStore` beyond `transcriptionLanguage`: `autoAnalyze` (gates the
+  directly from `AppContainer`. `SettingsStore` beyond `transcriptionLanguage`: `detectSpeakers`, `autoAnalyze` (gates the
   enqueue after transcription — off means every note waits for a manual Analyze),
   `wifiOnlyDownload` (checked in `AppContainer.downloadModel()` via `ConnectivityManager`, download
   is skipped rather than queued if off Wi-Fi), `snoozeMinutes` (Settings' TASKS section, Home's

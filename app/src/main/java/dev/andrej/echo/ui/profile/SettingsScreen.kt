@@ -56,6 +56,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onLanguageChange: (String) -> Unit,
     onAutoAnalyzeChange: (Boolean) -> Unit,
+    onDetectSpeakersChange: (Boolean) -> Unit,
     onWifiOnlyDownloadChange: (Boolean) -> Unit,
     onSnoozeMinutesChange: (Int) -> Unit,
     onDeleteAllData: () -> Unit,
@@ -112,6 +113,15 @@ fun SettingsScreen(
                             label = "Dictionary",
                             value = "",
                             onClick = onOpenDictionary,
+                        )
+                    },
+                    {
+                        SwitchRow(
+                            iconRes = R.drawable.ic_user,
+                            label = "Detect speakers",
+                            subtitle = "Label who said what after transcribing",
+                            checked = state.detectSpeakers,
+                            onCheckedChange = onDetectSpeakersChange,
                         )
                     },
                     {

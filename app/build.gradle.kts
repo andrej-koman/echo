@@ -42,6 +42,11 @@ android {
         }
     }
 
+    packaging {
+        // Echo calls sherpa-onnx's C API itself (see diarize_jni.cpp); its JNI and C++ wrappers go unused.
+        jniLibs.excludes += listOf("**/libsherpa-onnx-jni.so", "**/libsherpa-onnx-cxx-api.so")
+    }
+
     buildFeatures {
         compose = true
         buildConfig = true
@@ -84,6 +89,7 @@ dependencies {
     implementation(libs.litertlm.android)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.sherpa.onnx)
     implementation(libs.sqldelight.android.driver)
     implementation(libs.sqldelight.coroutines)
 

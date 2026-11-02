@@ -138,4 +138,24 @@ class SqlTranscriptRepositoryTest {
         repository.delete("a")
         assertEquals(emptySet<String>(), repository.search("milk").first())
     }
+
+    @Test
+    fun `speakers survive edits, rename and go with a re-transcription`() = runTest {
+        val repository = repository()
+        repository.save(id = "a", text = "", language = "en", durationMs = 0)
+        repository.setTranscription("a", "", "en", 0, listOf(Segment(0, 1, "hi"), Segment(1, 2, "hello")))
+
+        repository.setSpeakers("a", listOf(Segment(0, 1, "hi", 0), Segment(1, 2, "hello", 1)), count = 2)
+        repository.editSegments("a", listOf(Segment(0, 1, "hi there", 0), Segment(1, 2, "hello", 1)))
+        repository.renameSpeaker("a", 1, " Ana ")
+        val added = repository.addSpeaker("a")
+
+        assertEquals(listOf(0, 1), repository.segments("a").map { it.speaker })
+        assertEquals(2, added)
+        assertEquals(listOf("Speaker 1", "Ana", "Speaker 3"), repository.speakers("a").first().map { it.label })
+
+        repository.setTranscription("a", "hi", "en", 0, listOf(Segment(0, 1, "hi")))
+        assertEquals(emptyList<Speaker>(), repository.speakers("a").first())
+        assertEquals(listOf(null), repository.segments("a").map { it.speaker })
+    }
 }

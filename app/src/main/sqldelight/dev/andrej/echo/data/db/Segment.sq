@@ -4,6 +4,8 @@ CREATE TABLE segment (
     startMs INTEGER NOT NULL,
     endMs INTEGER NOT NULL,
     text TEXT NOT NULL,
+    -- The speaker's idx within this transcript (see Speaker.sq); null before diarization.
+    speaker INTEGER,
     PRIMARY KEY (transcriptId, idx)
 );
 
@@ -17,10 +19,10 @@ CREATE VIRTUAL TABLE segment_fts USING fts4(
 );
 
 selectFor:
-SELECT startMs, endMs, text FROM segment WHERE transcriptId = ? ORDER BY idx;
+SELECT startMs, endMs, text, speaker FROM segment WHERE transcriptId = ? ORDER BY idx;
 
 insert:
-INSERT INTO segment (transcriptId, idx, startMs, endMs, text) VALUES (?, ?, ?, ?, ?);
+INSERT INTO segment (transcriptId, idx, startMs, endMs, text, speaker) VALUES (?, ?, ?, ?, ?, ?);
 
 insertFts:
 INSERT INTO segment_fts (transcriptId, text) VALUES (?, ?);

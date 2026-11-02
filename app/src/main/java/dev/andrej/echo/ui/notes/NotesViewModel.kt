@@ -9,6 +9,7 @@ import dev.andrej.echo.data.AnalysisQueueRepository
 import dev.andrej.echo.data.DerivedRepository
 import dev.andrej.echo.data.PendingAnalysis
 import dev.andrej.echo.data.Segment
+import dev.andrej.echo.data.Speaker
 import dev.andrej.echo.data.TodoItem
 import dev.andrej.echo.data.Transcript
 import dev.andrej.echo.data.TranscriptRepository
@@ -148,6 +149,20 @@ class NotesViewModel(
         viewModelScope.launch { repository.editSegments(transcriptId, segments) }
     }
 
+    fun speakers(transcriptId: String): Flow<List<Speaker>> = repository.speakers(transcriptId)
+
+    fun renameSpeaker(transcriptId: String, index: Int, name: String) {
+        viewModelScope.launch { repository.renameSpeaker(transcriptId, index, name) }
+    }
+
+    /** [speaker] null makes a new one first; [rewrite] gets the index to assign. */
+    fun assignSpeaker(transcriptId: String, speaker: Int?, rewrite: (Int) -> List<Segment>) {
+        viewModelScope.launch {
+            val index = speaker ?: repository.addSpeaker(transcriptId)
+            repository.editSegments(transcriptId, rewrite(index))
+        }
+    }
+
     /** The recording or imported file, once there is one to play. */
     fun audio(transcriptId: String): File? = audioFile(transcriptId)
 
@@ -203,6 +218,8 @@ internal fun TranscriptionStatus.toPendingCopy(): PendingCopy = when (this) {
         PendingCopy("Getting the speech model… ${(fraction * 100).toInt()}%", PendingSeverity.Parked)
     is TranscriptionStatus.Transcribing ->
         PendingCopy("Transcribing… ${(fraction * 100).toInt()}%", PendingSeverity.Parked)
+    is TranscriptionStatus.FindingSpeakers ->
+        PendingCopy("Finding speakers… ${(fraction * 100).toInt()}%", PendingSeverity.Parked)
     TranscriptionStatus.Failed -> PendingCopy("Transcription failed — tap retry", PendingSeverity.Failed)
 }
 

@@ -9,6 +9,9 @@ interface SettingsStore {
     /** Gates the analysis enqueue after transcription — off means every note waits for a manual Analyze. */
     var autoAnalyze: Boolean
 
+    /** Diarization after each transcription, on by default. */
+    var detectSpeakers: Boolean
+
     /** Gates AppContainer.downloadModel() — on, a download started off Wi-Fi is skipped. */
     var wifiOnlyDownload: Boolean
 
@@ -30,6 +33,10 @@ class SharedPreferencesSettingsStore(context: Context) : SettingsStore {
         get() = preferences.getBoolean(KEY_AUTO_ANALYZE, true)
         set(value) = preferences.edit().putBoolean(KEY_AUTO_ANALYZE, value).apply()
 
+    override var detectSpeakers: Boolean
+        get() = preferences.getBoolean(KEY_DETECT_SPEAKERS, true)
+        set(value) = preferences.edit().putBoolean(KEY_DETECT_SPEAKERS, value).apply()
+
     override var wifiOnlyDownload: Boolean
         get() = preferences.getBoolean(KEY_WIFI_ONLY_DOWNLOAD, false)
         set(value) = preferences.edit().putBoolean(KEY_WIFI_ONLY_DOWNLOAD, value).apply()
@@ -45,6 +52,7 @@ class SharedPreferencesSettingsStore(context: Context) : SettingsStore {
     private companion object {
         const val KEY_LANGUAGE = "transcription_language"
         const val KEY_AUTO_ANALYZE = "auto_analyze"
+        const val KEY_DETECT_SPEAKERS = "detect_speakers"
         const val KEY_WIFI_ONLY_DOWNLOAD = "wifi_only_download"
         const val KEY_SNOOZE_MINUTES = "snooze_minutes"
         const val KEY_ONBOARDING_DONE = "onboarding_done"

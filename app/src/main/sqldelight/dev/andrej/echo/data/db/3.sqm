@@ -1,0 +1,8 @@
+ALTER TABLE segment ADD COLUMN speaker INTEGER;
+
+CREATE TABLE speaker (
+    transcriptId TEXT NOT NULL,
+    idx INTEGER NOT NULL,
+    name TEXT,
+    PRIMARY KEY (transcriptId, idx)
+);

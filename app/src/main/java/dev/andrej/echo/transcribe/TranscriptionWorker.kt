@@ -72,7 +72,11 @@ class TranscriptionWorker(context: Context, params: WorkerParameters) : Coroutin
         return NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_echo)
             .setContentTitle(
-                if (status is TranscriptionStatus.DownloadingModel) "Getting the speech model" else "Transcribing",
+                when (status) {
+                    is TranscriptionStatus.DownloadingModel -> "Getting the speech model"
+                    is TranscriptionStatus.FindingSpeakers -> "Finding speakers"
+                    else -> "Transcribing"
+                },
             )
             .setProgress(100, percent.coerceAtLeast(0), percent < 0)
             .setSubText(if (percent < 0) null else "$percent%")
@@ -85,6 +89,7 @@ class TranscriptionWorker(context: Context, params: WorkerParameters) : Coroutin
     private fun TranscriptionStatus.percent(): Int = when (this) {
         is TranscriptionStatus.DownloadingModel -> (fraction * 100).toInt()
         is TranscriptionStatus.Transcribing -> (fraction * 100).toInt()
+        is TranscriptionStatus.FindingSpeakers -> (fraction * 100).toInt()
         else -> -1
     }
 

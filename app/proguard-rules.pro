@@ -2,5 +2,6 @@
 
 # Called by name from whisper_jni.cpp.
 -keep class dev.andrej.echo.speech.whisper.WhisperNative { *; }
+-keep class dev.andrej.echo.speech.speakers.SpeakerNative { *; }
 -keep interface dev.andrej.echo.speech.whisper.WhisperProgress { *; }
 -keep class * implements dev.andrej.echo.speech.whisper.WhisperProgress { *; }

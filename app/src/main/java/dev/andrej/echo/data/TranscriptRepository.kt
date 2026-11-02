@@ -32,6 +32,17 @@ interface TranscriptRepository {
     /** Replaces the segments with edited ones; the transcript's text is rejoined from them. */
     suspend fun editSegments(id: String, segments: List<Segment>)
 
+    /** Diarization's result: [segments] carry speakers numbered from 0 below [count]. */
+    suspend fun setSpeakers(id: String, segments: List<Segment>, count: Int)
+
+    fun speakers(id: String): Flow<List<Speaker>>
+
+    /** Returns the new speaker's index. */
+    suspend fun addSpeaker(id: String): Int
+
+    /** Null or blank goes back to the numbered default. */
+    suspend fun renameSpeaker(id: String, index: Int, name: String?)
+
     /** Ids of transcripts whose title, summary or spoken text matches. */
     fun search(text: String): Flow<Set<String>>
 

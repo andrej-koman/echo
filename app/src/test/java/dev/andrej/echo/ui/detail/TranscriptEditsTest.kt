@@ -41,4 +41,28 @@ class TranscriptEditsTest {
         val edited = applyEdits(segments, mapOf(0 to " Call the bank today. ", 2 to " "))
         assertEquals(listOf("Call the bank today.", segments[1].text), edited.map { it.text })
     }
+
+    @Test
+    fun `assignSpeaker changes only the chosen segments`() {
+        val assigned = assignSpeaker(segments, setOf(0, 2), speaker = 1)
+        assertEquals(listOf(1, null, 1), assigned.map { it.speaker })
+    }
+
+    @Test
+    fun `a selection splits its segment with interpolated times`() {
+        val two = listOf(Segment(0, 1_000, "Hello there friend", speaker = 0), Segment(1_000, 2_000, "Bye", 0))
+
+        val split = assignSelection(two, 0, 6 until 11, speaker = 1)
+
+        assertEquals(listOf("Hello", "there", "friend", "Bye"), split.map { it.text })
+        assertEquals(listOf(0, 1, 0, 0), split.map { it.speaker })
+        assertEquals(listOf(0L, 333L, 611L, 1_000L), split.map { it.startMs })
+        assertEquals(listOf(333L, 611L, 1_000L, 2_000L), split.map { it.endMs })
+    }
+
+    @Test
+    fun `a selection covering the whole segment only reassigns it`() {
+        val one = listOf(Segment(0, 1_000, "Hello", speaker = 0))
+        assertEquals(listOf(Segment(0, 1_000, "Hello", 1)), assignSelection(one, 0, 0 until 5, speaker = 1))
+    }
 }

@@ -16,6 +16,7 @@ class SqlTranscriptRepository(
 
     private val queries = database.transcriptQueries
     private val segmentQueries = database.segmentQueries
+    private val speakerQueries = database.speakerQueries
 
     override val transcripts: Flow<List<Transcript>> =
         queries.selectAll(::Transcript).asFlow().mapToList(ioDispatcher)
@@ -51,6 +52,7 @@ class SqlTranscriptRepository(
     ) = withContext(ioDispatcher) {
         database.transaction {
             queries.setTranscription(text, language, durationMs, id)
+            speakerQueries.deleteFor(id)
             replaceSegments(id, segments)
         }
     }
@@ -66,13 +68,37 @@ class SqlTranscriptRepository(
         segmentQueries.deleteFor(id)
         segmentQueries.deleteFtsFor(id)
         segments.forEachIndexed { i, segment ->
-            segmentQueries.insert(id, i.toLong(), segment.startMs, segment.endMs, segment.text)
+            segmentQueries.insert(id, i.toLong(), segment.startMs, segment.endMs, segment.text, segment.speaker?.toLong())
             segmentQueries.insertFts(id, segment.text)
         }
     }
 
     override fun segmentsFlow(id: String): Flow<List<Segment>> =
-        segmentQueries.selectFor(id, ::Segment).asFlow().mapToList(ioDispatcher)
+        segmentQueries.selectFor(id, ::segment).asFlow().mapToList(ioDispatcher)
+
+    override suspend fun setSpeakers(id: String, segments: List<Segment>, count: Int) = withContext(ioDispatcher) {
+        database.transaction {
+            speakerQueries.deleteFor(id)
+            repeat(count) { speakerQueries.insert(id, it.toLong()) }
+            replaceSegments(id, segments)
+        }
+    }
+
+    override fun speakers(id: String): Flow<List<Speaker>> =
+        speakerQueries.selectFor(id) { idx, name -> Speaker(idx.toInt(), name) }.asFlow().mapToList(ioDispatcher)
+
+    override suspend fun addSpeaker(id: String): Int = withContext(ioDispatcher) {
+        database.transactionWithResult {
+            val next = speakerQueries.nextIdx(id).executeAsOne()
+            speakerQueries.insert(id, next)
+            next.toInt()
+        }
+    }
+
+    override suspend fun renameSpeaker(id: String, index: Int, name: String?) = withContext(ioDispatcher) {
+        speakerQueries.rename(name?.trim()?.ifEmpty { null }, id, index.toLong())
+        Unit
+    }
 
     override fun search(text: String): Flow<Set<String>> {
         val like = text.trim().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -80,7 +106,7 @@ class SqlTranscriptRepository(
     }
 
     override suspend fun segments(id: String): List<Segment> = withContext(ioDispatcher) {
-        segmentQueries.selectFor(id, ::Segment).executeAsList()
+        segmentQueries.selectFor(id, ::segment).executeAsList()
     }
 
     override suspend fun attachAnalysis(
@@ -102,6 +128,7 @@ class SqlTranscriptRepository(
         database.transaction {
             segmentQueries.deleteFor(id)
             segmentQueries.deleteFtsFor(id)
+            speakerQueries.deleteFor(id)
             queries.delete(id)
         }
     }
@@ -110,6 +137,7 @@ class SqlTranscriptRepository(
         database.transaction {
             segmentQueries.clear()
             segmentQueries.clearFts()
+            speakerQueries.clear()
             queries.clear()
         }
     }
@@ -121,3 +149,6 @@ class SqlTranscriptRepository(
  */
 internal fun ftsMatch(text: String): String =
     text.lowercase().split(Regex("[^\\p{L}\\p{N}]+")).filter { it.isNotEmpty() }.joinToString(" ") { "$it*" }
+
+private fun segment(startMs: Long, endMs: Long, text: String, speaker: Long?) =
+    Segment(startMs, endMs, text, speaker?.toInt())

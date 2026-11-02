@@ -25,6 +25,7 @@ data class SettingsUiState(
     val languages: List<LanguageOption> = emptyList(),
     val litertModelBytes: Long = 0,
     val autoAnalyze: Boolean = true,
+    val detectSpeakers: Boolean = true,
     val wifiOnlyDownload: Boolean = false,
     val snoozeMinutes: Int = 60,
     val storageBytes: Long = 0,
@@ -68,6 +69,7 @@ class SettingsViewModel(
         languageLabel = settings.transcriptionLanguage?.let(::displayLanguage) ?: AUTO_DETECT,
         litertModelBytes = litertModelBytes,
         autoAnalyze = settings.autoAnalyze,
+        detectSpeakers = settings.detectSpeakers,
         wifiOnlyDownload = settings.wifiOnlyDownload,
         snoozeMinutes = settings.snoozeMinutes,
         storageBytes = storageUsedBytes(),
@@ -91,6 +93,11 @@ class SettingsViewModel(
             languageCode = code,
             languageLabel = if (code.isEmpty()) AUTO_DETECT else displayLanguage(code),
         )
+    }
+
+    fun setDetectSpeakers(value: Boolean) {
+        settings.detectSpeakers = value
+        _state.value = _state.value.copy(detectSpeakers = value)
     }
 
     fun setAutoAnalyze(value: Boolean) {

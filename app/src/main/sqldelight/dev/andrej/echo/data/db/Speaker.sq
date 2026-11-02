@@ -1,0 +1,25 @@
+CREATE TABLE speaker (
+    transcriptId TEXT NOT NULL,
+    idx INTEGER NOT NULL,
+    -- Null shows as "Speaker <idx + 1>".
+    name TEXT,
+    PRIMARY KEY (transcriptId, idx)
+);
+
+selectFor:
+SELECT idx, name FROM speaker WHERE transcriptId = ? ORDER BY idx;
+
+insert:
+INSERT INTO speaker (transcriptId, idx, name) VALUES (?, ?, NULL);
+
+nextIdx:
+SELECT coalesce(max(idx) + 1, 0) FROM speaker WHERE transcriptId = ?;
+
+rename:
+UPDATE speaker SET name = ? WHERE transcriptId = ? AND idx = ?;
+
+deleteFor:
+DELETE FROM speaker WHERE transcriptId = ?;
+
+clear:
+DELETE FROM speaker;

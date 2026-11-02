@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.width
@@ -13,7 +14,9 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -98,7 +101,11 @@ fun NoteDetailScreen(
     var findQuery by remember { mutableStateOf("") }
     var replacement by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf(false) }
-    val edits = remember { mutableStateMapOf<Int, String>() }
+    val edits = remember { mutableStateMapOf<Int, TextFieldValue>() }
+    val speakers by remember(noteId) { viewModel.speakers(noteId) }
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val selected = remember { mutableStateListOf<Int>() }
+    var speakerTarget by remember { mutableStateOf<SpeakerTarget?>(null) }
 
     Column(modifier = modifier.fillMaxSize()) {
         val entryPending = pending[noteId]
@@ -163,6 +170,7 @@ fun NoteDetailScreen(
 
         val polished = transcript.polishedText != null
         val editable = !polished && segments.isNotEmpty() && noteId !in transcribing
+        val textSelection = edits.entries.firstOrNull { !it.value.selection.collapsed }
         val current = player?.takeIf { it.playing || it.positionMs > 0 }?.let { segmentAt(segments, it.positionMs) } ?: -1
         val gutter = EchoTheme.spacing.gutterScreen
 
@@ -214,9 +222,21 @@ fun NoteDetailScreen(
                     )
 
                     val shown = transcript.polishedText ?: transcript.text
-                    TranscriptActions(
+                    if (selected.isNotEmpty()) {
+                        SelectionBar(
+                            count = selected.size,
+                            onAssign = { speakerTarget = SpeakerTarget.Segments(selected.toSet()) },
+                            onCancel = { selected.clear() },
+                        )
+                    } else TranscriptActions(
                         editable = editable,
                         editing = editing,
+                        canAssignSelection = textSelection != null,
+                        onAssignSelection = {
+                            textSelection?.let { (i, value) ->
+                                speakerTarget = SpeakerTarget.Selection(i, value.selection.min until value.selection.max)
+                            }
+                        },
                         finding = finding,
                         polished = polished,
                         polishing = polishingId == noteId,
@@ -226,7 +246,9 @@ fun NoteDetailScreen(
                         },
                         onEdit = {
                             if (editing) {
-                                if (edits.isNotEmpty()) viewModel.saveSegments(noteId, applyEdits(segments, edits))
+                                if (edits.isNotEmpty()) {
+                                    viewModel.saveSegments(noteId, applyEdits(segments, edits.mapValues { it.value.text }))
+                                }
                                 edits.clear()
                             }
                             editing = !editing
@@ -269,14 +291,30 @@ fun NoteDetailScreen(
 
             if (!polished) {
                 itemsIndexed(segments, key = { i, _ -> "segment$i" }) { i, segment ->
+                    val speakerChanged = i == 0 || segments[i - 1].speaker != segment.speaker
                     SegmentRow(
                         segment = segment,
-                        text = edits[i] ?: segment.text,
+                        speakerLabel = if (segment.speaker != null && speakerChanged) {
+                            speakers.firstOrNull { it.index == segment.speaker }?.label
+                                ?: "Speaker ${segment.speaker + 1}"
+                        } else {
+                            null
+                        },
+                        value = edits[i] ?: TextFieldValue(segment.text),
                         current = i == current,
                         editing = editing,
+                        selected = i in selected,
                         highlight = if (finding) findQuery else "",
-                        onTextChange = { edits[i] = it },
-                        onClick = { player?.playFrom(segment.startMs) },
+                        onValueChange = { edits[i] = it },
+                        onClick = {
+                            when {
+                                selected.isEmpty() -> player?.playFrom(segment.startMs)
+                                i in selected -> selected.remove(i)
+                                else -> selected.add(i)
+                            }
+                        },
+                        onLongClick = { if (editable && i !in selected) selected.add(i) },
+                        onSpeakerClick = { if (editable) speakerTarget = SpeakerTarget.Segments(setOf(i)) },
                     )
                 }
             }
@@ -284,12 +322,63 @@ fun NoteDetailScreen(
 
         player?.let { PlayerBar(it) }
     }
+
+    val target = speakerTarget
+    SpeakerSheet(
+        visible = target != null,
+        speakers = speakers,
+        current = (target as? SpeakerTarget.Segments)?.indices?.singleOrNull()?.let { segments.getOrNull(it)?.speaker },
+        onPick = { speaker ->
+            when (target) {
+                is SpeakerTarget.Segments -> viewModel.assignSpeaker(noteId, speaker) { assignSpeaker(segments, target.indices, it) }
+                is SpeakerTarget.Selection -> {
+                    val withEdits = segments.mapIndexed { i, segment -> edits[i]?.let { segment.copy(text = it.text) } ?: segment }
+                    viewModel.assignSpeaker(noteId, speaker) {
+                        applyEdits(assignSelection(withEdits, target.index, target.range, it), emptyMap())
+                    }
+                    // The split shifts every index after it, so the open fields would point at the wrong segments.
+                    edits.clear()
+                    editing = false
+                }
+                null -> Unit
+            }
+            selected.clear()
+            speakerTarget = null
+        },
+        onRename = { index, name -> viewModel.renameSpeaker(noteId, index, name) },
+        onDismiss = { speakerTarget = null },
+    )
+}
+
+private sealed interface SpeakerTarget {
+    data class Segments(val indices: Set<Int>) : SpeakerTarget
+    data class Selection(val index: Int, val range: IntRange) : SpeakerTarget
+}
+
+@Composable
+private fun SelectionBar(count: Int, onAssign: () -> Unit, onCancel: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = if (count == 1) "1 line selected" else "$count lines selected",
+            style = EchoTheme.typography.bodySm,
+            color = EchoTheme.colors.textSecondary,
+            modifier = Modifier.weight(1f),
+        )
+        EchoButton(text = "Speaker…", onClick = onAssign, variant = ButtonVariant.Soft, size = ButtonSize.Sm)
+        EchoButton(text = "Cancel", onClick = onCancel, variant = ButtonVariant.Ghost, size = ButtonSize.Sm)
+    }
 }
 
 @Composable
 private fun TranscriptActions(
     editable: Boolean,
     editing: Boolean,
+    canAssignSelection: Boolean,
+    onAssignSelection: () -> Unit,
     finding: Boolean,
     polished: Boolean,
     polishing: Boolean,
@@ -310,7 +399,15 @@ private fun TranscriptActions(
                 variant = if (editing) ButtonVariant.Soft else ButtonVariant.Secondary,
                 size = ButtonSize.Sm,
             )
-            if (!editing) {
+            if (editing) {
+                EchoButton(
+                    text = "Speaker for selection",
+                    onClick = onAssignSelection,
+                    variant = ButtonVariant.Secondary,
+                    size = ButtonSize.Sm,
+                    enabled = canAssignSelection,
+                )
+            } else {
                 EchoButton(
                     text = if (finding) "Close" else "Replace",
                     onClick = onFind,
@@ -386,20 +483,48 @@ private fun FindReplaceBar(
 @Composable
 private fun SegmentRow(
     segment: Segment,
-    text: String,
+    speakerLabel: String?,
+    value: TextFieldValue,
     current: Boolean,
     editing: Boolean,
+    selected: Boolean,
     highlight: String,
-    onTextChange: (String) -> Unit,
+    onValueChange: (TextFieldValue) -> Unit,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onSpeakerClick: () -> Unit,
 ) {
     val colors = EchoTheme.colors
+    if (speakerLabel != null) {
+        Row(
+            modifier = Modifier
+                .padding(top = EchoTheme.spacing.s3)
+                .clip(EchoTheme.radii.pill)
+                .clickable(onClick = onSpeakerClick)
+                .padding(horizontal = EchoTheme.spacing.s3, vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SpeakerDot(segment.speaker)
+            Text(
+                text = speakerLabel,
+                style = EchoTheme.typography.micro.copy(fontWeight = FontWeight.Medium),
+                color = speakerColor(segment.speaker),
+            )
+        }
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(EchoTheme.radii.sm)
-            .background(if (current && !editing) colors.transcriptHighlight else Color.Transparent)
-            .then(if (editing) Modifier else Modifier.clickable(onClick = onClick))
+            .background(
+                when {
+                    selected -> colors.surfaceAccentSoft
+                    current && !editing -> colors.transcriptHighlight
+                    else -> Color.Transparent
+                },
+            )
+            .then(if (editing) Modifier else Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick))
             .padding(horizontal = EchoTheme.spacing.s3, vertical = EchoTheme.spacing.s2),
         horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
     ) {
@@ -411,8 +536,8 @@ private fun SegmentRow(
         )
         if (editing) {
             BasicTextField(
-                value = text,
-                onValueChange = onTextChange,
+                value = value,
+                onValueChange = onValueChange,
                 textStyle = EchoTheme.typography.body.copy(color = colors.textPrimary),
                 cursorBrush = SolidColor(colors.textAccent),
                 modifier = Modifier
@@ -423,7 +548,7 @@ private fun SegmentRow(
             )
         } else {
             Text(
-                text = highlighted(text, highlight, colors.surfaceAccentSoft),
+                text = highlighted(value.text, highlight, colors.surfaceAccentSoft),
                 style = EchoTheme.typography.body,
                 color = colors.textPrimary,
                 modifier = Modifier.weight(1f),

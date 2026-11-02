@@ -22,3 +22,17 @@ FetchContent_MakeAvailable(whisper)
 
 add_library(echowhisper SHARED whisper_jni.cpp)
 target_link_libraries(echowhisper whisper log)
+
+# Speaker diarization. The sherpa-onnx AAR ships the libraries but no headers or CMake package,
+# so only its C API header is fetched (pinned to the AAR's version) and the library is opened
+# at runtime in diarize_jni.cpp.
+set(SHERPA_ONNX_HEADER ${CMAKE_BINARY_DIR}/sherpa/sherpa-onnx/c-api/c-api.h)
+file(
+    DOWNLOAD https://raw.githubusercontent.com/k2-fsa/sherpa-onnx/v1.13.8/sherpa-onnx/c-api/c-api.h
+    ${SHERPA_ONNX_HEADER}
+    EXPECTED_HASH SHA256=2a1b95084be8fd1deb3228fcad2fd3f7f0258b64582f7402281ec174c7b7f4ce
+)
+
+add_library(echodiarize SHARED diarize_jni.cpp)
+target_include_directories(echodiarize PRIVATE ${CMAKE_BINARY_DIR}/sherpa)
+target_link_libraries(echodiarize log)

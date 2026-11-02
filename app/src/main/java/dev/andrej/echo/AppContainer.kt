@@ -34,6 +34,9 @@ import dev.andrej.echo.notify.RecordingNotifier
 import dev.andrej.echo.notify.mode
 import dev.andrej.echo.speech.AudioFocus
 import dev.andrej.echo.speech.AudioRecorder
+import dev.andrej.echo.speech.speakers.Diarizer
+import dev.andrej.echo.speech.speakers.SPEAKER_EMBEDDING
+import dev.andrej.echo.speech.speakers.SPEAKER_SEGMENTATION
 import dev.andrej.echo.speech.whisper.WhisperNative
 import dev.andrej.echo.speech.whisper.whisperModelFor
 import dev.andrej.echo.transcribe.Transcriptions
@@ -120,6 +123,11 @@ class AppContainer(context: Context) {
         downloader = HttpModelDownloader(),
     )
 
+    private val diarizer = Diarizer(
+        segmentation = ModelStore(File(applicationContext.filesDir, "models"), SPEAKER_SEGMENTATION, HttpModelDownloader()),
+        embedding = ModelStore(File(applicationContext.filesDir, "models"), SPEAKER_EMBEDDING, HttpModelDownloader()),
+    )
+
     private val llmRunners = LlmRunnerProvider(listOf(liteRtRunner))
 
     val analyzer = TranscriptAnalyzer(llmRunners::runner, repository::segments)
@@ -157,6 +165,7 @@ class AppContainer(context: Context) {
         analysisQueue = analysisQueue,
         analysis = pendingAnalysisWorker,
         modelSlot = modelSlot,
+        diarizer = diarizer,
         scope = appScope,
     )
 
@@ -192,7 +201,10 @@ class AppContainer(context: Context) {
     /** Both models start on Wi-Fi only; on mobile data the first recording fetches Whisper. */
     fun startOnboardingDownloads() {
         if (!onWifi()) return
-        appScope.launch { whisperStore.download() }
+        appScope.launch {
+            whisperStore.download()
+            if (settings.detectSpeakers) diarizer.download {}
+        }
         appScope.launch {
             if (llmNeedsDownload.first()) downloadModel()
         }

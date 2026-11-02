@@ -52,3 +52,26 @@ internal fun applyEdits(segments: List<Segment>, edits: Map<Int, String>): List<
         val text = (edits[i] ?: segment.text).trim()
         text.takeIf { it.isNotEmpty() }?.let { segment.copy(text = it) }
     }
+
+internal fun assignSpeaker(segments: List<Segment>, indices: Set<Int>, speaker: Int): List<Segment> =
+    segments.mapIndexed { i, segment -> if (i in indices) segment.copy(speaker = speaker) else segment }
+
+/**
+ * Splits segment [index] around the selected characters [selection] (end exclusive) and gives the
+ * selected part [speaker]. Times are interpolated by character offset — Whisper's segments carry
+ * no word timings to do better with.
+ */
+internal fun assignSelection(segments: List<Segment>, index: Int, selection: IntRange, speaker: Int): List<Segment> {
+    val segment = segments[index]
+    val text = segment.text
+    val start = selection.first.coerceIn(0, text.length)
+    val end = (selection.last + 1).coerceIn(start, text.length)
+    fun at(offset: Int) = segment.startMs + (segment.endMs - segment.startMs) * offset / text.length.coerceAtLeast(1)
+
+    val parts = listOf(
+        Segment(segment.startMs, at(start), text.substring(0, start), segment.speaker),
+        Segment(at(start), at(end), text.substring(start, end), speaker),
+        Segment(at(end), segment.endMs, text.substring(end), segment.speaker),
+    ).mapNotNull { part -> part.text.trim().takeIf { it.isNotEmpty() }?.let { part.copy(text = it) } }
+    return segments.subList(0, index) + parts + segments.subList(index + 1, segments.size)
+}

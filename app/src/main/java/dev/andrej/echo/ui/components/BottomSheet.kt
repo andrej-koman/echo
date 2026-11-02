@@ -150,7 +150,7 @@ fun IntSliderSheet(
 }
 
 @Composable
-private fun Sheet(
+internal fun Sheet(
     visible: Boolean,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,

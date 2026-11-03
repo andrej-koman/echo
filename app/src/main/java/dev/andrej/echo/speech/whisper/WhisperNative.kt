@@ -27,6 +27,7 @@ object WhisperNative {
         samples: FloatArray,
         language: String?,
         prompt: String?,
+        vadModel: String?,
         threads: Int,
         listener: WhisperListener,
     ): Int

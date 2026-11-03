@@ -6,4 +6,5 @@ class FakeSettingsStore(initial: String? = null) : SettingsStore {
     override var detectSpeakers: Boolean = true
     override var wifiOnlyDownload: Boolean = false
     override var onboardingDone: Boolean = false
+    override var speechModel: String? = null
 }

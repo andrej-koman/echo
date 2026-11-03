@@ -45,6 +45,7 @@ import dev.andrej.echo.ui.components.EchoIconButton
 import dev.andrej.echo.ui.components.EchoSwitch
 import dev.andrej.echo.ui.components.EchoTopBar
 import dev.andrej.echo.ui.components.PickerSheet
+import dev.andrej.echo.speech.whisper.WhisperModel
 import dev.andrej.echo.ui.theme.EchoTheme
 
 @Composable
@@ -53,6 +54,7 @@ fun SettingsScreen(
     aiState: AiCardState,
     onBack: () -> Unit,
     onLanguageChange: (String) -> Unit,
+    onSpeechModelChange: (WhisperModel) -> Unit,
     onAutoAnalyzeChange: (Boolean) -> Unit,
     onDetectSpeakersChange: (Boolean) -> Unit,
     onWifiOnlyDownloadChange: (Boolean) -> Unit,
@@ -67,6 +69,7 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     var pickingLanguage by remember { mutableStateOf(false) }
+    var pickingSpeechModel by remember { mutableStateOf(false) }
     var confirmingDeleteAll by remember { mutableStateOf(false) }
     val versionName = remember {
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }
@@ -101,6 +104,15 @@ fun SettingsScreen(
                             label = "Language",
                             value = state.languageLabel,
                             onClick = { pickingLanguage = true },
+                        )
+                    },
+
+                    {
+                        DisclosureRow(
+                            iconRes = R.drawable.ic_audio_waveform,
+                            label = "Speech model",
+                            value = state.speechModel?.name?.removePrefix("Whisper ").orEmpty(),
+                            onClick = { pickingSpeechModel = true },
                         )
                     },
                     {
@@ -242,6 +254,20 @@ fun SettingsScreen(
         },
         onDismiss = { pickingLanguage = false },
     )
+    state.speechModel?.let { current ->
+        PickerSheet(
+            visible = pickingSpeechModel,
+            title = "Speech model",
+            options = state.speechModels.map { it.name.removePrefix("Whisper ") to it },
+            selected = current,
+            subtitle = { it.hint },
+            onPick = {
+                onSpeechModelChange(it)
+                pickingSpeechModel = false
+            },
+            onDismiss = { pickingSpeechModel = false },
+        )
+    }
 
     ConfirmSheet(
         visible = confirmingDeleteAll,

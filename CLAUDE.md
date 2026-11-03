@@ -83,7 +83,11 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
   a multibyte character and `NewStringUTF` aborts on that.
 - Recordings share this pipeline from the PCM step on (see Recording).
 - **Model per RAM** (`speech/whisper/WhisperModels.kt`): ≥7 GB total memory (8 GB phones report
-  ~7.3) → Large V3 Turbo q5_0 (574 MB), else Small q5_1 (190 MB). Ungated
+  ~7.3) → Large V3 Turbo q5_0 (574 MB), else Small q5_1 (190 MB). Settings → Speech model
+  overrides it (`SettingsStore.speechModel`, a `WhisperModel.id`; `SpeechModels` resolves it):
+  Large Turbo, Medium q5_0, Small, Base q5_1 — Large and Medium offered only where the default
+  would be Large. The pick applies from the next job, which downloads it; once it loads, the
+  other Whisper files are deleted so a switch doesn't keep two on disk. Ungated
   `ggerganov/whisper.cpp` on HuggingFace, through the same `ModelStore`/`HttpModelDownloader` as
   the LLM. It downloads on the first import, not at onboarding.
 - **Pipeline** (`transcribe/Transcriptions.kt`): the picked/shared file is copied to
@@ -98,9 +102,25 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
 - **Live text**: `whisper_jni.cpp` hooks `new_segment_callback` (`WhisperListener.onSegment`), and
   `Transcriptions.live` holds the running note's segments so far — in memory only, since the job
   runs in-process; the database still gets them per chunk. `NotesViewModel.segments` prefers it
-  for that note. The note screen draws the newest line faint with a blinking caret, follows the
-  end until the reader drags away, and shows `TranscribingCard` (status, model, %) above the
+  for that note. The note screen types it in (`typedSegments`: speed follows the backlog so each 30 s
+  window's lump drains in ~2.5 s; "Listening…" before the first line), with a blinking caret,
+  following the end until the reader drags away, and shows `TranscribingCard` (status, model, %) above the
   player while any transcription status but Failed is up.
+- **Speed** (S24, Large V3 Turbo q5_0, measured 2026-11-03 with `whisper_print_timings` →
+  logcat tag `whisper`, wall times under tag `Transcriptions`): the encoder is ~95% of the time,
+  one pass per 30 s window, 33 s per pass at full clock. Decoding text is cheap. Samsung caps every
+  core at ~1.5 GHz when the phone is warm (wireless charging, or ~40 °C after a few minutes of
+  this), and a pass then takes 50 s+. Benchmarks over `adb shell` run pinned to 3 cores
+  (cpuset 4–6), so use the app's own logs, not `whisper-cli`.
+- **ggml's runtime CPU variants (`GGML_BACKEND_DL` + `GGML_CPU_ALL_VARIANTS`) made it far
+  slower**: the SVE2 variant took 208 s per pass, and even the i8mm-without-SVE one was several
+  times slower than this static `armv8.2-a+dotprod+fp16` build. Don't retry without measuring.
+- **VAD** (`WHISPER_VAD`, Silero 6.2.0 ggml, 0.9 MB, fetched inside the job, skipped if it
+  can't be): whisper.cpp drops non-speech before the encoder and maps segment times back to the
+  original audio, so seek and task offsets still line up. It only saves time where a recording
+  has pauses — continuous speech is cut 0%.
+- Parallel chunks were not tried: the encoder already keeps every core busy, so two Whisper
+  states would split the same work and cost ~200 MB more.
 - Status comes from WorkManager (`Transcriptions.status`) and is shown through the same
   `PendingCopy`/`PendingBadge` path as analysis; it wins over an analysis block. The detail
   screen's retry button retries transcription when that is what failed.

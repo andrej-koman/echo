@@ -82,6 +82,7 @@ fun <T> PickerSheet(
     onPick: (T) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    subtitle: (T) -> String? = { null },
 ) {
     Sheet(visible = visible, onDismiss = onDismiss, modifier = modifier) {
         Text(text = title, style = EchoTheme.typography.heading, color = EchoTheme.colors.textPrimary)
@@ -102,7 +103,12 @@ fun <T> PickerSheet(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(text = label, style = EchoTheme.typography.body, color = EchoTheme.colors.textPrimary)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = label, style = EchoTheme.typography.body, color = EchoTheme.colors.textPrimary)
+                        subtitle(value)?.let {
+                            Text(text = it, style = EchoTheme.typography.bodySm, color = EchoTheme.colors.textTertiary)
+                        }
+                    }
                     if (value == selected) {
                         Icon(
                             painter = painterResource(R.drawable.ic_check),

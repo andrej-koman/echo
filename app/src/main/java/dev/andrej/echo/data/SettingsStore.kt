@@ -16,6 +16,9 @@ interface SettingsStore {
     var wifiOnlyDownload: Boolean
 
     var onboardingDone: Boolean
+
+    /** A `WhisperModel.id`; null picks by the phone's memory. */
+    var speechModel: String?
 }
 
 class SharedPreferencesSettingsStore(context: Context) : SettingsStore {
@@ -42,11 +45,16 @@ class SharedPreferencesSettingsStore(context: Context) : SettingsStore {
         get() = preferences.getBoolean(KEY_ONBOARDING_DONE, false)
         set(value) = preferences.edit().putBoolean(KEY_ONBOARDING_DONE, value).apply()
 
+    override var speechModel: String?
+        get() = preferences.getString(KEY_SPEECH_MODEL, null)
+        set(value) = preferences.edit().putString(KEY_SPEECH_MODEL, value).apply()
+
     private companion object {
         const val KEY_LANGUAGE = "transcription_language"
         const val KEY_AUTO_ANALYZE = "auto_analyze"
         const val KEY_DETECT_SPEAKERS = "detect_speakers"
         const val KEY_WIFI_ONLY_DOWNLOAD = "wifi_only_download"
         const val KEY_ONBOARDING_DONE = "onboarding_done"
+        const val KEY_SPEECH_MODEL = "speech_model"
     }
 }

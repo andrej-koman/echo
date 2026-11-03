@@ -247,6 +247,7 @@ private fun MainApp(
                         aiState = aiState,
                         onBack = { navController.popBackStack() },
                         onLanguageChange = settingsViewModel::setLanguage,
+                        onSpeechModelChange = settingsViewModel::setSpeechModel,
                         onAutoAnalyzeChange = settingsViewModel::setAutoAnalyze,
                         onDetectSpeakersChange = settingsViewModel::setDetectSpeakers,
                         onWifiOnlyDownloadChange = settingsViewModel::setWifiOnlyDownload,

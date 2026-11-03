@@ -81,7 +81,7 @@ class NotesViewModel(
     private val derived: DerivedRepository,
     transcription: Flow<Map<String, TranscriptionStatus>> = flowOf(emptyMap()),
     private val live: Flow<LiveTranscript?> = flowOf(null),
-    val speechModel: String = "",
+    val speechModel: () -> String = { "" },
     private val onImport: (List<Uri>) -> Unit = {},
     private val onRetryTranscription: (String) -> Unit = {},
     private val onDeleted: (String) -> Unit = {},

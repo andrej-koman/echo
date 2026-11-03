@@ -2,6 +2,7 @@ package dev.andrej.echo.transcribe
 
 import android.content.Context
 import android.net.Uri
+import android.os.SystemClock
 import android.provider.OpenableColumns
 import android.util.Log
 import androidx.work.Constraints
@@ -27,6 +28,7 @@ import dev.andrej.echo.data.DictionaryRepository
 import dev.andrej.echo.data.Segment
 import dev.andrej.echo.speech.speakers.Diarizer
 import dev.andrej.echo.speech.speakers.assignSpeakers
+import dev.andrej.echo.speech.whisper.SpeechModels
 import dev.andrej.echo.speech.whisper.WhisperTranscriber
 import java.io.File
 import java.io.IOException
@@ -65,7 +67,8 @@ sealed interface TranscriptionStatus {
 class Transcriptions(
     private val context: Context,
     private val repository: TranscriptRepository,
-    private val modelStore: ModelStore,
+    private val speechModels: SpeechModels,
+    private val vadStore: ModelStore,
     private val settings: SettingsStore,
     private val dictionary: DictionaryRepository,
     private val analysisQueue: AnalysisQueueRepository,
@@ -188,7 +191,7 @@ class Transcriptions(
             .addTag(TAG)
             .addTag(ID_TAG_PREFIX + id)
             .apply {
-                if (modelStore.state.value !is ModelState.Ready) {
+                if (speechModels.store().state.value !is ModelState.Ready) {
                     val network = if (settings.wifiOnlyDownload) NetworkType.UNMETERED else NetworkType.CONNECTED
                     setConstraints(Constraints(requiredNetworkType = network))
                 }
@@ -206,11 +209,15 @@ class Transcriptions(
     }
 
     private suspend fun transcribeLocked(id: String, report: (TranscriptionStatus) -> Unit) {
+        val began = SystemClock.elapsedRealtime()
+        fun elapsed() = SystemClock.elapsedRealtime() - began
         val dir = dirFor(id)
         val source = File(dir, SOURCE)
         val pcm = File(dir, PCM)
         if (!source.isFile && !pcm.isFile) throw IOException("audio is gone")
 
+        val speechModel = speechModels.current
+        val modelStore = speechModels.store(speechModel)
         if (modelStore.state.value !is ModelState.Ready) {
             val progress = scope.launch {
                 modelStore.state.collect { state ->
@@ -224,6 +231,17 @@ class Transcriptions(
             }
         }
         val model = modelStore.fileOrNull() ?: throw IOException("speech model download failed")
+        // Only a speed-up: without it Whisper reads the silence too.
+        val vad = vadStore.fileOrNull() ?: try {
+            vadStore.download()
+            vadStore.fileOrNull()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(LOG_TAG, "no VAD model: ${e.message}")
+            null
+        }
+        Log.i(LOG_TAG, "$id: model ready at ${elapsed()} ms")
 
         val recorded = !source.isFile
         val decodeShare = if (recorded) 0f else DECODE_SHARE
@@ -235,12 +253,16 @@ class Transcriptions(
             }
         }
 
+        Log.i(LOG_TAG, "$id: ${durationMs / 1000} s of audio decoded at ${elapsed()} ms")
         val segments = mutableListOf<Segment>()
+        var firstSegmentLogged = false
         var language: String? = settings.transcriptionLanguage
         val prompt = whisperPrompt(dictionary.all().map { it.term })
         // The LLM is closed first: both models at once had the low-memory killer take the app.
         modelSlot.whisper {
             WhisperTranscriber.load(model).use { whisper ->
+                Log.i(LOG_TAG, "$id: ${speechModel.name} loaded at ${elapsed()} ms")
+                speechModels.deleteAllBut(speechModel)
                 RandomAccessFile(pcm, "r").use { file ->
                     val total = file.length() / 2
                     var start = 0L
@@ -254,7 +276,12 @@ class Transcriptions(
                             samples.copyOf(length),
                             language,
                             prompt,
+                            vad,
                             onSegment = { segment ->
+                                if (!firstSegmentLogged) {
+                                    firstSegmentLogged = true
+                                    Log.i(LOG_TAG, "$id: first segment at ${elapsed()} ms")
+                                }
                                 heard += listOf(segment).spoken()
                                     .map { it.copy(startMs = it.startMs + offsetMs, endMs = it.endMs + offsetMs) }
                                 _live.value = LiveTranscript(id, segments + heard)
@@ -269,11 +296,13 @@ class Transcriptions(
                             .map { it.copy(startMs = it.startMs + offsetMs, endMs = it.endMs + offsetMs) }
                         repository.setTranscription(id, transcriptText(segments), language.orEmpty(), durationMs, segments)
                         start += length
+                        Log.i(LOG_TAG, "$id: chunk to ${start / SAMPLE_RATE} s done at ${elapsed()} ms")
                     }
                 }
             }
             if (settings.detectSpeakers) findSpeakers(id, pcm, segments, language.orEmpty(), durationMs, report)
         }
+        Log.i(LOG_TAG, "$id: transcribed at ${elapsed()} ms")
         if (recorded) {
             // Encoded beside, then renamed: a half-written `source` would be taken for an import.
             val partial = File(dir, "$SOURCE.part")

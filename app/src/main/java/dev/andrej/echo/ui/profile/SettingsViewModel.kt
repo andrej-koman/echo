@@ -6,6 +6,7 @@ import dev.andrej.echo.ai.AiCardState
 import dev.andrej.echo.data.DerivedRepository
 import dev.andrej.echo.data.SettingsStore
 import dev.andrej.echo.data.TranscriptRepository
+import dev.andrej.echo.speech.whisper.WhisperModel
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -23,6 +24,8 @@ data class SettingsUiState(
     val languageCode: String = "",
     val languageLabel: String = "",
     val languages: List<LanguageOption> = emptyList(),
+    val speechModel: WhisperModel? = null,
+    val speechModels: List<WhisperModel> = emptyList(),
     val litertModelBytes: Long = 0,
     val autoAnalyze: Boolean = true,
     val detectSpeakers: Boolean = true,
@@ -35,6 +38,8 @@ data class SettingsUiState(
 class SettingsViewModel(
     private val settings: SettingsStore,
     private val whisperLanguages: () -> List<String>,
+    private val speechModels: List<WhisperModel> = emptyList(),
+    private val currentSpeechModel: () -> WhisperModel? = { null },
     transcripts: TranscriptRepository,
     derived: DerivedRepository,
     val aiCardState: Flow<AiCardState>,
@@ -66,6 +71,8 @@ class SettingsViewModel(
     private fun fromSettings(notesCount: Int, tasksCount: Int) = SettingsUiState(
         languageCode = settings.transcriptionLanguage.orEmpty(),
         languageLabel = settings.transcriptionLanguage?.let(::displayLanguage) ?: AUTO_DETECT,
+        speechModel = currentSpeechModel(),
+        speechModels = speechModels,
         litertModelBytes = litertModelBytes,
         autoAnalyze = settings.autoAnalyze,
         detectSpeakers = settings.detectSpeakers,
@@ -91,6 +98,12 @@ class SettingsViewModel(
             languageCode = code,
             languageLabel = if (code.isEmpty()) AUTO_DETECT else displayLanguage(code),
         )
+    }
+
+    /** Takes effect from the next transcription, which downloads it if needed. */
+    fun setSpeechModel(model: WhisperModel) {
+        settings.speechModel = model.id
+        _state.value = _state.value.copy(speechModel = model)
     }
 
     fun setDetectSpeakers(value: Boolean) {

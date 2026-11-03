@@ -37,7 +37,8 @@ import dev.andrej.echo.speech.speakers.Diarizer
 import dev.andrej.echo.speech.speakers.SPEAKER_EMBEDDING
 import dev.andrej.echo.speech.speakers.SPEAKER_SEGMENTATION
 import dev.andrej.echo.speech.whisper.WhisperNative
-import dev.andrej.echo.speech.whisper.whisperModelFor
+import dev.andrej.echo.speech.whisper.WHISPER_VAD
+import dev.andrej.echo.speech.whisper.SpeechModels
 import dev.andrej.echo.transcribe.Transcriptions
 import dev.andrej.echo.ui.folders.FoldersViewModel
 import dev.andrej.echo.ui.profile.DictionaryViewModel
@@ -114,14 +115,10 @@ class AppContainer(context: Context) {
         slot = modelSlot,
     )
 
-    private val whisperModel = whisperModelFor(
-        ActivityManager.MemoryInfo().also { activityManager.getMemoryInfo(it) }.totalMem,
-    )
-
-    private val whisperStore = ModelStore(
+    private val speechModels = SpeechModels(
         directory = File(applicationContext.filesDir, "models"),
-        spec = whisperModel.spec,
-        downloader = HttpModelDownloader(),
+        totalMemoryBytes = ActivityManager.MemoryInfo().also { activityManager.getMemoryInfo(it) }.totalMem,
+        settings = settings,
     )
 
     private val diarizer = Diarizer(
@@ -153,7 +150,8 @@ class AppContainer(context: Context) {
     val transcriptions = Transcriptions(
         context = applicationContext,
         repository = repository,
-        modelStore = whisperStore,
+        speechModels = speechModels,
+        vadStore = ModelStore(File(applicationContext.filesDir, "models"), WHISPER_VAD, HttpModelDownloader()),
         settings = settings,
         dictionary = dictionary,
         analysisQueue = analysisQueue,
@@ -196,7 +194,7 @@ class AppContainer(context: Context) {
     fun startOnboardingDownloads() {
         if (!onWifi()) return
         appScope.launch {
-            whisperStore.download()
+            speechModels.store().download()
             if (settings.detectSpeakers) diarizer.download {}
         }
         appScope.launch {
@@ -297,7 +295,7 @@ class AppContainer(context: Context) {
                     repository, analysisQueue, pendingAnalysisWorker, derived,
                     transcription = transcriptions.status,
                     live = transcriptions.live,
-                    speechModel = whisperModel.name,
+                    speechModel = { speechModels.current.name },
                     onImport = transcriptions::import,
                     onRetryTranscription = transcriptions::transcribe,
                     onDeleted = transcriptions::discard,
@@ -326,6 +324,8 @@ class AppContainer(context: Context) {
                 SettingsViewModel(
                     settings = settings,
                     whisperLanguages = { WhisperNative.languages().toList() },
+                    speechModels = speechModels.choices,
+                    currentSpeechModel = { speechModels.current },
                     transcripts = repository,
                     derived = derived,
                     aiCardState = aiCardState,

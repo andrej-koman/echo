@@ -1,6 +1,5 @@
 package dev.andrej.echo.ui.detail
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -20,7 +19,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -152,18 +150,10 @@ internal fun Paragraph(
     )
 }
 
-/**
- * The [live] line is the one Whisper just heard: drawn faint with a blinking caret, it settles
- * to full ink once the next line arrives.
- */
+/** The [live] line is the one being typed in as Whisper hears it, with a blinking caret. */
 @Composable
 private fun LineText(text: String, highlight: String, live: Boolean, modifier: Modifier) {
     val colors = EchoTheme.colors
-    val color by animateColorAsState(
-        targetValue = if (live) colors.textTertiary else colors.textPrimary,
-        animationSpec = tween(600),
-        label = "line",
-    )
     val caretAlpha = if (live && !LocalReducedMotion.current) {
         rememberInfiniteTransition(label = "caret").animateFloat(
             initialValue = 1f,
@@ -180,7 +170,7 @@ private fun LineText(text: String, highlight: String, live: Boolean, modifier: M
             if (live) withStyle(SpanStyle(color = colors.textAccent.copy(alpha = caretAlpha))) { append(" ▍") }
         },
         style = EchoTheme.typography.body,
-        color = color,
+        color = colors.textPrimary,
         modifier = modifier,
     )
 }

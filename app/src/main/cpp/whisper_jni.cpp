@@ -1,3 +1,4 @@
+#include <android/log.h>
 #include <jni.h>
 
 #include <atomic>
@@ -21,10 +22,20 @@ struct Progress {
 
 Handle *from(jlong handle) { return reinterpret_cast<Handle *>(handle); }
 
+
+void logToLogcat(ggml_log_level level, const char *text, void *) {
+    int priority = level == GGML_LOG_LEVEL_ERROR ? ANDROID_LOG_ERROR
+                 : level == GGML_LOG_LEVEL_WARN  ? ANDROID_LOG_WARN
+                 : level == GGML_LOG_LEVEL_DEBUG ? ANDROID_LOG_DEBUG
+                                                 : ANDROID_LOG_INFO;
+    __android_log_write(priority, "whisper", text);
+}
+
 }  // namespace
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_dev_andrej_echo_speech_whisper_WhisperNative_init(JNIEnv *env, jobject, jstring modelPath) {
+    whisper_log_set(logToLogcat, nullptr);
     const char *path = env->GetStringUTFChars(modelPath, nullptr);
     whisper_context_params params = whisper_context_default_params();
     params.use_gpu = false;
@@ -45,7 +56,7 @@ Java_dev_andrej_echo_speech_whisper_WhisperNative_free(JNIEnv *, jobject, jlong 
 extern "C" JNIEXPORT jint JNICALL
 Java_dev_andrej_echo_speech_whisper_WhisperNative_full(
         JNIEnv *env, jobject, jlong handle, jfloatArray samples, jstring language, jstring prompt,
-        jint threads, jobject listener) {
+        jstring vadModel, jint threads, jobject listener) {
     Handle *h = from(handle);
     h->abort = false;
 
@@ -63,6 +74,11 @@ Java_dev_andrej_echo_speech_whisper_WhisperNative_full(
     const char *initialPrompt = prompt == nullptr ? nullptr : env->GetStringUTFChars(prompt, nullptr);
     params.initial_prompt = initialPrompt;
     params.carry_initial_prompt = initialPrompt != nullptr;
+    // Silence is cut out before the encoder, the bulk of the work; timestamps come back mapped
+    // to the original audio.
+    const char *vadPath = vadModel == nullptr ? nullptr : env->GetStringUTFChars(vadModel, nullptr);
+    params.vad = vadPath != nullptr;
+    params.vad_model_path = vadPath;
 
     Progress progress{
             env,
@@ -94,11 +110,14 @@ Java_dev_andrej_echo_speech_whisper_WhisperNative_full(
 
     jsize count = env->GetArrayLength(samples);
     jfloat *pcm = env->GetFloatArrayElements(samples, nullptr);
+    whisper_reset_timings(h->ctx);
     int result = whisper_full(h->ctx, params, pcm, count);
+    whisper_print_timings(h->ctx);
     env->ReleaseFloatArrayElements(samples, pcm, JNI_ABORT);
 
     if (lang != nullptr) env->ReleaseStringUTFChars(language, lang);
     if (initialPrompt != nullptr) env->ReleaseStringUTFChars(prompt, initialPrompt);
+    if (vadPath != nullptr) env->ReleaseStringUTFChars(vadModel, vadPath);
     return h->abort ? -1 : result;
 }
 

@@ -115,8 +115,9 @@ fun NoteDetailScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    val segments by remember(noteId) { viewModel.segments(noteId) }
-        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val loadedSegments: List<Segment>? by remember(noteId) { viewModel.segments(noteId) }
+        .collectAsStateWithLifecycle(initialValue = null)
+    val segments = loadedSegments.orEmpty()
     val speakers by remember(noteId) { viewModel.speakers(noteId) }
         .collectAsStateWithLifecycle(initialValue = emptyList())
     val audio = remember(noteId, transcribing) { viewModel.audio(noteId) }
@@ -146,8 +147,13 @@ fun NoteDetailScreen(
 
             val entryPending = pending[noteId]
             val status = transcription[noteId]?.takeIf { it != TranscriptionStatus.Failed }
-            val liveLine = if (status is TranscriptionStatus.Transcribing) segments.lastIndex else -1
-            FollowLiveText(listState, following = status != null && tab != NoteTab.Tasks, segments.size)
+            // Typing runs on while speakers are found, so the last window's lump still drains.
+            val typed = typedSegments(loadedSegments, typing = status != null)
+            val typedChars = typed.sumOf { it.text.trim().length }
+            val typing = status is TranscriptionStatus.Transcribing ||
+                typedChars < segments.sumOf { it.text.trim().length }
+            val liveLine = if (typing) typed.lastIndex else -1
+            FollowLiveText(listState, following = status != null && tab != NoteTab.Tasks, typedChars)
             val editable = segments.isNotEmpty() && noteId !in transcribing
             val textSelection = edits.entries.firstOrNull { !it.value.selection.collapsed }
             val current = player?.takeIf { it.playing || it.positionMs > 0 }
@@ -292,20 +298,22 @@ fun NoteDetailScreen(
                         onPlay = { task -> task.sourceOffsetMs?.let { player?.playFrom(it) } },
                         onEdit = { onEditTask(it.id) },
                     )
-                    segments.isEmpty() -> item(key = "plain") {
+                    typed.isEmpty() -> item(key = "plain") {
                         Paragraph(
-                            text = transcript.text.ifBlank {
-                                if (status != null) "The text appears here as Echo hears it." else "Nothing transcribed yet."
+                            text = when {
+                                status != null -> "Listening…"
+                                else -> transcript.text.ifBlank { "Nothing transcribed yet." }
                             },
                             current = false,
                             highlight = highlight,
                             onClick = {},
                             modifier = Modifier.padding(horizontal = EchoTheme.spacing.gutterScreen),
+                            live = typing,
                         )
                     }
-                    tab == NoteTab.FullText -> items(segments.indices.toList(), key = { "p$it" }) { i ->
+                    tab == NoteTab.FullText -> items(typed.indices.toList(), key = { "p$it" }) { i ->
                         Paragraph(
-                            text = segments[i].text.trim(),
+                            text = typed[i].text.trim(),
                             current = i == current,
                             highlight = highlight,
                             onClick = { player?.playFrom(segments[i].startMs) },
@@ -313,10 +321,10 @@ fun NoteDetailScreen(
                             live = i == liveLine,
                         )
                     }
-                    else -> items(runs(segments), key = { "run${it.first}" }) { run ->
+                    else -> items(runs(typed), key = { "run${it.first}" }) { run ->
                         SpeakerRun(
                             run = run,
-                            segments = segments,
+                            segments = typed,
                             speakers = speakers,
                             current = current,
                             liveLine = liveLine,
@@ -341,7 +349,7 @@ fun NoteDetailScreen(
             status?.let {
                 TranscribingCard(
                     status = it,
-                    model = viewModel.speechModel,
+                    model = viewModel.speechModel(),
                     modifier = Modifier.padding(
                         start = EchoTheme.spacing.gutterScreen,
                         end = EchoTheme.spacing.gutterScreen,
@@ -451,16 +459,17 @@ private sealed interface SpeakerTarget {
  * back to the end picks it up again.
  */
 @Composable
-private fun FollowLiveText(listState: LazyListState, following: Boolean, lineCount: Int) {
+private fun FollowLiveText(listState: LazyListState, following: Boolean, typedChars: Int) {
     var follow by remember { mutableStateOf(true) }
     val dragged by listState.interactionSource.collectIsDraggedAsState()
     LaunchedEffect(dragged) { if (dragged) follow = false }
     LaunchedEffect(listState) {
         snapshotFlow { listState.canScrollForward }.collect { if (!it) follow = true }
     }
-    LaunchedEffect(lineCount, following) {
-        if (following && follow && lineCount > 0) {
-            listState.animateScrollToItem(listState.layoutInfo.totalItemsCount - 1, Int.MAX_VALUE)
+    LaunchedEffect(typedChars, following) {
+        // Instant: this runs per typed character, and a restarted animation would never land.
+        if (following && follow && typedChars > 0) {
+            listState.scrollToItem(listState.layoutInfo.totalItemsCount - 1, Int.MAX_VALUE)
         }
     }
 }

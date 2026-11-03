@@ -21,10 +21,16 @@ class WhisperTranscriber private constructor(private val handle: Long) : Closeab
         samples: FloatArray,
         language: String?,
         prompt: String?,
+        onSegment: (Segment) -> Unit = {},
         onProgress: (Int) -> Unit,
     ): WhisperResult = coroutineScope {
+        val listener = object : WhisperListener {
+            override fun onProgress(percent: Int) = onProgress(percent)
+            override fun onSegment(startMs: Long, endMs: Long, text: ByteArray) =
+                onSegment(Segment(startMs = startMs, endMs = endMs, text = text.decodeToString().trim()))
+        }
         val run = async(Dispatchers.Default) {
-            WhisperNative.full(handle, samples, language, prompt, threads(), onProgress::invoke)
+            WhisperNative.full(handle, samples, language, prompt, threads(), listener)
         }
         val code = try {
             run.await()

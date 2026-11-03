@@ -14,6 +14,7 @@ import dev.andrej.echo.data.Speaker
 import dev.andrej.echo.data.TodoItem
 import dev.andrej.echo.data.Transcript
 import dev.andrej.echo.data.TranscriptRepository
+import dev.andrej.echo.transcribe.LiveTranscript
 import dev.andrej.echo.transcribe.TranscriptionStatus
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -79,6 +80,8 @@ class NotesViewModel(
     private val worker: PendingAnalysisWorker,
     private val derived: DerivedRepository,
     transcription: Flow<Map<String, TranscriptionStatus>> = flowOf(emptyMap()),
+    private val live: Flow<LiveTranscript?> = flowOf(null),
+    val speechModel: String = "",
     private val onImport: (List<Uri>) -> Unit = {},
     private val onRetryTranscription: (String) -> Unit = {},
     private val onDeleted: (String) -> Unit = {},
@@ -100,6 +103,9 @@ class NotesViewModel(
 
     val pending: StateFlow<Map<String, PendingCopy>> = work
         .map { it.pendingCopies() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    val transcription: StateFlow<Map<String, TranscriptionStatus>> = transcription
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     /** Ids still being transcribed: their segments are rewritten per chunk, so not editable yet. */
@@ -163,7 +169,11 @@ class NotesViewModel(
         viewModelScope.launch { derived.setDone(itemId, done) }
     }
 
-    fun segments(transcriptId: String): Flow<List<Segment>> = repository.segmentsFlow(transcriptId)
+    /** While Whisper runs on this note, the segments it has heard so far, ahead of the database. */
+    fun segments(transcriptId: String): Flow<List<Segment>> =
+        combine(repository.segmentsFlow(transcriptId), live) { stored, live ->
+            if (live?.id == transcriptId) live.segments else stored
+        }
 
     fun saveSegments(transcriptId: String, segments: List<Segment>) {
         viewModelScope.launch { repository.editSegments(transcriptId, segments) }

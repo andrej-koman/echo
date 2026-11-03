@@ -50,8 +50,9 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
   `Transcriptions.transcribe`; a take with no audio is discarded. Afterwards the PCM is encoded to
   AAC `source` (`AudioEncoder`, 32 kbps — ~14 MB/hour instead of 115) and deleted. Encoding goes
   to `source.part` and is renamed: a half-written `source` would read as an import.
-- **There is no live text and no Processing screen.** Stop leaves Capture at once; Whisper runs
+- **No live text while recording, and no Processing screen.** Stop leaves Capture at once; Whisper runs
   as a WorkManager job (minutes, not seconds) and the note's badge shows "Transcribing… N%".
+  The note's own screen streams the text in as Whisper hears it (see Import and Whisper).
 - Pause/resume append to the same file (resume waits for the paused read to finish first).
   `AudioFocus` takes transient focus for the take: music pauses, and a phone call
   (`AUDIOFOCUS_LOSS_TRANSIENT`) auto-pauses until focus returns — but the end of a call never
@@ -94,6 +95,12 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
   the transcript text is rewritten after each chunk. Language is auto-detected on the first chunk
   and held. Bracketed captions (`[BLANK_AUDIO]`, `(music)`) are dropped. Then the existing
   analysis queue takes over (`autoAnalyze`).
+- **Live text**: `whisper_jni.cpp` hooks `new_segment_callback` (`WhisperListener.onSegment`), and
+  `Transcriptions.live` holds the running note's segments so far — in memory only, since the job
+  runs in-process; the database still gets them per chunk. `NotesViewModel.segments` prefers it
+  for that note. The note screen draws the newest line faint with a blinking caret, follows the
+  end until the reader drags away, and shows `TranscribingCard` (status, model, %) above the
+  player while any transcription status but Failed is up.
 - Status comes from WorkManager (`Transcriptions.status`) and is shown through the same
   `PendingCopy`/`PendingBadge` path as analysis; it wins over an analysis block. The detail
   screen's retry button retries transcription when that is what failed.
@@ -211,7 +218,7 @@ ui/profile/   ProfileScreen (the Profile tab) + ProfileViewModel, SettingsScreen
 ui/notes/     NotesScreen + NotesViewModel (the Notes tab, search; NoteRow, NoteStage,
               PendingBadge, PendingCopy), NoteCard (+ its ··· sheets: move, delete)
 ui/detail/    NoteDetailScreen (header, By speaker / Full text / Tasks tabs, sheets), TranscriptViews
-              (rows, find/edit bars), PlayerBar (ProgressRow, PlayButton), NotePlayer (ExoPlayer), TranscriptEdits
+              (rows, find/edit bars), TranscribingCard (live progress), PlayerBar (ProgressRow, PlayButton), NotePlayer (ExoPlayer), TranscriptEdits
               (find/replace/edit/speaker logic), SpeakerSheet ("Who is this?"), ShareSheet
 export/       ExportFormats (txt/md/srt, pure) + Exporter (cache file → FileProvider → share sheet)
 notify/       RecordingNotifier (+ RecordingActionReceiver, BootReceiver), ModelDownloadNotifier

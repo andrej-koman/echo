@@ -4,6 +4,11 @@ fun interface WhisperProgress {
     fun onProgress(percent: Int)
 }
 
+interface WhisperListener : WhisperProgress {
+    /** A segment as Whisper finishes it, times relative to the samples passed in. */
+    fun onSegment(startMs: Long, endMs: Long, text: ByteArray)
+}
+
 /** Mirrors `src/main/cpp/whisper_jni.cpp`; a handle is a `whisper_context` plus its abort flag. */
 object WhisperNative {
     init {
@@ -23,7 +28,7 @@ object WhisperNative {
         language: String?,
         prompt: String?,
         threads: Int,
-        progress: WhisperProgress,
+        listener: WhisperListener,
     ): Int
     external fun abort(handle: Long)
 

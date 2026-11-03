@@ -16,6 +16,7 @@ struct Progress {
     JNIEnv *env;
     jobject listener;
     jmethodID onProgress;
+    jmethodID onSegment;
 };
 
 Handle *from(jlong handle) { return reinterpret_cast<Handle *>(handle); }
@@ -40,7 +41,7 @@ Java_dev_andrej_echo_speech_whisper_WhisperNative_free(JNIEnv *, jobject, jlong 
     delete h;
 }
 
-/** The progress callback runs on the calling thread, which is what makes reusing its JNIEnv safe. */
+/** The progress and segment callbacks run on the calling thread, which is what makes reusing its JNIEnv safe. */
 extern "C" JNIEXPORT jint JNICALL
 Java_dev_andrej_echo_speech_whisper_WhisperNative_full(
         JNIEnv *env, jobject, jlong handle, jfloatArray samples, jstring language, jstring prompt,
@@ -67,12 +68,27 @@ Java_dev_andrej_echo_speech_whisper_WhisperNative_full(
             env,
             listener,
             env->GetMethodID(env->GetObjectClass(listener), "onProgress", "(I)V"),
+            env->GetMethodID(env->GetObjectClass(listener), "onSegment", "(JJ[B)V"),
     };
     params.progress_callback = [](whisper_context *, whisper_state *, int percent, void *data) {
         auto *p = static_cast<Progress *>(data);
         p->env->CallVoidMethod(p->listener, p->onProgress, percent);
     };
     params.progress_callback_user_data = &progress;
+    params.new_segment_callback = [](whisper_context *ctx, whisper_state *, int n_new, void *data) {
+        auto *p = static_cast<Progress *>(data);
+        const int count = whisper_full_n_segments(ctx);
+        for (int i = count - n_new; i < count; i++) {
+            std::string text = whisper_full_get_segment_text(ctx, i);
+            jbyteArray bytes = p->env->NewByteArray(static_cast<jsize>(text.size()));
+            p->env->SetByteArrayRegion(bytes, 0, static_cast<jsize>(text.size()), reinterpret_cast<const jbyte *>(text.data()));
+            p->env->CallVoidMethod(p->listener, p->onSegment,
+                                   static_cast<jlong>(whisper_full_get_segment_t0(ctx, i) * 10),
+                                   static_cast<jlong>(whisper_full_get_segment_t1(ctx, i) * 10), bytes);
+            p->env->DeleteLocalRef(bytes);
+        }
+    };
+    params.new_segment_callback_user_data = &progress;
     params.abort_callback = [](void *data) { return static_cast<Handle *>(data)->abort.load(); };
     params.abort_callback_user_data = h;
 

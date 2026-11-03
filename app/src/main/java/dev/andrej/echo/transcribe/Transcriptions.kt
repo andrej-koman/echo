@@ -36,6 +36,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
@@ -43,6 +44,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+
+/** The note being transcribed and its segments so far, ahead of the per-chunk database write. */
+data class LiveTranscript(val id: String, val segments: List<Segment>)
 
 sealed interface TranscriptionStatus {
     data object Queued : TranscriptionStatus
@@ -80,6 +84,9 @@ class Transcriptions(
 
     /** Copying a large file takes a while, and the row must not read as failed meanwhile. */
     private val copying = MutableStateFlow(emptySet<String>())
+
+    private val _live = MutableStateFlow<LiveTranscript?>(null)
+    val live: StateFlow<LiveTranscript?> = _live
 
     val status: Flow<Map<String, TranscriptionStatus>> =
         combine(workManager.getWorkInfosByTagFlow(TAG), copying) { infos, copyingIds ->
@@ -191,6 +198,14 @@ class Transcriptions(
     }
 
     internal suspend fun run(id: String, report: (TranscriptionStatus) -> Unit) = lock.withLock {
+        try {
+            transcribeLocked(id, report)
+        } finally {
+            _live.value = null
+        }
+    }
+
+    private suspend fun transcribeLocked(id: String, report: (TranscriptionStatus) -> Unit) {
         val dir = dirFor(id)
         val source = File(dir, SOURCE)
         val pcm = File(dir, PCM)
@@ -233,13 +248,23 @@ class Transcriptions(
                         val samples = file.readFloats(start, minOf(CHUNK_SAMPLES.toLong(), total - start).toInt())
                         val length = if (start + samples.size < total) quietestCut(samples) else samples.size
                         val chunkStart = start
-                        val result = whisper.transcribe(samples.copyOf(length), language, prompt) { percent ->
+                        val offsetMs = start * 1000 / SAMPLE_RATE
+                        val heard = mutableListOf<Segment>()
+                        val result = whisper.transcribe(
+                            samples.copyOf(length),
+                            language,
+                            prompt,
+                            onSegment = { segment ->
+                                heard += listOf(segment).spoken()
+                                    .map { it.copy(startMs = it.startMs + offsetMs, endMs = it.endMs + offsetMs) }
+                                _live.value = LiveTranscript(id, segments + heard)
+                            },
+                        ) { percent ->
                             val done = chunkStart + length * percent / 100f
                             report(TranscriptionStatus.Transcribing(decodeShare + (1 - decodeShare) * done / total))
                         }
                         // Detected once on the first chunk, then held so a quiet stretch can't flip it.
                         language = language ?: result.language
-                        val offsetMs = start * 1000 / SAMPLE_RATE
                         segments += result.segments.spoken()
                             .map { it.copy(startMs = it.startMs + offsetMs, endMs = it.endMs + offsetMs) }
                         repository.setTranscription(id, transcriptText(segments), language.orEmpty(), durationMs, segments)

@@ -296,6 +296,8 @@ class AppContainer(context: Context) {
                 NotesViewModel(
                     repository, analysisQueue, pendingAnalysisWorker, derived,
                     transcription = transcriptions.status,
+                    live = transcriptions.live,
+                    speechModel = whisperModel.name,
                     onImport = transcriptions::import,
                     onRetryTranscription = transcriptions::transcribe,
                     onDeleted = transcriptions::discard,

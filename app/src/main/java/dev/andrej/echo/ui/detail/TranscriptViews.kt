@@ -1,5 +1,11 @@
 package dev.andrej.echo.ui.detail
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -14,6 +20,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -25,6 +32,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import dev.andrej.echo.R
 import dev.andrej.echo.ui.components.ButtonSize
@@ -33,6 +41,7 @@ import dev.andrej.echo.ui.components.EchoButton
 import dev.andrej.echo.ui.components.EchoSearchField
 import dev.andrej.echo.ui.notes.clock
 import dev.andrej.echo.ui.theme.EchoTheme
+import dev.andrej.echo.ui.theme.LocalReducedMotion
 
 /** Heads a run of lines from one speaker: `● Speaker 1  0:00 – 0:14`. */
 @Composable
@@ -88,6 +97,7 @@ internal fun SegmentLine(
     onValueChange: (TextFieldValue) -> Unit,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    live: Boolean = false,
 ) {
     val colors = EchoTheme.colors
     val modifier = Modifier
@@ -114,12 +124,7 @@ internal fun SegmentLine(
                 .padding(horizontal = 6.dp, vertical = 2.dp),
         )
     } else {
-        Text(
-            text = highlighted(value.text, highlight, colors.surfaceAccentSoft),
-            style = EchoTheme.typography.body,
-            color = colors.textPrimary,
-            modifier = modifier,
-        )
+        LineText(value.text, highlight, live, modifier)
     }
 }
 
@@ -131,18 +136,52 @@ internal fun Paragraph(
     highlight: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    live: Boolean = false,
 ) {
     val colors = EchoTheme.colors
-    Text(
-        text = highlighted(text, highlight, colors.surfaceAccentSoft),
-        style = EchoTheme.typography.body,
-        color = colors.textPrimary,
+    LineText(
+        text = text,
+        highlight = highlight,
+        live = live,
         modifier = modifier
             .fillMaxWidth()
             .clip(EchoTheme.radii.md)
             .background(if (current) colors.surfaceCard else Color.Transparent)
             .clickable(onClick = onClick)
             .padding(horizontal = EchoTheme.spacing.s3, vertical = EchoTheme.spacing.s2),
+    )
+}
+
+/**
+ * The [live] line is the one Whisper just heard: drawn faint with a blinking caret, it settles
+ * to full ink once the next line arrives.
+ */
+@Composable
+private fun LineText(text: String, highlight: String, live: Boolean, modifier: Modifier) {
+    val colors = EchoTheme.colors
+    val color by animateColorAsState(
+        targetValue = if (live) colors.textTertiary else colors.textPrimary,
+        animationSpec = tween(600),
+        label = "line",
+    )
+    val caretAlpha = if (live && !LocalReducedMotion.current) {
+        rememberInfiniteTransition(label = "caret").animateFloat(
+            initialValue = 1f,
+            targetValue = 0f,
+            animationSpec = infiniteRepeatable(tween(530, easing = { if (it < 0.5f) 0f else 1f }), RepeatMode.Restart),
+            label = "caret",
+        ).value
+    } else {
+        1f
+    }
+    Text(
+        text = buildAnnotatedString {
+            append(highlighted(text, highlight, colors.surfaceAccentSoft))
+            if (live) withStyle(SpanStyle(color = colors.textAccent.copy(alpha = caretAlpha))) { append(" ▍") }
+        },
+        style = EchoTheme.typography.body,
+        color = color,
+        modifier = modifier,
     )
 }
 

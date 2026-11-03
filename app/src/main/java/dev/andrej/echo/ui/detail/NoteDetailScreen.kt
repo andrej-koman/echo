@@ -6,6 +6,7 @@ import android.content.Context
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,10 +21,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -32,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,6 +57,7 @@ import dev.andrej.echo.export.ExportFormat
 import dev.andrej.echo.export.ExportNote
 import dev.andrej.echo.export.ExportOptions
 import dev.andrej.echo.export.Exporter
+import dev.andrej.echo.transcribe.TranscriptionStatus
 import dev.andrej.echo.ui.components.BarCenter
 import dev.andrej.echo.ui.components.ButtonSize
 import dev.andrej.echo.ui.components.ButtonVariant
@@ -103,6 +109,7 @@ fun NoteDetailScreen(
     val tasks by viewModel.tasks.collectAsStateWithLifecycle()
     val folders by viewModel.folders.collectAsStateWithLifecycle()
     val transcribing by viewModel.transcribing.collectAsStateWithLifecycle()
+    val transcription by viewModel.transcription.collectAsStateWithLifecycle()
     val speakerNames by viewModel.speakerNames.collectAsStateWithLifecycle()
     val transcript = transcripts.firstOrNull { it.id == noteId }
     val context = LocalContext.current
@@ -125,6 +132,7 @@ fun NoteDetailScreen(
     val selected = remember { mutableStateListOf<Int>() }
     var speakerTarget by remember { mutableStateOf<SpeakerTarget?>(null) }
     var exportOptions by remember { mutableStateOf(ExportOptions()) }
+    val listState = rememberLazyListState()
 
     Box(modifier = modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -137,6 +145,9 @@ fun NoteDetailScreen(
             }
 
             val entryPending = pending[noteId]
+            val status = transcription[noteId]?.takeIf { it != TranscriptionStatus.Failed }
+            val liveLine = if (status is TranscriptionStatus.Transcribing) segments.lastIndex else -1
+            FollowLiveText(listState, following = status != null && tab != NoteTab.Tasks, segments.size)
             val editable = segments.isNotEmpty() && noteId !in transcribing
             val textSelection = edits.entries.firstOrNull { !it.value.selection.collapsed }
             val current = player?.takeIf { it.playing || it.positionMs > 0 }
@@ -167,6 +178,7 @@ fun NoteDetailScreen(
             }
 
             LazyColumn(
+                state = listState,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
@@ -201,7 +213,7 @@ fun NoteDetailScreen(
                                 onClick = { sheet = NoteSheet.Folder },
                             )
                         }
-                        if (entryPending != null) {
+                        if (entryPending != null && status == null) {
                             StatusCard(
                                 pending = entryPending,
                                 retrying = analyzingId == noteId,
@@ -282,7 +294,9 @@ fun NoteDetailScreen(
                     )
                     segments.isEmpty() -> item(key = "plain") {
                         Paragraph(
-                            text = transcript.text.ifBlank { "Nothing transcribed yet." },
+                            text = transcript.text.ifBlank {
+                                if (status != null) "The text appears here as Echo hears it." else "Nothing transcribed yet."
+                            },
                             current = false,
                             highlight = highlight,
                             onClick = {},
@@ -296,6 +310,7 @@ fun NoteDetailScreen(
                             highlight = highlight,
                             onClick = { player?.playFrom(segments[i].startMs) },
                             modifier = Modifier.padding(horizontal = EchoTheme.spacing.gutterScreen),
+                            live = i == liveLine,
                         )
                     }
                     else -> items(runs(segments), key = { "run${it.first}" }) { run ->
@@ -304,6 +319,7 @@ fun NoteDetailScreen(
                             segments = segments,
                             speakers = speakers,
                             current = current,
+                            liveLine = liveLine,
                             editing = editing,
                             selected = selected,
                             highlight = highlight,
@@ -322,6 +338,17 @@ fun NoteDetailScreen(
                 }
             }
 
+            status?.let {
+                TranscribingCard(
+                    status = it,
+                    model = viewModel.speechModel,
+                    modifier = Modifier.padding(
+                        start = EchoTheme.spacing.gutterScreen,
+                        end = EchoTheme.spacing.gutterScreen,
+                        bottom = EchoTheme.spacing.s3,
+                    ),
+                )
+            }
             player?.let { player ->
                 ProgressRow(player)
                 BarCenter { PlayButton(player) }
@@ -419,6 +446,25 @@ private sealed interface SpeakerTarget {
     data class Selection(val index: Int, val range: IntRange) : SpeakerTarget
 }
 
+/**
+ * Keeps the newest line in view while text streams in, until the reader drags away; scrolling
+ * back to the end picks it up again.
+ */
+@Composable
+private fun FollowLiveText(listState: LazyListState, following: Boolean, lineCount: Int) {
+    var follow by remember { mutableStateOf(true) }
+    val dragged by listState.interactionSource.collectIsDraggedAsState()
+    LaunchedEffect(dragged) { if (dragged) follow = false }
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.canScrollForward }.collect { if (!it) follow = true }
+    }
+    LaunchedEffect(lineCount, following) {
+        if (following && follow && lineCount > 0) {
+            listState.animateScrollToItem(listState.layoutInfo.totalItemsCount - 1, Int.MAX_VALUE)
+        }
+    }
+}
+
 /** Consecutive segments from one speaker, as index ranges. */
 internal fun runs(segments: List<Segment>): List<IntRange> {
     val runs = mutableListOf<IntRange>()
@@ -438,6 +484,7 @@ private fun SpeakerRun(
     segments: List<Segment>,
     speakers: List<Speaker>,
     current: Int,
+    liveLine: Int,
     editing: Boolean,
     selected: List<Int>,
     highlight: String,
@@ -474,6 +521,7 @@ private fun SpeakerRun(
                 onValueChange = { edits[i] = it },
                 onClick = { onLineClick(i) },
                 onLongClick = { onLineLongClick(i) },
+                live = i == liveLine,
             )
         }
     }

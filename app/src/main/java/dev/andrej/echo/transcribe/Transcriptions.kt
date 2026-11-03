@@ -3,6 +3,8 @@ package dev.andrej.echo.transcribe
 import android.content.Context
 import android.net.Uri
 import android.os.SystemClock
+import android.media.MediaMetadataRetriever
+import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.util.Log
 import androidx.work.Constraints
@@ -18,6 +20,7 @@ import dev.andrej.echo.ai.ModelSlot
 import dev.andrej.echo.ai.ModelStore
 import dev.andrej.echo.ai.PendingAnalysisWorker
 import dev.andrej.echo.data.AnalysisQueueRepository
+import dev.andrej.echo.data.ImportDay
 import dev.andrej.echo.data.SettingsStore
 import dev.andrej.echo.data.TranscriptRepository
 import dev.andrej.echo.speech.AudioDecoder
@@ -27,17 +30,24 @@ import dev.andrej.echo.speech.pcm16ToFloats
 import dev.andrej.echo.data.DictionaryRepository
 import dev.andrej.echo.data.Segment
 import dev.andrej.echo.speech.speakers.Diarizer
+import dev.andrej.echo.speech.speakers.SpeakerTurn
 import dev.andrej.echo.speech.speakers.assignSpeakers
 import dev.andrej.echo.speech.whisper.SpeechModels
 import dev.andrej.echo.speech.whisper.WhisperTranscriber
 import java.io.File
 import java.io.IOException
 import java.io.RandomAccessFile
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
@@ -46,6 +56,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+
+data class ImportFile(
+    val uri: Uri,
+    val name: String,
+    val sizeBytes: Long?,
+    val durationMs: Long?,
+    val recordedAt: Long?,
+)
 
 /** The note being transcribed and its segments so far, ahead of the per-chunk database write. */
 data class LiveTranscript(val id: String, val segments: List<Segment>)
@@ -104,29 +122,81 @@ class Transcriptions(
             }
         }
 
-    fun import(uris: List<Uri>) {
-        scope.launch { uris.forEach { importOne(it) } }
+    private val _offered = MutableStateFlow(emptyList<ImportFile>())
+
+    /** Picked or shared files waiting for the user to say which day they belong to. */
+    val offered: StateFlow<List<ImportFile>> = _offered
+
+    /** Every file waits for the sheet, which asks at least for its title. */
+    fun offer(uris: List<Uri>) {
+        scope.launch { uris.forEach { uri -> describe(uri).let { file -> _offered.update { it + file } } } }
     }
 
-    private suspend fun importOne(uri: Uri) {
-        val name = displayName(uri)
+    private val _started = MutableSharedFlow<String>(extraBufferCapacity = 1)
+
+    /** A note to open as its import starts, so the user watches it fill in. */
+    val started: SharedFlow<String> = _started
+
+    /** A blank [title] leaves the note to be named after its file, then by analysis. */
+    fun accept(file: ImportFile, createdAt: Long, title: String?, always: ImportDay?) {
+        if (always != null) settings.importDay = always
+        _offered.update { it - file }
+        // With several files, the sheet asks about the next; only the last one opens.
+        val open = _offered.value.isEmpty()
+        scope.launch { importOne(file, createdAt, title?.trim()?.ifBlank { null }, open) }
+    }
+
+    fun decline(file: ImportFile) = _offered.update { it - file }
+
+    private suspend fun describe(uri: Uri): ImportFile = withContext(Dispatchers.IO) {
+        var name: String? = null
+        var size: Long? = null
+        var modified: Long? = null
+        runCatching {
+            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    fun long(column: String) = cursor.getColumnIndex(column).takeIf { it >= 0 && !cursor.isNull(it) }
+                        ?.let(cursor::getLong)
+                    name = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME).takeIf { it >= 0 }?.let(cursor::getString)
+                    size = long(OpenableColumns.SIZE)
+                    modified = long(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+                }
+            }
+        }
+        val retriever = MediaMetadataRetriever()
+        val (durationMs, tagged) = try {
+            retriever.setDataSource(context, uri)
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() to
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DATE)?.let(::parseMediaDate)
+        } catch (e: Exception) {
+            null to null
+        } finally {
+            retriever.release()
+        }
+        ImportFile(uri, name ?: "Audio", size, durationMs, tagged ?: modified?.takeIf { it > 0 })
+    }
+
+    private suspend fun importOne(file: ImportFile, createdAt: Long, title: String?, open: Boolean) {
         val transcript = repository.save(
             text = "",
             language = "",
-            durationMs = 0,
-            title = name?.substringBeforeLast('.')?.ifBlank { null },
+            durationMs = file.durationMs ?: 0,
+            createdAt = createdAt,
+            title = title ?: file.name.substringBeforeLast('.').ifBlank { null },
+            titleByUser = title != null,
         )
         copying.update { it + transcript.id }
+        if (open) _started.tryEmit(transcript.id)
         try {
             withContext(Dispatchers.IO) {
                 val dir = dirFor(transcript.id).apply { mkdirs() }
-                context.contentResolver.openInputStream(uri)!!.use { input ->
+                context.contentResolver.openInputStream(file.uri)!!.use { input ->
                     File(dir, SOURCE).outputStream().use { input.copyTo(it) }
                 }
             }
             enqueue(transcript.id)
         } catch (e: Exception) {
-            Log.w(LOG_TAG, "import of $uri failed: ${e.message}")
+            Log.w(LOG_TAG, "import of ${file.uri} failed: ${e.message}")
             repository.delete(transcript.id)
             dirFor(transcript.id).deleteRecursively()
         } finally {
@@ -259,7 +329,20 @@ class Transcriptions(
         var language: String? = settings.transcriptionLanguage
         val prompt = whisperPrompt(dictionary.all().map { it.term })
         // The LLM is closed first: both models at once had the low-memory killer take the app.
-        modelSlot.whisper {
+        modelSlot.whisper { coroutineScope {
+            // On the little cores Whisper leaves idle, so it costs Whisper almost nothing.
+            val whisperDone = AtomicBoolean(false)
+            val speakerPercent = AtomicInteger(0)
+            val speakers = if (settings.detectSpeakers) {
+                async {
+                    findSpeakers(id, pcm) { percent ->
+                        speakerPercent.set(percent)
+                        if (whisperDone.get()) report(TranscriptionStatus.FindingSpeakers(percent / 100f))
+                    }
+                }
+            } else {
+                null
+            }
             WhisperTranscriber.load(model).use { whisper ->
                 Log.i(LOG_TAG, "$id: ${speechModel.name} loaded at ${elapsed()} ms")
                 speechModels.deleteAllBut(speechModel)
@@ -300,8 +383,20 @@ class Transcriptions(
                     }
                 }
             }
-            if (settings.detectSpeakers) findSpeakers(id, pcm, segments, language.orEmpty(), durationMs, report)
-        }
+            if (speakers != null) {
+                whisperDone.set(true)
+                if (!speakers.isCompleted) {
+                    report(TranscriptionStatus.FindingSpeakers(speakerPercent.get() / 100f))
+                    Log.i(LOG_TAG, "$id: waiting for speakers at ${elapsed()} ms")
+                }
+                val turns = speakers.await()
+                Log.i(LOG_TAG, "$id: speakers ready at ${elapsed()} ms")
+                val (assigned, count) = assignSpeakers(segments, turns)
+                if (count > 0 && repository.transcripts.first().any { it.id == id }) {
+                    repository.setSpeakers(id, assigned, count)
+                }
+            }
+        } }
         Log.i(LOG_TAG, "$id: transcribed at ${elapsed()} ms")
         if (recorded) {
             // Encoded beside, then renamed: a half-written `source` would be taken for an import.
@@ -319,29 +414,16 @@ class Transcriptions(
     }
 
     /** Speakers are a bonus on top of the transcript: failing to find them never fails the job. */
-    private suspend fun findSpeakers(
-        id: String,
-        pcm: File,
-        segments: List<Segment>,
-        language: String,
-        durationMs: Long,
-        report: (TranscriptionStatus) -> Unit,
-    ) {
-        if (segments.isEmpty()) return
+    private suspend fun findSpeakers(id: String, pcm: File, onProgress: (Int) -> Unit): List<SpeakerTurn> =
         try {
-            report(TranscriptionStatus.FindingSpeakers(0f))
-            if (!diarizer.ready) diarizer.download { report(TranscriptionStatus.FindingSpeakers(0f)) }
-            val turns = diarizer.diarize(pcm) { report(TranscriptionStatus.FindingSpeakers(it / 100f)) }
-            val (assigned, count) = assignSpeakers(segments, turns)
-            if (count > 0 && repository.transcripts.first().any { it.id == id }) {
-                repository.setSpeakers(id, assigned, count)
-            }
+            if (!diarizer.ready) diarizer.download {}
+            diarizer.diarize(pcm, onProgress)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.w(LOG_TAG, "no speakers for $id: ${e.message}")
+            emptyList()
         }
-    }
 
     private fun RandomAccessFile.readFloats(startSample: Long, count: Int): FloatArray {
         seek(startSample * 2)
@@ -349,11 +431,6 @@ class Transcriptions(
         readFully(bytes)
         return bytes.pcm16ToFloats()
     }
-
-    private fun displayName(uri: Uri): String? =
-        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) cursor.getString(0) else null
-        }
 
     private fun dirFor(id: String) = File(recordingsDir, id)
 
@@ -393,4 +470,17 @@ class Transcriptions(
             }
         }
     }
+}
+
+/**
+ * Android's METADATA_KEY_DATE, e.g. `20231028T103100.000Z`. An MP4 with no date says 1904, its
+ * epoch, so anything before 1971 counts as none.
+ */
+internal fun parseMediaDate(value: String, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): Long? {
+    val match = Regex("""^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})""").find(value.trim()) ?: return null
+    val (y, mo, d, h, mi, s) = match.destructured
+    if (y.toInt() < 1971) return null
+    val time = runCatching { java.time.LocalDateTime.of(y.toInt(), mo.toInt(), d.toInt(), h.toInt(), mi.toInt(), s.toInt()) }
+        .getOrNull() ?: return null
+    return time.atZone(if (value.trim().endsWith("Z")) java.time.ZoneOffset.UTC else zone).toInstant().toEpochMilli()
 }

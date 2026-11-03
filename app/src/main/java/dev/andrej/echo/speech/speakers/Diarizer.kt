@@ -28,12 +28,14 @@ class Diarizer(
     suspend fun diarize(pcm: File, onProgress: (Int) -> Unit): List<SpeakerTurn> {
         val segmentationModel = segmentation.fileOrNull() ?: throw IOException("no segmentation model")
         val embeddingModel = embedding.fileOrNull() ?: throw IOException("no embedding model")
+        val cpus = littleCores()
         val flat = withContext(Dispatchers.Default) {
             SpeakerNative.diarize(
                 segmentationModel.absolutePath,
                 embeddingModel.absolutePath,
                 pcm.absolutePath,
-                threads(),
+                if (cpus.isEmpty()) 2 else cpus.size,
+                cpus,
                 onProgress::invoke,
             )
         } ?: throw IOException("diarization failed")
@@ -42,7 +44,17 @@ class Diarizer(
         }
     }
 
-    private fun threads() = (Runtime.getRuntime().availableProcessors() - 4).coerceIn(2, 6)
+    /** It runs beside Whisper, which keeps the faster cores busy; empty when cores all look alike. */
+    private fun littleCores(): IntArray {
+        val maxFreq = (0 until Runtime.getRuntime().availableProcessors()).associateWith { cpu ->
+            File("/sys/devices/system/cpu/cpu$cpu/cpufreq/cpuinfo_max_freq")
+                .runCatching { readText().trim().toLong() }
+                .getOrNull() ?: return IntArray(0)
+        }
+        val slowest = maxFreq.values.min()
+        val little = maxFreq.filterValues { it == slowest }.keys
+        return if (little.size == maxFreq.size) IntArray(0) else little.toIntArray()
+    }
 }
 
 /**

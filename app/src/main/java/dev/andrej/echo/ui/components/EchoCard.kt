@@ -1,7 +1,7 @@
 package dev.andrej.echo.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Column
@@ -37,6 +37,7 @@ fun EchoCard(
     tone: CardTone = CardTone.Paper,
     padding: CardPadding = CardPadding.Md,
     onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val colors = EchoTheme.colors
@@ -78,9 +79,10 @@ fun EchoCard(
                     if (onClick == null) {
                         Modifier
                     } else {
-                        Modifier.clickable(
+                        Modifier.combinedClickable(
                             interactionSource = interactionSource,
                             indication = null,
+                            onLongClick = onLongClick,
                             onClick = onClick,
                         )
                     },

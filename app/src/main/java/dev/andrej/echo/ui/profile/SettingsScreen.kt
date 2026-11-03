@@ -46,6 +46,7 @@ import dev.andrej.echo.ui.components.EchoSwitch
 import dev.andrej.echo.ui.components.EchoTopBar
 import dev.andrej.echo.ui.components.PickerSheet
 import dev.andrej.echo.speech.whisper.WhisperModel
+import dev.andrej.echo.data.ImportDay
 import dev.andrej.echo.ui.theme.EchoTheme
 
 @Composable
@@ -55,6 +56,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onLanguageChange: (String) -> Unit,
     onSpeechModelChange: (WhisperModel) -> Unit,
+    onImportDayChange: (ImportDay?) -> Unit,
     onAutoAnalyzeChange: (Boolean) -> Unit,
     onDetectSpeakersChange: (Boolean) -> Unit,
     onWifiOnlyDownloadChange: (Boolean) -> Unit,
@@ -70,6 +72,7 @@ fun SettingsScreen(
     val context = LocalContext.current
     var pickingLanguage by remember { mutableStateOf(false) }
     var pickingSpeechModel by remember { mutableStateOf(false) }
+    var pickingImportDay by remember { mutableStateOf(false) }
     var confirmingDeleteAll by remember { mutableStateOf(false) }
     val versionName = remember {
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }
@@ -113,6 +116,15 @@ fun SettingsScreen(
                             label = "Speech model",
                             value = state.speechModel?.name?.removePrefix("Whisper ").orEmpty(),
                             onClick = { pickingSpeechModel = true },
+                        )
+                    },
+
+                    {
+                        DisclosureRow(
+                            iconRes = R.drawable.ic_upload,
+                            label = "Imported files' day",
+                            value = importDayLabel(state.importDay),
+                            onClick = { pickingImportDay = true },
                         )
                     },
                     {
@@ -254,6 +266,18 @@ fun SettingsScreen(
         },
         onDismiss = { pickingLanguage = false },
     )
+    PickerSheet(
+        visible = pickingImportDay,
+        title = "Imported files' day",
+        options = listOf(null, ImportDay.Recorded, ImportDay.Today).map { importDayLabel(it) to it },
+        selected = state.importDay,
+        onPick = {
+            onImportDayChange(it)
+            pickingImportDay = false
+        },
+        onDismiss = { pickingImportDay = false },
+    )
+
     state.speechModel?.let { current ->
         PickerSheet(
             visible = pickingSpeechModel,
@@ -483,4 +507,10 @@ private fun modelBadge(state: AiCardState): Pair<String, BadgeTone>? = when (sta
     is AiCardState.Downloading -> "Downloading" to BadgeTone.Info
     is AiCardState.Unsupported -> "Unsupported" to BadgeTone.Warning
     AiCardState.Checking -> null
+}
+
+private fun importDayLabel(day: ImportDay?) = when (day) {
+    null -> "Ask each time"
+    ImportDay.Recorded -> "When recorded"
+    ImportDay.Today -> "Day of import"
 }

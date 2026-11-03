@@ -124,6 +124,8 @@ fun NoteDetailScreen(
     val player = rememberNotePlayer(audio)
 
     var tab by rememberSaveable { mutableStateOf(NoteTab.BySpeaker) }
+    // Null until the note has loaded; tells "Full text just appeared" from "was always there".
+    var wasTranscribed by remember(noteId) { mutableStateOf<Boolean?>(null) }
     var sheet by remember { mutableStateOf<NoteSheet?>(null) }
     var finding by remember { mutableStateOf(false) }
     var findQuery by remember { mutableStateOf("") }
@@ -153,7 +155,22 @@ fun NoteDetailScreen(
             val typing = status is TranscriptionStatus.Transcribing ||
                 typedChars < segments.sumOf { it.text.trim().length }
             val liveLine = if (typing) typed.lastIndex else -1
-            FollowLiveText(listState, following = status != null && tab != NoteTab.Tasks, typedChars)
+            // Each tab appears once its stage is done: text after Whisper, speakers once found,
+            // tasks once analysed. Until then the text fills in with no tabs at all.
+            val transcribed = status == null || status is TranscriptionStatus.FindingSpeakers
+            val visibleTabs = buildList {
+                if (speakers.isNotEmpty()) add(NoteTab.BySpeaker)
+                if (transcribed) add(NoteTab.FullText)
+                if (transcript.analyzedAt != null) add(NoteTab.Tasks)
+            }
+            val loaded = loadedSegments != null
+            LaunchedEffect(loaded, transcribed) {
+                if (!loaded) return@LaunchedEffect
+                if (wasTranscribed == false && transcribed) tab = NoteTab.FullText
+                wasTranscribed = transcribed
+            }
+            val shown = tab.takeIf { it in visibleTabs } ?: NoteTab.FullText
+            FollowLiveText(listState, following = status != null && shown != NoteTab.Tasks, typedChars)
             val editable = segments.isNotEmpty() && noteId !in transcribing
             val textSelection = edits.entries.firstOrNull { !it.value.selection.collapsed }
             val current = player?.takeIf { it.playing || it.positionMs > 0 }
@@ -164,7 +181,7 @@ fun NoteDetailScreen(
                 HeaderAction(R.drawable.ic_search, "Find", active = finding) {
                     finding = !finding
                     if (!finding) findQuery = ""
-                    if (finding && tab == NoteTab.Tasks) tab = NoteTab.BySpeaker
+                    if (finding && shown == NoteTab.Tasks) tab = NoteTab.FullText
                 }
                 if (editable) {
                     HeaderAction(R.drawable.ic_pen_line, "Edit", active = editing) {
@@ -173,8 +190,8 @@ fun NoteDetailScreen(
                                 viewModel.saveSegments(noteId, applyEdits(segments, edits.mapValues { it.value.text }))
                             }
                             edits.clear()
-                        } else if (tab == NoteTab.Tasks) {
-                            tab = NoteTab.BySpeaker
+                        } else if (shown == NoteTab.Tasks) {
+                            tab = NoteTab.FullText
                         }
                         editing = !editing
                     }
@@ -229,18 +246,20 @@ fun NoteDetailScreen(
                     }
                 }
 
-                stickyHeader(key = "tabs") {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(EchoTheme.colors.surfacePage)
-                            .padding(horizontal = EchoTheme.spacing.gutterScreen, vertical = EchoTheme.spacing.s4),
-                    ) {
-                        Tabs(selected = tab, onSelect = { tab = it })
+                if (visibleTabs.isNotEmpty()) {
+                    stickyHeader(key = "tabs") {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(EchoTheme.colors.surfacePage)
+                                .padding(horizontal = EchoTheme.spacing.gutterScreen, vertical = EchoTheme.spacing.s4),
+                        ) {
+                            Tabs(tabs = visibleTabs, selected = shown, onSelect = { tab = it })
+                        }
                     }
                 }
 
-                if (tab != NoteTab.Tasks) {
+                if (shown != NoteTab.Tasks) {
                     item(key = "tools") {
                         Column(
                             modifier = Modifier.padding(horizontal = EchoTheme.spacing.gutterScreen),
@@ -290,7 +309,7 @@ fun NoteDetailScreen(
                 }
 
                 when {
-                    tab == NoteTab.Tasks -> tasksTab(
+                    shown == NoteTab.Tasks -> tasksTab(
                         summary = transcript.summary,
                         tasks = tasks.filter { it.sourceTranscriptId == noteId },
                         analyzed = transcript.analyzedAt != null,
@@ -311,7 +330,7 @@ fun NoteDetailScreen(
                             live = typing,
                         )
                     }
-                    tab == NoteTab.FullText -> items(typed.indices.toList(), key = { "p$it" }) { i ->
+                    shown == NoteTab.FullText -> items(typed.indices.toList(), key = { "p$it" }) { i ->
                         Paragraph(
                             text = typed[i].text.trim(),
                             current = i == current,
@@ -650,7 +669,7 @@ private fun FolderChip(folder: Folder?, onClick: () -> Unit) {
 }
 
 @Composable
-private fun Tabs(selected: NoteTab, onSelect: (NoteTab) -> Unit) {
+private fun Tabs(tabs: List<NoteTab>, selected: NoteTab, onSelect: (NoteTab) -> Unit) {
     val colors = EchoTheme.colors
     Row(
         modifier = Modifier
@@ -659,7 +678,7 @@ private fun Tabs(selected: NoteTab, onSelect: (NoteTab) -> Unit) {
             .background(colors.surfaceSunken)
             .padding(3.dp),
     ) {
-        NoteTab.entries.forEach { tab ->
+        tabs.forEach { tab ->
             val active = tab == selected
             Row(
                 modifier = Modifier

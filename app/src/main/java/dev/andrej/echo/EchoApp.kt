@@ -160,6 +160,14 @@ private fun MainApp(
         }
     }
     val openImport = { importPicker.launch(arrayOf("audio/*", "video/*")) }
+    // A file shared from another app lands on Notes, where its import sheet is.
+    val offeredImport by notesViewModel.offeredImport.collectAsStateWithLifecycle()
+    LaunchedEffect(offeredImport != null) {
+        if (offeredImport != null && route != Routes.NOTES) navController.selectTab(Routes.NOTES)
+    }
+    LaunchedEffect(Unit) {
+        notesViewModel.importStarted.collect { id -> navController.navigate(Routes.detail(id)) }
+    }
 
     LaunchedEffect(pendingOpenCapture) {
         if (pendingOpenCapture) {
@@ -248,6 +256,7 @@ private fun MainApp(
                         onBack = { navController.popBackStack() },
                         onLanguageChange = settingsViewModel::setLanguage,
                         onSpeechModelChange = settingsViewModel::setSpeechModel,
+                        onImportDayChange = settingsViewModel::setImportDay,
                         onAutoAnalyzeChange = settingsViewModel::setAutoAnalyze,
                         onDetectSpeakersChange = settingsViewModel::setDetectSpeakers,
                         onWifiOnlyDownloadChange = settingsViewModel::setWifiOnlyDownload,

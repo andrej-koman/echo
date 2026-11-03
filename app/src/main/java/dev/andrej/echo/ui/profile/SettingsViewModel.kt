@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.andrej.echo.ai.AiCardState
 import dev.andrej.echo.data.DerivedRepository
+import dev.andrej.echo.data.ImportDay
 import dev.andrej.echo.data.SettingsStore
 import dev.andrej.echo.data.TranscriptRepository
 import dev.andrej.echo.speech.whisper.WhisperModel
@@ -26,6 +27,7 @@ data class SettingsUiState(
     val languages: List<LanguageOption> = emptyList(),
     val speechModel: WhisperModel? = null,
     val speechModels: List<WhisperModel> = emptyList(),
+    val importDay: ImportDay? = null,
     val litertModelBytes: Long = 0,
     val autoAnalyze: Boolean = true,
     val detectSpeakers: Boolean = true,
@@ -73,6 +75,7 @@ class SettingsViewModel(
         languageLabel = settings.transcriptionLanguage?.let(::displayLanguage) ?: AUTO_DETECT,
         speechModel = currentSpeechModel(),
         speechModels = speechModels,
+        importDay = settings.importDay,
         litertModelBytes = litertModelBytes,
         autoAnalyze = settings.autoAnalyze,
         detectSpeakers = settings.detectSpeakers,
@@ -104,6 +107,12 @@ class SettingsViewModel(
     fun setSpeechModel(model: WhisperModel) {
         settings.speechModel = model.id
         _state.value = _state.value.copy(speechModel = model)
+    }
+
+    /** Null asks on every import. */
+    fun setImportDay(day: ImportDay?) {
+        settings.importDay = day
+        _state.value = _state.value.copy(importDay = day)
     }
 
     fun setDetectSpeakers(value: Boolean) {

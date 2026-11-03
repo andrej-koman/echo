@@ -2,6 +2,9 @@ package dev.andrej.echo.data
 
 import android.content.Context
 
+/** Which day an imported file is filed under, once the user said "Always use this choice". */
+enum class ImportDay { Recorded, Today }
+
 interface SettingsStore {
     /** Whisper language code such as `sl`; null auto-detects. */
     var transcriptionLanguage: String?
@@ -19,6 +22,9 @@ interface SettingsStore {
 
     /** A `WhisperModel.id`; null picks by the phone's memory. */
     var speechModel: String?
+
+    /** Null asks on every import. */
+    var importDay: ImportDay?
 }
 
 class SharedPreferencesSettingsStore(context: Context) : SettingsStore {
@@ -49,6 +55,10 @@ class SharedPreferencesSettingsStore(context: Context) : SettingsStore {
         get() = preferences.getString(KEY_SPEECH_MODEL, null)
         set(value) = preferences.edit().putString(KEY_SPEECH_MODEL, value).apply()
 
+    override var importDay: ImportDay?
+        get() = preferences.getString(KEY_IMPORT_DAY, null)?.let { name -> ImportDay.entries.find { it.name == name } }
+        set(value) = preferences.edit().putString(KEY_IMPORT_DAY, value?.name).apply()
+
     private companion object {
         const val KEY_LANGUAGE = "transcription_language"
         const val KEY_AUTO_ANALYZE = "auto_analyze"
@@ -56,5 +66,6 @@ class SharedPreferencesSettingsStore(context: Context) : SettingsStore {
         const val KEY_WIFI_ONLY_DOWNLOAD = "wifi_only_download"
         const val KEY_ONBOARDING_DONE = "onboarding_done"
         const val KEY_SPEECH_MODEL = "speech_model"
+        const val KEY_IMPORT_DAY = "import_day"
     }
 }

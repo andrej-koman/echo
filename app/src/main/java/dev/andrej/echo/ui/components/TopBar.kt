@@ -71,7 +71,8 @@ fun EchoTopBar(
     leading: @Composable (RowScope.() -> Unit)? = null,
     actions: @Composable (RowScope.() -> Unit)? = null,
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    // Starts open when there is a query, so a bar swapped out and back doesn't hide its filter.
+    var expanded by remember { mutableStateOf(query.isNotEmpty()) }
 
     if (expanded) {
         EchoTopBar(

@@ -28,6 +28,7 @@ class SqlTranscriptRepository(
         durationMs: Long,
         createdAt: Long,
         title: String?,
+        titleByUser: Boolean,
     ): Transcript {
         val transcript = Transcript(
             id = id,
@@ -38,7 +39,7 @@ class SqlTranscriptRepository(
             title = title,
         )
         withContext(ioDispatcher) {
-            queries.insert(transcript.id, text, language, createdAt, durationMs, title)
+            queries.insert(transcript.id, text, language, createdAt, durationMs, title, if (titleByUser) 1L else 0L)
         }
         return transcript
     }

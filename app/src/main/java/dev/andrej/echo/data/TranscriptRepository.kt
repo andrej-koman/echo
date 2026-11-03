@@ -14,6 +14,7 @@ interface TranscriptRepository {
         durationMs: Long,
         createdAt: Long = System.currentTimeMillis(),
         title: String? = null,
+        titleByUser: Boolean = false,
     ): Transcript
 
     /** Rewritten after every transcribed chunk, so a long import fills in as it goes. */

@@ -1,5 +1,6 @@
 #include <dlfcn.h>
 #include <jni.h>
+#include <sched.h>
 
 #include <cstdint>
 #include <cstdio>
@@ -67,9 +68,22 @@ struct Progress {
 extern "C" JNIEXPORT jfloatArray JNICALL
 Java_dev_andrej_echo_speech_speakers_SpeakerNative_diarize(
         JNIEnv *env, jobject, jstring segmentationModel, jstring embeddingModel, jstring pcmPath,
-        jint threads, jobject listener) {
+        jint threads, jintArray cpus, jobject listener) {
     const Api *a = api();
     if (a == nullptr) return nullptr;
+
+    // Threads inherit the creating thread's affinity, so pinning this one before create() pins
+    // onnxruntime's pool too. The caller's own mask is put back: it's a shared coroutine thread.
+    cpu_set_t previous;
+    bool pinned = false;
+    if (env->GetArrayLength(cpus) > 0 && sched_getaffinity(0, sizeof(previous), &previous) == 0) {
+        cpu_set_t mask;
+        CPU_ZERO(&mask);
+        jint *ids = env->GetIntArrayElements(cpus, nullptr);
+        for (jsize i = 0; i < env->GetArrayLength(cpus); i++) CPU_SET(ids[i], &mask);
+        env->ReleaseIntArrayElements(cpus, ids, JNI_ABORT);
+        pinned = sched_setaffinity(0, sizeof(mask), &mask) == 0;
+    }
 
     const char *segmentation = env->GetStringUTFChars(segmentationModel, nullptr);
     const char *embedding = env->GetStringUTFChars(embeddingModel, nullptr);
@@ -115,6 +129,7 @@ Java_dev_andrej_echo_speech_speakers_SpeakerNative_diarize(
         }
     }
     if (sd != nullptr) a->destroy(sd);
+    if (pinned) sched_setaffinity(0, sizeof(previous), &previous);
 
     env->ReleaseStringUTFChars(segmentationModel, segmentation);
     env->ReleaseStringUTFChars(embeddingModel, embedding);

@@ -52,7 +52,7 @@ class MainActivity : ComponentActivity() {
                 IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
             else -> return
         }
-        container.transcriptions.import(uris)
+        container.transcriptions.offer(uris)
     }
 
     /** Removes the extra so a config change, which recreates the Activity from the same Intent, does not navigate twice. */

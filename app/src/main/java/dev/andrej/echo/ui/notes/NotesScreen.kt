@@ -10,7 +10,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Text
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,24 +47,53 @@ fun NotesScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val folders by viewModel.folders.collectAsStateWithLifecycle()
     var acting by remember { mutableStateOf<NoteRow?>(null) }
+    val offeredImport by viewModel.offeredImport.collectAsStateWithLifecycle()
+    // Non-null is selection mode, entered by long-pressing a note.
+    var selection by rememberSaveable { mutableStateOf<Set<String>?>(null) }
+    var bulk by remember { mutableStateOf<BulkAction?>(null) }
+    LaunchedEffect(state.notes) {
+        // A note deleted or filtered away stops counting as selected.
+        selection = selection?.intersect(state.notes.map { it.id }.toSet())
+    }
+    BackHandler(enabled = selection != null) { selection = null }
 
     Box(modifier = modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
-            EchoTopBar(
-                title = "Echo",
-                query = state.query,
-                onQueryChange = viewModel::search,
-                searchPlaceholder = "Search all notes…",
-                leading = { Mascot(size = 30.dp) },
-                actions = {
-                    EchoIconButton(
-                        iconRes = R.drawable.ic_upload,
-                        contentDescription = "Import audio",
-                        onClick = onImport,
-                    )
+            val selected = selection
+            if (selected != null) {
+                SelectionBar(
+                    count = selected.size,
+                    onClose = { selection = null },
+                    onMove = { bulk = BulkAction.Move },
+                    onDelete = { bulk = BulkAction.Delete },
+                )
+            } else {
+                EchoTopBar(
+                    title = "Echo",
+                    query = state.query,
+                    onQueryChange = viewModel::search,
+                    searchPlaceholder = "Search all notes…",
+                    leading = { Mascot(size = 30.dp) },
+                    actions = {
+                        EchoIconButton(
+                            iconRes = R.drawable.ic_upload,
+                            contentDescription = "Import audio",
+                            onClick = onImport,
+                        )
+                    },
+                )
+            }
+            NotesBody(
+                state = state,
+                selection = selection,
+                onOpen = { id ->
+                    val current = selection
+                    if (current == null) onOpen(id) else selection = current.toggle(id)
                 },
+                onSelect = { id -> selection = (selection ?: emptySet()).toggle(id) },
+                onImport = onImport,
+                onMore = { acting = it },
             )
-            NotesBody(state = state, onOpen = onOpen, onImport = onImport, onMore = { acting = it })
         }
 
         NoteActionsSheets(
@@ -71,13 +103,37 @@ fun NotesScreen(
             onDelete = viewModel::delete,
             onDismiss = { acting = null },
         )
+
+        BulkActionSheets(
+            action = bulk,
+            notes = state.notes.filter { it.id in selection.orEmpty() },
+            folders = folders,
+            onMove = { folderId ->
+                selection.orEmpty().forEach { viewModel.moveToFolder(it, folderId) }
+                selection = null
+            },
+            onDelete = {
+                selection.orEmpty().forEach(viewModel::delete)
+                selection = null
+            },
+            onDismiss = { bulk = null },
+        )
+
+        ImportSheet(
+            file = offeredImport,
+            fixedDay = remember(offeredImport) { viewModel.importDay() },
+            onImport = viewModel::acceptImport,
+            onDismiss = { offeredImport?.let(viewModel::declineImport) },
+        )
     }
 }
 
 @Composable
 private fun NotesBody(
     state: NotesUiState,
+    selection: Set<String>?,
     onOpen: (String) -> Unit,
+    onSelect: (String) -> Unit,
     onImport: () -> Unit,
     onMore: (NoteRow) -> Unit,
 ) {
@@ -134,10 +190,44 @@ private fun NotesBody(
                 }
             }
             items(state.notes, key = { it.id }) { row ->
-                NoteCard(row = row, onOpen = { onOpen(row.id) }, onMore = { onMore(row) })
+                NoteCard(
+                    row = row,
+                    onOpen = { onOpen(row.id) },
+                    onMore = { onMore(row) },
+                    onLongClick = { onSelect(row.id) },
+                    selected = selection?.let { row.id in it },
+                )
             }
         }
     }
+}
+
+private fun Set<String>.toggle(id: String): Set<String> = if (id in this) this - id else this + id
+
+@Composable
+private fun SelectionBar(count: Int, onClose: () -> Unit, onMove: () -> Unit, onDelete: () -> Unit) {
+    EchoTopBar(
+        title = if (count == 1) "1 selected" else "$count selected",
+        leading = {
+            EchoIconButton(
+                iconRes = R.drawable.ic_x,
+                contentDescription = "Cancel selection",
+                onClick = onClose,
+                modifier = Modifier.size(30.dp),
+            )
+        },
+        trailing = {
+            if (count > 0) {
+                EchoIconButton(iconRes = R.drawable.ic_folder, contentDescription = "Move to folder", onClick = onMove)
+                EchoIconButton(
+                    iconRes = R.drawable.ic_trash,
+                    contentDescription = "Delete",
+                    onClick = onDelete,
+                    tint = EchoTheme.colors.textDanger,
+                )
+            }
+        },
+    )
 }
 
 @Composable

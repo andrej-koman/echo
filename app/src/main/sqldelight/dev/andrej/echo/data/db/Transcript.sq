@@ -9,7 +9,8 @@ CREATE TABLE transcript (
     analyzedAt INTEGER,
     -- Unused: polishing was removed. Platform SQLite before 3.35 cannot DROP COLUMN.
     polishedText TEXT,
-    folderId TEXT
+    folderId TEXT,
+    titleByUser INTEGER NOT NULL DEFAULT 0
 );
 
 selectAll:
@@ -17,14 +18,16 @@ SELECT id, text, language, createdAt, durationMs, title, summary, analyzedAt, fo
 FROM transcript ORDER BY createdAt DESC;
 
 insert:
-INSERT INTO transcript (id, text, language, createdAt, durationMs, title)
-VALUES (?, ?, ?, ?, ?, ?);
+INSERT INTO transcript (id, text, language, createdAt, durationMs, title, titleByUser)
+VALUES (?, ?, ?, ?, ?, ?, ?);
 
 setTranscription:
 UPDATE transcript SET text = ?, language = ?, durationMs = ? WHERE id = ?;
 
 attachAnalysis:
-UPDATE transcript SET title = ?, summary = ?, analyzedAt = ? WHERE id = ?;
+UPDATE transcript SET title = CASE WHEN titleByUser THEN title ELSE :title END, summary = :summary,
+    analyzedAt = :analyzedAt
+WHERE id = :id;
 
 delete:
 DELETE FROM transcript WHERE id = ?;

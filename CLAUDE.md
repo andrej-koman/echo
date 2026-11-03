@@ -90,6 +90,16 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
   other Whisper files are deleted so a switch doesn't keep two on disk. Ungated
   `ggerganov/whisper.cpp` on HuggingFace, through the same `ModelStore`/`HttpModelDownloader` as
   the LLM. It downloads on the first import, not at onboarding.
+- **Import sheet** (`ui/notes/ImportSheet.kt`): every picked or shared file waits in
+  `Transcriptions.offered` for the sheet: the file's name and details on top, then a title
+  (placeholder is the file name, which the note keeps until analysis names it), then which day it
+  belongs to — when recorded (the file's `METADATA_KEY_DATE`, else its last-modified time; an
+  MP4's 1904 epoch counts as none) or today. A typed title sets `transcript.titleByUser`
+  (`5.sqm`), and `attachAnalysis` then keeps it. "Always use this choice" stores
+  `SettingsStore.importDay` and hides only the day question — the title is always asked;
+  Settings → Imported files' day sets it back to Ask each time. Dismissing the sheet drops the
+  file. "Start transcribing" opens the note (`Transcriptions.started` → `EchoApp` navigates), so
+  the user watches it fill in; with several files only the last opens.
 - **Pipeline** (`transcribe/Transcriptions.kt`): the picked/shared file is copied to
   `files/recordings/<id>/source` (a content URI's grant dies with the sharing app; export will need
   the original), a placeholder transcript titled after the file name is saved, and a unique
@@ -112,13 +122,16 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
   core at ~1.5 GHz when the phone is warm (wireless charging, or ~40 °C after a few minutes of
   this), and a pass then takes 50 s+. Benchmarks over `adb shell` run pinned to 3 cores
   (cpuset 4–6), so use the app's own logs, not `whisper-cli`.
+- **Whisper Small** on the same phone: encode ~11 s per 30 s window (vs 33–50 s for Large), a
+  15:27 file in 12.5 min of Whisper. Decoding a 15-min import to PCM took 56 s before Whisper
+  started.
 - **ggml's runtime CPU variants (`GGML_BACKEND_DL` + `GGML_CPU_ALL_VARIANTS`) made it far
   slower**: the SVE2 variant took 208 s per pass, and even the i8mm-without-SVE one was several
   times slower than this static `armv8.2-a+dotprod+fp16` build. Don't retry without measuring.
 - **VAD** (`WHISPER_VAD`, Silero 6.2.0 ggml, 0.9 MB, fetched inside the job, skipped if it
   can't be): whisper.cpp drops non-speech before the encoder and maps segment times back to the
   original audio, so seek and task offsets still line up. It only saves time where a recording
-  has pauses — continuous speech is cut 0%.
+  has pauses — continuous speech is cut 0%, a 15-min conversation 3–6% per chunk.
 - Parallel chunks were not tried: the encoder already keeps every core busy, so two Whisper
   states would split the same work and cost ~200 MB more.
 - Status comes from WorkManager (`Transcriptions.status`) and is shown through the same
@@ -145,8 +158,13 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
   int8 (1.5 MB, HF commit-pinned) and 3D-Speaker ERes2Net base (40 MB, sherpa-onnx's GitHub
   release — the model its own examples use with the default 0.5 clustering threshold). Fetched
   after Whisper on "Get started", else inside the first transcription job.
-- Runs in `Transcriptions.run` after the last Whisper chunk, inside `slot.whisper`, before the
-  PCM is deleted (status `FindingSpeakers`, "Finding speakers… N%"). Off with Settings →
+- Runs in `Transcriptions.run` **beside Whisper**, inside `slot.whisper`, before the PCM is
+  deleted, pinned to the slowest cores (`Diarizer.littleCores`, by `cpuinfo_max_freq`; the JNI
+  `sched_setaffinity`s the calling thread before `create()`, so onnxruntime's pool inherits it,
+  then restores it). Whisper's threads keep the fast cores. Turns are assigned after the last
+  chunk; "Finding speakers… N%" shows only if Whisper finishes first. Measured 2026-11-03 (S24,
+  15:27 of audio, Whisper Small): speakers were ready 47 s after Whisper, where running after it
+  had cost ~78 s for a 2:17 file alone. Off with Settings →
   Detect speakers. A failure only logs: the transcript is never failed for want of speakers.
   sherpa-onnx can't be aborted part way — its progress callback's return value is ignored.
 - `assignSpeakers`: each segment gets the speaker it overlaps most (the nearest turn when none),
@@ -171,7 +189,7 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
   numbered `.sqm` migration beside the `.sq` files. `1.sqm` (Phase 5) added
   `transcript.polishedText` and `todo.sourceOffsetMs`; `2.sqm` (Phase 7) added `segment_fts` and
   `dictionary_term`; `3.sqm` (Phase 6) added `speaker` and `segment.speaker`; `4.sqm` (Phase 8) added `folder` and
-  `transcript.folderId`; schema is version 5. Deleting a folder un-files its notes in the same
+  `transcript.folderId`; `5.sqm` added `transcript.titleByUser`; schema is version 6. Deleting a folder un-files its notes in the same
   transaction. A folder's `color` indexes `EchoColors.palette` (shared with speakers), its `icon`
   is a `FolderIcon` name.
 - **Search** (`TranscriptRepository.search`, Notes' search field): `segment_fts` (FTS4,
@@ -253,7 +271,9 @@ own colour; a `PendingBadge` takes that slot while anything is pending). The lef
 progress (`NoteStage`, from `stage()`): empty grey while waiting (queued, getting a model, parked,
 or never analyzed), fills top to bottom with Whisper's %, pulses while finding speakers or
 analyzing, solid bronze once `analyzedAt` is set, clay on failure. ··· opens Move to folder /
-Delete. `FolderScreen` uses the same cards without the folder label; Calendar keeps its rows.
+Delete. Long-pressing a card starts **multi-select** (Notes only): taps then toggle, the top bar
+becomes "N selected" with Move to folder and Delete (`BulkActionSheets`), back or ✕ leaves.
+`FolderScreen` uses the same cards without the folder label; Calendar keeps its rows.
 Header is the mascot + "Echo"; the "Pro" badge in the design waits for billing.
 Notes is the one list of everything; Folders lists folders, each opening its notes (no folder
 filter on Notes); Calendar is `HistoryScreen` (month heat grid, the picked day's notes open on
@@ -332,7 +352,9 @@ to the start tab, so tapping it restored the stack and landed on the last tab. C
   to one (`distinctBy`) — a repeated task from a single note is noise.
 - **Note screen** (2026-11-02 design, `ui/detail/`): back button, then a pill of Find / Edit /
   Share / ···, a large title, `date · duration · [folder ▾]` (the chip opens the folder picker),
-  and a status card while transcription or analysis is pending. Sticky tabs: **By speaker** (runs
+  and a status card while transcription or analysis is pending. Sticky tabs, each shown only once its stage is done — none while Whisper runs, **Full text**
+when it finishes (and selected then), **By speaker** once speakers are found, **Tasks** once
+analysed: **By speaker** (runs
   of one speaker under `● Speaker 1  0:00 – 0:14`; the playing run gets a card), **Full text**
   (the same segments as paragraphs) and **Tasks** (the summary, then the note's tasks — tap
   plays from `sourceOffsetMs`, long-press opens `EditTaskScreen`). ··· holds Re-analyze, Copy

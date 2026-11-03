@@ -7,6 +7,8 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,10 +39,12 @@ import dev.andrej.echo.R
 import dev.andrej.echo.data.Folder
 import dev.andrej.echo.ui.components.ButtonVariant
 import dev.andrej.echo.ui.components.CardPadding
+import dev.andrej.echo.ui.components.CardTone
 import dev.andrej.echo.ui.components.ConfirmSheet
 import dev.andrej.echo.ui.components.EchoButton
 import dev.andrej.echo.ui.components.EchoCard
 import dev.andrej.echo.ui.components.EchoIconButton
+import dev.andrej.echo.ui.components.IconButtonSize
 import dev.andrej.echo.ui.components.PickerSheet
 import dev.andrej.echo.ui.components.Sheet
 import dev.andrej.echo.ui.folders.FolderIcon
@@ -55,8 +59,16 @@ internal fun NoteCard(
     onMore: () -> Unit,
     modifier: Modifier = Modifier,
     showFolder: Boolean = true,
+    onLongClick: (() -> Unit)? = null,
+    selected: Boolean? = null,
 ) {
-    EchoCard(modifier = modifier.fillMaxWidth(), padding = CardPadding.None, onClick = onOpen) {
+    EchoCard(
+        modifier = modifier.fillMaxWidth(),
+        tone = if (selected == true) CardTone.Bronze else CardTone.Paper,
+        padding = CardPadding.None,
+        onClick = onOpen,
+        onLongClick = onLongClick,
+    ) {
         Row(
             modifier = Modifier
                 .height(IntrinsicSize.Min)
@@ -80,13 +92,17 @@ internal fun NoteCard(
                             .weight(1f)
                             .padding(top = EchoTheme.spacing.s2),
                     )
-                    EchoIconButton(
-                        iconRes = R.drawable.ic_ellipsis,
-                        contentDescription = "More",
-                        tint = EchoTheme.colors.textTertiary,
-                        onClick = onMore,
-                        modifier = Modifier.padding(horizontal = EchoTheme.spacing.s2),
-                    )
+                    if (selected == null) {
+                        EchoIconButton(
+                            iconRes = R.drawable.ic_ellipsis,
+                            contentDescription = "More",
+                            tint = EchoTheme.colors.textTertiary,
+                            onClick = onMore,
+                            modifier = Modifier.padding(horizontal = EchoTheme.spacing.s2),
+                        )
+                    } else {
+                        SelectionCheck(selected, Modifier.padding(horizontal = EchoTheme.spacing.s2))
+                    }
                 }
                 Text(
                     text = row.excerpt,
@@ -97,6 +113,32 @@ internal fun NoteCard(
                     modifier = Modifier.padding(end = EchoTheme.spacing.s5),
                 )
                 Meta(row = row, showFolder = showFolder)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SelectionCheck(selected: Boolean, modifier: Modifier = Modifier) {
+    val colors = EchoTheme.colors
+    Box(modifier = modifier.size(IconButtonSize.Sm.box), contentAlignment = Alignment.Center) {
+        Box(
+            modifier = Modifier
+                .size(22.dp)
+                .clip(CircleShape)
+                .then(
+                    if (selected) Modifier.background(colors.textAccent)
+                    else Modifier.border(1.5.dp, colors.borderStrong, CircleShape),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (selected) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_check),
+                    contentDescription = "Selected",
+                    tint = colors.surfaceCard,
+                    modifier = Modifier.size(14.dp),
+                )
             }
         }
     }
@@ -242,3 +284,43 @@ internal fun NoteActionsSheets(
 }
 
 private enum class NoteAction { Menu, Move, Delete }
+
+internal enum class BulkAction { Move, Delete }
+
+@Composable
+internal fun BulkActionSheets(
+    action: BulkAction?,
+    notes: List<NoteRow>,
+    folders: List<Folder>,
+    onMove: (folderId: String?) -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val count = if (notes.size == 1) "1 note" else "${notes.size} notes"
+    val places = notes.map { it.folder?.id }.distinct()
+    PickerSheet(
+        visible = action == BulkAction.Move,
+        title = "Move $count to",
+        options = listOf("No folder" to null) + folders.map { it.name to it.id },
+        // Checked only when every note is already in the same place.
+        selected = if (places.size == 1) places.single() else MIXED,
+        onPick = { folderId ->
+            onMove(folderId)
+            onDismiss()
+        },
+        onDismiss = onDismiss,
+    )
+    ConfirmSheet(
+        visible = action == BulkAction.Delete,
+        title = "Delete $count?",
+        message = "Their recordings, transcripts and tasks are removed. This can't be undone.",
+        confirmLabel = "Delete",
+        onConfirm = {
+            onDelete()
+            onDismiss()
+        },
+        onDismiss = onDismiss,
+    )
+}
+
+private const val MIXED = "\u0000mixed"

@@ -14,6 +14,8 @@ import dev.andrej.echo.data.Speaker
 import dev.andrej.echo.data.TodoItem
 import dev.andrej.echo.data.Transcript
 import dev.andrej.echo.data.TranscriptRepository
+import dev.andrej.echo.data.ImportDay
+import dev.andrej.echo.transcribe.ImportFile
 import dev.andrej.echo.transcribe.LiveTranscript
 import dev.andrej.echo.transcribe.TranscriptionStatus
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -83,6 +85,11 @@ class NotesViewModel(
     private val live: Flow<LiveTranscript?> = flowOf(null),
     val speechModel: () -> String = { "" },
     private val onImport: (List<Uri>) -> Unit = {},
+    offered: Flow<List<ImportFile>> = flowOf(emptyList()),
+    val importStarted: Flow<String> = flowOf(),
+    private val onAcceptImport: (ImportFile, Long, String?, ImportDay?) -> Unit = { _, _, _, _ -> },
+    private val onDeclineImport: (ImportFile) -> Unit = {},
+    val importDay: () -> ImportDay? = { null },
     private val onRetryTranscription: (String) -> Unit = {},
     private val onDeleted: (String) -> Unit = {},
     private val audioFile: (String) -> File? = { null },
@@ -156,6 +163,15 @@ class NotesViewModel(
     }
 
     fun import(uris: List<Uri>) = onImport(uris)
+
+    /** The next file waiting for the import sheet. */
+    val offeredImport: StateFlow<ImportFile?> = offered.map { it.firstOrNull() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    fun acceptImport(file: ImportFile, createdAt: Long, title: String, always: ImportDay?) =
+        onAcceptImport(file, createdAt, title, always)
+
+    fun declineImport(file: ImportFile) = onDeclineImport(file)
 
     fun delete(id: String) {
         onDeleted(id)

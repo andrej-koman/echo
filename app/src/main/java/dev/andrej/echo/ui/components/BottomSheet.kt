@@ -1,6 +1,5 @@
 package dev.andrej.echo.ui.components
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -24,6 +23,24 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.snap
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import kotlin.math.roundToInt
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.compositionLocalOf
@@ -140,57 +157,71 @@ internal fun Sheet(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    BackHandler(enabled = visible, onBack = onDismiss)
+    val transition = remember { MutableTransitionState(false) }
+    transition.targetState = visible
     val openSheets = LocalOpenSheets.current
-    if (visible) {
+    if (transition.currentState || transition.targetState || !transition.isIdle) {
         DisposableEffect(Unit) {
             openSheets.intValue++
             onDispose { openSheets.intValue-- }
         }
-    }
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(),
-        exit = fadeOut(),
-        modifier = modifier.fillMaxSize(),
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(EchoTheme.colors.surfaceScrim)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onDismiss,
-                ),
-            contentAlignment = Alignment.BottomCenter,
+        var dragOffset by remember { mutableFloatStateOf(0f) }
+        var dragging by remember { androidx.compose.runtime.mutableStateOf(false) }
+        val threshold = with(LocalDensity.current) { 64.dp.toPx() }
+        val offset by animateFloatAsState(
+            targetValue = dragOffset,
+            animationSpec = if (dragging) snap() else spring(),
+            label = "sheetDrag",
+        )
+        Dialog(
+            onDismissRequest = onDismiss,
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
         ) {
             AnimatedVisibility(
-                visible = visible,
-                enter = slideInVertically(initialOffsetY = { it }),
-                exit = slideOutVertically(targetOffsetY = { it }),
+                visibleState = transition,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = modifier.fillMaxSize(),
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(EchoTheme.radii.sheet)
-                        .background(EchoTheme.colors.surfaceSheet)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                        ) {}
-                        .padding(EchoTheme.spacing.gutterScreen)
-                        .navigationBarsPadding(),
-                    verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s6),
-                ) {
+                Box(Modifier.fillMaxSize()) {
+                    // A sibling rather than a clickable ancestor: only outside taps dismiss.
                     Box(
-                        modifier = Modifier
-                            .align(Alignment.CenterHorizontally)
-                            .size(width = 36.dp, height = 4.dp)
-                            .clip(EchoTheme.radii.pill)
-                            .background(EchoTheme.colors.borderStrong),
+                        Modifier.fillMaxSize().background(EchoTheme.colors.surfaceScrim)
+                            .semantics { contentDescription = "Dismiss sheet" }
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = onDismiss,
+                            ),
                     )
-                    content()
+                    Column(
+                        modifier = Modifier.align(Alignment.BottomCenter)
+                            .animateEnterExit(
+                                enter = slideInVertically(initialOffsetY = { it }),
+                                exit = slideOutVertically(targetOffsetY = { it }),
+                            )
+                            .imePadding()
+                            .offset { IntOffset(0, offset.roundToInt()) }
+                            .fillMaxWidth()
+                            .clip(EchoTheme.radii.sheet)
+                            .background(EchoTheme.colors.surfaceSheet)
+                            .pointerInput(Unit) { detectTapGestures { /* Keep sheet taps off the scrim. */ } }
+                            .padding(horizontal = EchoTheme.spacing.gutterScreen)
+                            .navigationBarsPadding()
+                            .padding(bottom = EchoTheme.spacing.gutterScreen),
+                    ) {
+                        DragHandle(
+                            description = "Sheet drag handle",
+                            onDrag = { dragging = true; dragOffset = (dragOffset + it).coerceAtLeast(0f) },
+                            onRelease = {
+                                dragging = false
+                                if (dragOffset >= threshold) onDismiss()
+                                else dragOffset = 0f
+                            },
+                            onCancel = { dragging = false; dragOffset = 0f },
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s6)) { content() }
+                    }
                 }
             }
         }

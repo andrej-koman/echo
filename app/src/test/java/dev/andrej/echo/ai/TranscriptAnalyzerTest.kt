@@ -152,4 +152,23 @@ class TranscriptAnalyzerTest {
         assertEquals(AnalysisOutcome.Blocked(AnalysisBlock.EmptyTranscript), outcome)
         assertTrue(runner.prompts.isEmpty())
     }
+    @Test
+    fun `cancellation propagates without retrying generation`() = runTest {
+        var calls = 0
+        val runner = object : LlmRunner by FakeLlmRunner() {
+            override suspend fun generate(prompt: String, temperature: Float): String {
+                calls++
+                throw kotlinx.coroutines.CancellationException("Stopped by user")
+            }
+        }
+        var cancelled = false
+        try {
+            TranscriptAnalyzer({ runner }, zone = UTC, logDebug = {}, logWarn = {}).analyze(transcript())
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            cancelled = true
+        }
+        assertTrue(cancelled)
+        assertEquals(1, calls)
+    }
+
 }

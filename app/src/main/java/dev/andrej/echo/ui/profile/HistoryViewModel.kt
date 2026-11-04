@@ -43,7 +43,9 @@ data class HistoryUiState(
     val selectedDay: LocalDate = LocalDate.now(),
     val selectedDayLabel: String = "",
     val selectedDetail: List<HistoryDetailRow> = emptyList(),
-    val canGoNext: Boolean = false,
+    val canGoNext: Boolean = true,
+    val weekDays: List<HistoryDay> = emptyList(),
+    val previousNoteDay: LocalDate? = null,
 )
 
 class HistoryViewModel(
@@ -64,20 +66,22 @@ class HistoryViewModel(
 
     fun pick(day: LocalDate) {
         selectedDay.value = day
+        displayedMonth.value = YearMonth.from(day)
     }
 
-    fun prevMonth() {
-        displayedMonth.value = displayedMonth.value.minusMonths(1)
-    }
+    fun previous(expanded: Boolean) = pick(calendarStep(selectedDay.value, expanded, -1))
 
-    fun nextMonth() {
-        val next = displayedMonth.value.plusMonths(1)
-        if (!next.isAfter(YearMonth.from(today))) displayedMonth.value = next
-    }
+    fun next(expanded: Boolean) = pick(calendarStep(selectedDay.value, expanded, 1))
+
+    fun goToday() = pick(Instant.ofEpochMilli(now()).atZone(zone).toLocalDate())
+
 }
 
+internal fun calendarStep(day: LocalDate, expanded: Boolean, direction: Int): LocalDate =
+    if (expanded) day.plusMonths(direction.toLong()) else day.plusWeeks(direction.toLong())
+
 private val monthFormat = DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault())
-private val dayDetailFormat = DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.getDefault())
+private val dayDetailFormat = DateTimeFormatter.ofPattern("EEEE, d MMMM", Locale.getDefault())
 private val timeFormat = DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault())
 
 internal fun buildHistoryState(
@@ -94,8 +98,9 @@ internal fun buildHistoryState(
     val byDay = transcripts.groupBy { it.day() }
 
     val firstOfMonth = month.atDay(1)
-    val gridStart = firstOfMonth.minusDays(((firstOfMonth.dayOfWeek.value % 7).toLong()))
-    val days = (0 until 42).map { offset ->
+    val gridStart = firstOfMonth.minusDays((firstOfMonth.dayOfWeek.value - 1).toLong())
+    val gridSize = ((firstOfMonth.dayOfWeek.value - 1 + month.lengthOfMonth() + 6) / 7) * 7
+    val days = (0 until gridSize).map { offset ->
         val date = gridStart.plusDays(offset.toLong())
         val count = byDay[date]?.size ?: 0
         HistoryDay(
@@ -127,17 +132,22 @@ internal fun buildHistoryState(
         }
 
     return HistoryUiState(
-        monthLabel = monthFormat.format(month.atDay(1)).uppercase(),
+        monthLabel = monthFormat.format(month.atDay(1)),
         weekdayLabels = (0..6).map {
-            gridStart.plusDays(it.toLong()).dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.getDefault())
+            gridStart.plusDays(it.toLong()).dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault())
         },
         days = days,
         notesInMonth = notesInMonth,
         tasksInMonth = tasksInMonth,
         activeDaysInMonth = activeDaysInMonth,
         selectedDay = selected,
-        selectedDayLabel = dayDetailFormat.format(selected),
+        selectedDayLabel = if (selected == today) "Today, ${DateTimeFormatter.ofPattern("d MMMM").format(selected)}" else dayDetailFormat.format(selected),
         selectedDetail = selectedDetail,
-        canGoNext = month.isBefore(YearMonth.from(today)),
+        canGoNext = true,
+        weekDays = (0..6).map { offset ->
+            val date = selected.minusDays((selected.dayOfWeek.value - 1).toLong()).plusDays(offset.toLong())
+            HistoryDay(date, YearMonth.from(date) == month, (byDay[date]?.size ?: 0).coerceAtMost(3))
+        },
+        previousNoteDay = byDay.keys.filter { it < selected }.maxOrNull(),
     )
 }

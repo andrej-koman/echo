@@ -36,3 +36,10 @@ file(
 add_library(echodiarize SHARED diarize_jni.cpp)
 target_include_directories(echodiarize PRIVATE ${CMAKE_BINARY_DIR}/sherpa)
 target_link_libraries(echodiarize log)
+
+# Both JNI libraries must load on devices using 16 KB memory pages (NDK r27).
+foreach(echo_target echowhisper echodiarize)
+    target_link_options(${echo_target} PRIVATE
+        "-Wl,-z,max-page-size=16384"
+        "-Wl,-z,common-page-size=16384")
+endforeach()

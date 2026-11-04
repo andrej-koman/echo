@@ -23,9 +23,9 @@ class HistoryViewModelTest {
     )
 
     @Test
-    fun `a day with three or more notes hits the top heat bucket`() {
+    fun `a day with more than three notes has three dots`() {
         val day = LocalDate.of(2026, 9, 9)
-        val transcripts = listOf(transcript("a", day), transcript("b", day), transcript("c", day))
+        val transcripts = listOf(transcript("a", day), transcript("b", day), transcript("c", day), transcript("d", day))
 
         val state = buildHistoryState(transcripts, emptyList(), YearMonth.of(2026, 9), day, day, zone)
 
@@ -38,17 +38,18 @@ class HistoryViewModelTest {
         val month = YearMonth.of(2026, 9)
         val state = buildHistoryState(emptyList(), emptyList(), month, month.atDay(1), month.atDay(1), zone)
 
-        assertEquals(42, state.days.size)
+        assertEquals(35, state.days.size)
+        assertEquals(java.time.DayOfWeek.MONDAY, state.days.first().date.dayOfWeek)
         assertEquals(true, state.days.any { !it.inMonth })
         assertEquals(30, state.days.count { it.inMonth }) // September 2026 has 30 days
     }
 
     @Test
-    fun `next month is blocked once the displayed month reaches today's month`() {
+    fun `future months remain navigable`() {
         val today = LocalDate.of(2026, 9, 9)
         val state = buildHistoryState(emptyList(), emptyList(), YearMonth.from(today), today, today, zone)
 
-        assertEquals(false, state.canGoNext)
+        assertEquals(true, state.canGoNext)
     }
 
     @Test
@@ -61,4 +62,47 @@ class HistoryViewModelTest {
 
         assertEquals(2, state.selectedDetail.size)
     }
+    @Test
+    fun `today heading is identified`() {
+        val day = LocalDate.of(2026, 11, 2)
+        val state = buildHistoryState(emptyList(), emptyList(), YearMonth.from(day), day, day, zone)
+        assertEquals("Today, 2 November", state.selectedDayLabel)
+    }
+
+    @Test
+    fun `collapsed week crosses the month boundary from Monday to Sunday`() {
+        val day = LocalDate.of(2026, 11, 1)
+        val state = buildHistoryState(emptyList(), emptyList(), YearMonth.from(day), day, day, zone)
+        assertEquals(LocalDate.of(2026, 10, 26), state.weekDays.first().date)
+        assertEquals(day, state.weekDays.last().date)
+        assertEquals(7, state.weekDays.size)
+    }
+
+    @Test
+    fun `empty day links to the closest earlier populated day`() {
+        val day = LocalDate.of(2026, 11, 4)
+        val notes = listOf(transcript("a", day.minusDays(5)), transcript("b", day.minusDays(2)), transcript("c", day.plusDays(1)))
+        val state = buildHistoryState(notes, emptyList(), YearMonth.from(day), day, day, zone)
+        assertEquals(day.minusDays(2), state.previousNoteDay)
+        assertEquals(null, buildHistoryState(emptyList(), emptyList(), YearMonth.from(day), day, day, zone).previousNoteDay)
+    }
+
+    @Test
+    fun `arrows move by week or clamp to a valid day in the next month`() {
+        val day = LocalDate.of(2026, 1, 31)
+        assertEquals(LocalDate.of(2026, 2, 7), calendarStep(day, false, 1))
+        assertEquals(LocalDate.of(2026, 1, 24), calendarStep(day, false, -1))
+        assertEquals(LocalDate.of(2026, 2, 28), calendarStep(day, true, 1))
+        assertEquals(LocalDate.of(2025, 12, 31), calendarStep(day, true, -1))
+    }
+
+    @Test
+    fun `dots represent note counts capped at three in both views`() {
+        val day = LocalDate.of(2026, 11, 2)
+        val notes = (0..4).flatMap { count -> (0 until count).map { transcript("$count-$it", day.plusDays(count.toLong())) } }
+        val state = buildHistoryState(notes, emptyList(), YearMonth.from(day), day, day, zone)
+        assertEquals(listOf(0, 1, 2, 3, 3), state.weekDays.take(5).map { it.heatLevel })
+        assertEquals(state.weekDays.map { it.heatLevel }, state.days.filter { it.date in day..day.plusDays(6) }.map { it.heatLevel })
+    }
+
 }

@@ -140,6 +140,12 @@ class NotesViewModel(
             rows(transcripts.filter { it.folderId == folderId }, now(), work, folders)
         }
 
+    /** Full note rows for the calendar, independent of the Notes search. */
+    val calendarNotes: StateFlow<List<NoteRow>> =
+        combine(repository.transcripts, work, this.folders) { transcripts, work, folders ->
+            rows(transcripts, now(), work, folders)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     fun moveToFolder(transcriptId: String, folderId: String?) {
         viewModelScope.launch { repository.moveToFolder(transcriptId, folderId) }
     }

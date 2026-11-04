@@ -43,8 +43,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -52,6 +50,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -258,6 +257,8 @@ class Transcriptions(
     }
 
     private fun enqueue(id: String) {
+        stops.update { it - id }
+        analysis.allow(id)
         val request = OneTimeWorkRequestBuilder<TranscriptionWorker>()
             .setInputData(workDataOf(TranscriptionWorker.KEY_ID to id))
             .addTag(TAG)
@@ -274,7 +275,22 @@ class Transcriptions(
 
     internal suspend fun run(id: String, report: (TranscriptionStatus) -> Unit) = lock.withLock {
         try {
-            transcribeLocked(id, report)
+            val completed = runUntilStopped(stops.map { id in it }) { transcribeLocked(id, report) }
+            if (!completed) {
+                val transcript = repository.transcripts.first().firstOrNull { it.id == id }
+                val heard = _live.value?.takeIf { it.id == id }?.segments
+                if (transcript != null && heard != null) {
+                    repository.setTranscription(id, transcriptText(heard), transcript.language, transcript.durationMs, heard)
+                }
+                try {
+                    finishAudio(id)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Keep the raw recording; an encoding failure must not restart a stopped job.
+                    Log.w(LOG_TAG, "$id: could not finalize stopped audio: ${e.message}")
+                }
+            }
         } finally {
             _live.value = null
             stops.update { it - id }
@@ -283,8 +299,11 @@ class Transcriptions(
 
     private val stops = MutableStateFlow(emptySet<String>())
 
-    /** Ends a running transcription early; the note keeps the text heard so far. */
-    fun stop(id: String) = stops.update { it + id }
+    /** Stops this note's processing, retaining its audio and text heard so far. */
+    fun stop(id: String) {
+        stops.update { it + id }
+        analysis.cancel(id)
+    }
 
     private suspend fun transcribeLocked(id: String, report: (TranscriptionStatus) -> Unit) {
         val began = SystemClock.elapsedRealtime()
@@ -391,23 +410,10 @@ class Transcriptions(
                     }
                 }
             } }
-            val stopWatch = launch {
-                stops.first { id in it }
-                whisperRun.cancel()
-            }
-            try {
-                whisperRun.await()
-            } catch (e: CancellationException) {
-                currentCoroutineContext().ensureActive()
-                // Stopped by the user: what was heard so far, mid-chunk lines included, is the note.
-                val heard = _live.value?.takeIf { it.id == id }?.segments ?: segments
-                segments.clear()
-                segments += heard
-                repository.setTranscription(id, transcriptText(segments), language.orEmpty(), durationMs, segments)
-                Log.i(LOG_TAG, "$id: stopped at ${elapsed()} ms")
-            } finally {
-                stopWatch.cancel()
-            }
+            whisperRun.await()
+            // Partial text is only needed while Whisper runs. Later stops must not overwrite
+            // completed segments or their speaker assignments with the live preview.
+            _live.value = null
             if (speakers != null) {
                 whisperDone.set(true)
                 if (!speakers.isCompleted) {
@@ -423,19 +429,30 @@ class Transcriptions(
             }
         } }
         Log.i(LOG_TAG, "$id: transcribed at ${elapsed()} ms")
-        if (recorded) {
-            // Encoded beside, then renamed: a half-written `source` would be taken for an import.
-            val partial = File(dir, "$SOURCE.part")
-            withContext(Dispatchers.IO) { encoder.encode(pcm, partial) }
-            partial.renameTo(source)
-        }
-        pcm.delete()
+        finishAudio(id)
 
         val exists = repository.transcripts.first().any { it.id == id }
-        if (exists && settings.autoAnalyze && transcriptText(segments).isNotBlank()) {
+        if (exists && id !in stops.value && settings.autoAnalyze && transcriptText(segments).isNotBlank()) {
             analysisQueue.enqueue(id)
-            analysis.requestDrainAndAwait()
+            // Stop can arrive while the queue write is suspended.
+            if (id in stops.value) analysisQueue.remove(id)
+            else analysis.requestDrainAndAwait()
         }
+    }
+
+    /** Finalize playback after completion or a user stop, once native readers have returned. */
+    private suspend fun finishAudio(id: String) {
+        val dir = dirFor(id)
+        val pcm = File(dir, PCM)
+        if (!pcm.isFile) return
+        val source = File(dir, SOURCE)
+        if (!source.isFile) {
+            // Keep PCM if encoding or the rename fails, so the original audio is never lost.
+            val partial = File(dir, "$SOURCE.part")
+            withContext(Dispatchers.IO) { encoder.encode(pcm, partial) }
+            if (!partial.renameTo(source)) throw IOException("could not finalize recording")
+        }
+        pcm.delete()
     }
 
     /** Speakers are a bonus on top of the transcript: failing to find them never fails the job. */

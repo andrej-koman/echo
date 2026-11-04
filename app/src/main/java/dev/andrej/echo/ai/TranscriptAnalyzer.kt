@@ -1,6 +1,9 @@
 package dev.andrej.echo.ai
 
 import android.util.Log
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import dev.andrej.echo.data.Segment
 import dev.andrej.echo.data.Transcript
 import java.time.Instant
@@ -91,13 +94,18 @@ class TranscriptAnalyzer(
     private suspend fun <T : Any> generate(runner: LlmRunner, prompt: String, parse: (String) -> T?): T {
         var failure: AnalysisBlock = AnalysisBlock.EmptyResult
         for (temperature in listOf(LlmRunner.DEFAULT_TEMPERATURE, 0f)) {
+            currentCoroutineContext().ensureActive()
             val raw = try {
                 runner.generate(prompt, temperature)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 logWarn("generate() failed at temperature=$temperature: ${e.message}")
                 failure = AnalysisBlock.GenerationFailed(e.message)
                 continue
             }
+            // A native backend may return normally even though Stop arrived during generation.
+            currentCoroutineContext().ensureActive()
             logDebug("raw output (temperature=$temperature): $raw")
 
             parse(raw)?.let {

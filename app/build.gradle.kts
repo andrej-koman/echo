@@ -31,7 +31,15 @@ android {
         }
     }
 
+    // Device tests must never install over the user's real local notes database.
+    testBuildType = "uitest"
+
     buildTypes {
+        create("uitest") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".uitest"
+            matchingFallbacks += "debug"
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true

@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -210,4 +211,131 @@ class PendingAnalysisWorkerTest {
         assertTrue(queue.pending.first().isEmpty())
         assertEquals(2, transcripts.transcripts.first().count { it.analyzedAt != null })
     }
+    @Test
+    fun `cancelling active analysis stops generation and removes its pending entry`() = runTest {
+        val transcripts = transcripts()
+        val derived = derived()
+        val queue = queue()
+        val note = transcripts.save(text = "hello", language = "en", durationMs = 0)
+        queue.enqueue(note.id)
+        var generationCancelled = false
+        var calls = 0
+        val runner = object : LlmRunner by FakeLlmRunner() {
+            override suspend fun generate(prompt: String, temperature: Float): String {
+                calls++
+                try { kotlinx.coroutines.awaitCancellation() }
+                finally { generationCancelled = true }
+            }
+        }
+        val worker = worker(queue, transcripts, derived, runner)
+        worker.requestDrain()
+        runCurrent()
+        assertEquals(note.id, worker.activeId.value)
+        worker.cancel(note.id)
+        advanceUntilIdle()
+        assertTrue(generationCancelled)
+        assertEquals(1, calls)
+        assertTrue(queue.pending.first().isEmpty())
+        assertNull(transcripts.transcripts.first().single().analyzedAt)
+        assertTrue(derived.items.first().isEmpty())
+        assertNull(worker.activeId.value)
+    }
+
+    @Test
+    fun `cancelling a queued note does not cancel another note or use a stale queue snapshot`() = runTest {
+        val transcripts = transcripts()
+        val derived = derived()
+        val queue = queue()
+        val a = transcripts.save(text = "first note", language = "en", durationMs = 0)
+        val b = transcripts.save(text = "second note", language = "en", durationMs = 0)
+        queue.enqueue(a.id, 1)
+        queue.enqueue(b.id, 2)
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val fake = FakeLlmRunner(listOf(good))
+        var calls = 0
+        val runner = object : LlmRunner by fake {
+            override suspend fun generate(prompt: String, temperature: Float): String {
+                if (calls++ == 0) release.await()
+                return good
+            }
+        }
+        val worker = worker(queue, transcripts, derived, runner)
+        worker.requestDrain()
+        runCurrent()
+        worker.cancel(b.id)
+        release.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(42L, transcripts.transcripts.first().first { it.id == a.id }.analyzedAt)
+        assertNull(transcripts.transcripts.first().first { it.id == b.id }.analyzedAt)
+        assertTrue(queue.pending.first().isEmpty())
+    }
+
+    @Test
+    fun `an explicit Analyze tap can process a previously cancelled note`() = runTest {
+        val transcripts = transcripts()
+        val queue = queue()
+        val note = transcripts.save(text = "hello", language = "en", durationMs = 0)
+        queue.enqueue(note.id)
+        val worker = worker(queue, transcripts, derived(), FakeLlmRunner(listOf(good)))
+        worker.cancel(note.id)
+        advanceUntilIdle()
+        worker.analyzeNow(note.id)
+        assertEquals(42L, transcripts.transcripts.first().single().analyzedAt)
+        assertTrue(queue.pending.first().isEmpty())
+    }
+
+    @Test
+    fun `cancelling active analysis lets the drain continue with the next note`() = runTest {
+        val transcripts = transcripts()
+        val derived = derived()
+        val queue = queue()
+        val a = transcripts.save(text = "first note", language = "en", durationMs = 0)
+        val b = transcripts.save(text = "second note", language = "en", durationMs = 0)
+        queue.enqueue(a.id, 1)
+        queue.enqueue(b.id, 2)
+        var calls = 0
+        val runner = object : LlmRunner by FakeLlmRunner() {
+            override suspend fun generate(prompt: String, temperature: Float): String {
+                if (calls++ == 0) kotlinx.coroutines.awaitCancellation()
+                return good
+            }
+        }
+        val worker = worker(queue, transcripts, derived, runner)
+        worker.requestDrain()
+        runCurrent()
+        worker.cancel(a.id)
+        advanceUntilIdle()
+        assertNull(transcripts.transcripts.first().first { it.id == a.id }.analyzedAt)
+        assertEquals(42L, transcripts.transcripts.first().first { it.id == b.id }.analyzedAt)
+        assertTrue(queue.pending.first().isEmpty())
+    }
+
+    @Test
+    fun `a native generation returning after cancellation cannot start later prompts`() = runTest {
+        val transcripts = transcripts()
+        val derived = derived()
+        val queue = queue()
+        val note = transcripts.save(text = "hello", language = "en", durationMs = 0)
+        queue.enqueue(note.id)
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        var calls = 0
+        val runner = object : LlmRunner by FakeLlmRunner() {
+            override suspend fun generate(prompt: String, temperature: Float): String {
+                calls++
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { release.await() }
+                return good
+            }
+        }
+        val worker = worker(queue, transcripts, derived, runner)
+        worker.requestDrain()
+        runCurrent()
+        worker.cancel(note.id)
+        release.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(1, calls)
+        assertNull(transcripts.transcripts.first().single().analyzedAt)
+        assertTrue(derived.items.first().isEmpty())
+        assertTrue(queue.pending.first().isEmpty())
+    }
+
 }

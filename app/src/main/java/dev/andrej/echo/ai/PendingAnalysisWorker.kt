@@ -3,13 +3,21 @@ package dev.andrej.echo.ai
 import dev.andrej.echo.data.AnalysisQueueRepository
 import dev.andrej.echo.data.DerivedRepository
 import dev.andrej.echo.data.TranscriptRepository
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 
 /**
  * Owns the pending-analysis queue's only writer path. Runs on an application-scoped
@@ -29,6 +37,34 @@ class PendingAnalysisWorker(
 
     /** The transcript currently being analyzed, automatic or manual. Null between attempts. */
     val activeId: StateFlow<String?> = _activeId.asStateFlow()
+
+    private val cancelled = MutableStateFlow(emptySet<String>())
+    private val attempts = ConcurrentHashMap<String, Job>()
+
+    /** Stops only this note; a drain can continue with other queued notes. */
+    fun cancel(transcriptId: String) {
+        cancelled.update { it + transcriptId }
+        attempts[transcriptId]?.cancel()
+        scope.launch { if (transcriptId in cancelled.value) queue.remove(transcriptId) }
+    }
+
+    /** An explicit transcription retry or Analyze tap may process a previously stopped note. */
+    fun allow(transcriptId: String) = cancelled.update { it - transcriptId }
+
+    private suspend fun attempt(transcriptId: String, block: suspend () -> Unit) = supervisorScope {
+        val job = async(start = CoroutineStart.LAZY) {
+            if (transcriptId !in cancelled.value) block()
+        }
+        attempts[transcriptId] = job
+        try {
+            job.await()
+        } catch (e: CancellationException) {
+            currentCoroutineContext().ensureActive()
+            if (transcriptId !in cancelled.value) throw e
+        } finally {
+            attempts.remove(transcriptId, job)
+        }
+    }
 
     private var drainJob: Job? = null
     private var rerunRequested = false
@@ -63,19 +99,24 @@ class PendingAnalysisWorker(
      * transcript analyzed before.
      */
     suspend fun analyzeNow(transcriptId: String) {
+        allow(transcriptId)
         val transcript = transcripts.transcripts.first().firstOrNull { it.id == transcriptId } ?: return
 
-        _activeId.value = transcriptId
-        try {
-            when (val outcome = analyzer.analyze(transcript)) {
-                is AnalysisOutcome.Success -> applySuccess(transcriptId, outcome)
-                is AnalysisOutcome.Blocked -> {
-                    queue.reset(transcriptId)
-                    queue.recordBlock(transcriptId, outcome.reason, outcome.reason.consumesAttempt())
+        attempt(transcriptId) {
+            _activeId.value = transcriptId
+            try {
+                val outcome = analyzer.analyze(transcript)
+                currentCoroutineContext().ensureActive()
+                when (outcome) {
+                    is AnalysisOutcome.Success -> applySuccess(transcriptId, outcome)
+                    is AnalysisOutcome.Blocked -> {
+                        queue.reset(transcriptId)
+                        queue.recordBlock(transcriptId, outcome.reason, outcome.reason.consumesAttempt())
+                    }
                 }
+            } finally {
+                _activeId.value = null
             }
-        } finally {
-            _activeId.value = null
         }
     }
 
@@ -91,6 +132,10 @@ class PendingAnalysisWorker(
         val currentPending = queue.pending.first()
 
         for (entry in currentPending) {
+            if (entry.transcriptId in cancelled.value) {
+                queue.remove(entry.transcriptId)
+                continue
+            }
             val transcript = currentTranscripts.firstOrNull { it.id == entry.transcriptId }
             if (transcript == null || transcript.analyzedAt != null) {
                 queue.remove(entry.transcriptId)
@@ -98,15 +143,19 @@ class PendingAnalysisWorker(
             }
             if (entry.attempts >= MAX_ATTEMPTS) continue
 
-            _activeId.value = entry.transcriptId
-            try {
-                when (val outcome = analyzer.analyze(transcript)) {
-                    is AnalysisOutcome.Success -> applySuccess(entry.transcriptId, outcome)
-                    is AnalysisOutcome.Blocked ->
-                        queue.recordBlock(entry.transcriptId, outcome.reason, outcome.reason.consumesAttempt())
+            attempt(entry.transcriptId) {
+                _activeId.value = entry.transcriptId
+                try {
+                    val outcome = analyzer.analyze(transcript)
+                    currentCoroutineContext().ensureActive()
+                    when (outcome) {
+                        is AnalysisOutcome.Success -> applySuccess(entry.transcriptId, outcome)
+                        is AnalysisOutcome.Blocked ->
+                            queue.recordBlock(entry.transcriptId, outcome.reason, outcome.reason.consumesAttempt())
+                    }
+                } finally {
+                    _activeId.value = null
                 }
-            } finally {
-                _activeId.value = null
             }
         }
     }

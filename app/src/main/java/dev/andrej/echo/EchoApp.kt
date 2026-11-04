@@ -221,8 +221,10 @@ private fun MainApp(
                     val historyState by historyViewModel.state.collectAsStateWithLifecycle()
                     HistoryScreen(
                         state = historyState,
-                        onPrevMonth = historyViewModel::prevMonth,
-                        onNextMonth = historyViewModel::nextMonth,
+                        onPrevious = historyViewModel::previous,
+                        onNext = historyViewModel::next,
+                        onToday = historyViewModel::goToday,
+                        notesViewModel = notesViewModel,
                         onPickDay = historyViewModel::pick,
                         onOpen = { navController.navigate(Routes.detail(it)) },
                     )

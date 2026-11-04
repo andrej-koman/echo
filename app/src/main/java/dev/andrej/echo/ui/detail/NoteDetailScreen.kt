@@ -371,7 +371,7 @@ fun NoteDetailScreen(
                 BarCenter {
                     StopButton(
                         onStop = { viewModel.stopTranscription(noteId) }
-                            .takeIf { status is TranscriptionStatus.Transcribing },
+                            .takeIf { status is TranscriptionStatus.Transcribing || status is TranscriptionStatus.FindingSpeakers },
                     )
                 }
             }

@@ -257,6 +257,7 @@ class Transcriptions(
     }
 
     private fun enqueue(id: String) {
+        TranscriptionCheckpoint(File(dirFor(id), SPEECH_COMPLETE)).reset()
         stops.update { it - id }
         analysis.allow(id)
         val request = OneTimeWorkRequestBuilder<TranscriptionWorker>()
@@ -313,6 +314,7 @@ class Transcriptions(
         val pcm = File(dir, PCM)
         if (!source.isFile && !pcm.isFile) throw IOException("audio is gone")
 
+        TranscriptionCheckpoint(File(dir, SPEECH_COMPLETE)).run(transcribe = {
         val speechModel = speechModels.current
         val modelStore = speechModels.store(speechModel)
         if (modelStore.state.value !is ModelState.Ready) {
@@ -429,15 +431,17 @@ class Transcriptions(
             }
         } }
         Log.i(LOG_TAG, "$id: transcribed at ${elapsed()} ms")
+        }, finalize = {
         finishAudio(id)
 
-        val exists = repository.transcripts.first().any { it.id == id }
-        if (exists && id !in stops.value && settings.autoAnalyze && transcriptText(segments).isNotBlank()) {
+        val transcript = repository.transcripts.first().firstOrNull { it.id == id }
+        if (transcript != null && id !in stops.value && settings.autoAnalyze && transcript.text.isNotBlank()) {
             analysisQueue.enqueue(id)
             // Stop can arrive while the queue write is suspended.
             if (id in stops.value) analysisQueue.remove(id)
             else analysis.requestDrainAndAwait()
         }
+        })
     }
 
     /** Finalize playback after completion or a user stop, once native readers have returned. */
@@ -489,6 +493,7 @@ class Transcriptions(
         private const val ID_TAG_PREFIX = "transcript:"
         private const val SOURCE = "source"
         private const val PCM = "audio.pcm"
+        private const val SPEECH_COMPLETE = "speech-complete"
         private const val DECODE_SHARE = 0.05f
         private const val KEY_PHASE = "phase"
         private const val KEY_FRACTION = "fraction"

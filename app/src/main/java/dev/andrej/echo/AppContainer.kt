@@ -21,6 +21,7 @@ import dev.andrej.echo.data.DerivedRepository
 import dev.andrej.echo.data.DictionaryRepository
 import dev.andrej.echo.data.FolderRepository
 import dev.andrej.echo.data.SettingsStore
+import dev.andrej.echo.data.ThemeMode
 import dev.andrej.echo.data.StorageUsage
 import dev.andrej.echo.data.scanStorage
 import dev.andrej.echo.data.SharedPreferencesSettingsStore
@@ -82,6 +83,14 @@ class AppContainer(context: Context) {
 
     val settings: SettingsStore =
         SharedPreferencesSettingsStore(applicationContext)
+
+    private val _themeMode = MutableStateFlow(settings.themeMode)
+    val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
+
+    fun setThemeMode(value: ThemeMode) {
+        settings.themeMode = value
+        _themeMode.value = value
+    }
 
     /**
      * Application-scoped on purpose: leaving Capture must not cancel a half-finished

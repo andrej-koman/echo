@@ -42,6 +42,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import dev.andrej.echo.ai.AiCardState
+import dev.andrej.echo.data.ThemeMode
 import dev.andrej.echo.ui.capture.CaptureScreen
 import dev.andrej.echo.ui.components.RecordButton
 import dev.andrej.echo.ui.components.RecordButtonSize
@@ -98,6 +99,8 @@ private val Tabs = listOf(
 fun EchoApp(
     viewModelFactory: ViewModelProvider.Factory,
     onboardingDone: StateFlow<Boolean>,
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit,
     modifier: Modifier = Modifier,
     pendingOpenCapture: Boolean = false,
     onOpenCaptureHandled: () -> Unit = {},
@@ -119,6 +122,8 @@ fun EchoApp(
         } else {
             MainApp(
                 viewModelFactory = viewModelFactory,
+                themeMode = themeMode,
+                onThemeModeChange = onThemeModeChange,
                 pendingOpenCapture = pendingOpenCapture || captureAfterOnboarding,
                 onOpenCaptureHandled = {
                     captureAfterOnboarding = false
@@ -132,6 +137,8 @@ fun EchoApp(
 @Composable
 private fun MainApp(
     viewModelFactory: ViewModelProvider.Factory,
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit,
     pendingOpenCapture: Boolean = false,
     onOpenCaptureHandled: () -> Unit = {},
 ) {
@@ -245,6 +252,8 @@ private fun MainApp(
                     SettingsScreen(
                         state = settingsState,
                         aiState = aiState,
+                        themeMode = themeMode,
+                        onThemeModeChange = onThemeModeChange,
                         onLanguageChange = settingsViewModel::setLanguage,
                         onSpeechModelChange = settingsViewModel::setSpeechModel,
                         onImportDayChange = settingsViewModel::setImportDay,

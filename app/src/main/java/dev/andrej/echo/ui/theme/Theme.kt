@@ -16,6 +16,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.view.WindowCompat
+import dev.andrej.echo.data.ThemeMode
 
 val LocalEchoColors = staticCompositionLocalOf { EchoColors() }
 val LocalEchoTypography = staticCompositionLocalOf { EchoTypography() }
@@ -73,10 +74,16 @@ private fun materialColorScheme(colors: EchoColors, dark: Boolean): ColorScheme 
     )
 }
 
+internal fun resolveDarkTheme(mode: ThemeMode, systemDark: Boolean): Boolean = when (mode) {
+    ThemeMode.System -> systemDark
+    ThemeMode.Light -> false
+    ThemeMode.Dark -> true
+}
+
 @Composable
-fun EchoTheme(content: @Composable () -> Unit) {
+fun EchoTheme(themeMode: ThemeMode = ThemeMode.Dark, content: @Composable () -> Unit) {
     val context = LocalContext.current
-    val dark = isSystemInDarkTheme()
+    val dark = resolveDarkTheme(themeMode, isSystemInDarkTheme())
     val colors = if (dark) DarkEchoColors else EchoColors()
     val colorScheme = remember(dark) { materialColorScheme(colors, dark) }
     val typography = remember { EchoTypography() }

@@ -8,4 +8,5 @@ class FakeSettingsStore(initial: String? = null) : SettingsStore {
     override var onboardingDone: Boolean = false
     override var speechModel: String? = null
     override var importDay: ImportDay? = null
+    override var themeMode: ThemeMode = ThemeMode.Dark
 }

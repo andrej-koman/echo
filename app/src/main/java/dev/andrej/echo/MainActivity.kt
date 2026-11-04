@@ -10,6 +10,7 @@ import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.andrej.echo.ui.theme.EchoTheme
 
 class MainActivity : ComponentActivity() {
@@ -28,10 +29,13 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) importShared(intent)
 
         setContent {
-            EchoTheme {
+            val themeMode by container.themeMode.collectAsStateWithLifecycle()
+            EchoTheme(themeMode = themeMode) {
                 EchoApp(
                     viewModelFactory = container.viewModelFactory,
                     onboardingDone = container.onboardingDone,
+                    themeMode = themeMode,
+                    onThemeModeChange = container::setThemeMode,
                     pendingOpenCapture = pendingOpenCapture,
                     onOpenCaptureHandled = { pendingOpenCapture = false },
                 )

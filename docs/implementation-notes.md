@@ -285,6 +285,10 @@ screen changes read as jank on device, so switching is a hard cut. Tab switches 
 to the start tab, so tapping it restored the stack and landed on the last tab. Cost: tab scroll position is not kept.
 `EchoApp` gates on `AppContainer.onboardingDone` outside the NavHost (see Onboarding below).
 
+Settings groups Models, Transcription, New notes, Appearance, and Storage & data. Speech and
+notes AI models use matching rows; their sheets expose selection and download actions.
+Haptics and reduced motion still follow Android, without inactive Settings switches.
+
 ## Notes
 
 - No Room: KSP has no release matching Kotlin 2.4.10.
@@ -450,9 +454,10 @@ Onboarding is ported from the separate "Echo Onboarding" Design artifact
 - Tokens live in `ui/theme/` and are reached through the `EchoTheme` object
   (`EchoTheme.colors.recordLive`), not through `MaterialTheme`. Material's `ColorScheme` carries
   only the subset that maps cleanly, so stock M3 components don't clash.
-- **Light and dark, following the system setting; no dynamic color.** `EchoTheme` picks
-  `EchoColors()` or `DarkEchoColors` (and `EchoElevation()` or `DarkEchoElevation`) from
-  `isSystemInDarkTheme()`; there is no in-app toggle. Dark stays warm browns, never charcoal.
+- **Light and dark, with a persisted System / Light / Dark choice; no dynamic color.**
+  `EchoTheme` resolves `SettingsStore.themeMode` against `isSystemInDarkTheme()`; Dark is the
+  default. `AppContainer.themeMode` updates the entire composition immediately when Settings
+  changes it. Dark stays warm browns, never charcoal.
   The ramps (`Bronze400`, `Ink100`, …) keep their light values in both themes, so components use
   semantic tokens only — raw ramp steps are left only where the design itself pins them in both
   themes (the record button and processing spinner gradients, bronze-filled discs with white

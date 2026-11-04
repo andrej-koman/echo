@@ -44,14 +44,18 @@ import dev.andrej.echo.ui.components.EchoCard
 import dev.andrej.echo.ui.components.EchoSwitch
 import dev.andrej.echo.ui.components.EchoTopBar
 import dev.andrej.echo.ui.components.PickerSheet
+import dev.andrej.echo.ui.components.Sheet
 import dev.andrej.echo.speech.whisper.WhisperModel
 import dev.andrej.echo.data.ImportDay
+import dev.andrej.echo.data.ThemeMode
 import dev.andrej.echo.ui.theme.EchoTheme
 
 @Composable
 fun SettingsScreen(
     state: SettingsUiState,
     aiState: AiCardState,
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit,
     onLanguageChange: (String) -> Unit,
     onSpeechModelChange: (WhisperModel) -> Unit,
     onImportDayChange: (ImportDay?) -> Unit,
@@ -71,7 +75,9 @@ fun SettingsScreen(
     val context = LocalContext.current
     var pickingLanguage by remember { mutableStateOf(false) }
     var pickingSpeechModel by remember { mutableStateOf(false) }
+    var managingAiModel by remember { mutableStateOf(false) }
     var pickingImportDay by remember { mutableStateOf(false) }
+    var pickingTheme by remember { mutableStateOf(false) }
     var confirmingDeleteAll by remember { mutableStateOf(false) }
     val versionName = remember {
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }
@@ -90,7 +96,29 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.gapSection),
         ) {
             Section(
-                title = "RECORDING",
+                title = "MODELS",
+                rows = listOf(
+                    {
+                        DisclosureRow(
+                            iconRes = R.drawable.ic_audio_waveform,
+                            label = "Speech model",
+                            subtitle = state.speechModel?.name ?: "Unavailable",
+                            onClick = { pickingSpeechModel = true },
+                        )
+                    },
+                    {
+                        DisclosureRow(
+                            iconRes = R.drawable.ic_cpu,
+                            label = "Notes AI model",
+                            subtitle = "$MODEL_NAME · ${modelStatus(aiState)}",
+                            onClick = { managingAiModel = true },
+                        )
+                    },
+                ),
+            )
+
+            Section(
+                title = "TRANSCRIPTION",
                 rows = listOf(
                     {
                         DisclosureRow(
@@ -100,29 +128,10 @@ fun SettingsScreen(
                             onClick = { pickingLanguage = true },
                         )
                     },
-
-                    {
-                        DisclosureRow(
-                            iconRes = R.drawable.ic_audio_waveform,
-                            label = "Speech model",
-                            value = state.speechModel?.name?.removePrefix("Whisper ").orEmpty(),
-                            onClick = { pickingSpeechModel = true },
-                        )
-                    },
-
-                    {
-                        DisclosureRow(
-                            iconRes = R.drawable.ic_upload,
-                            label = "Imported files' day",
-                            value = importDayLabel(state.importDay),
-                            onClick = { pickingImportDay = true },
-                        )
-                    },
                     {
                         DisclosureRow(
                             iconRes = R.drawable.ic_pen_line,
                             label = "Dictionary",
-                            value = "",
                             onClick = onOpenDictionary,
                         )
                     },
@@ -135,63 +144,48 @@ fun SettingsScreen(
                             onCheckedChange = onDetectSpeakersChange,
                         )
                     },
+                ),
+            )
+
+            Section(
+                title = "NEW NOTES",
+                rows = listOf(
                     {
                         SwitchRow(
-                            iconRes = R.drawable.ic_audio_waveform,
-                            label = "Sort new notes with AI",
-                            subtitle = "Pull tasks out automatically after recording",
+                            iconRes = R.drawable.ic_sparkles,
+                            label = "Analyze new notes automatically",
+                            subtitle = "Create summaries and tasks after transcription",
                             checked = state.autoAnalyze,
                             onCheckedChange = onAutoAnalyzeChange,
                         )
                     },
+                    {
+                        DisclosureRow(
+                            iconRes = R.drawable.ic_upload,
+                            label = "Imported files' day",
+                            value = importDayLabel(state.importDay),
+                            onClick = { pickingImportDay = true },
+                        )
+                    },
                 ),
             )
 
             Section(
-                title = "ON-DEVICE AI",
+                title = "APPEARANCE",
                 rows = listOf(
                     {
-                        ModelCard(
-                            aiState = aiState,
-                            modelBytes = state.litertModelBytes,
-                            wifiOnly = state.wifiOnlyDownload,
-                            onWifiOnlyChange = onWifiOnlyDownloadChange,
-                            onDownload = onDownloadModel,
-                            onCancel = onCancelDownload,
-                            onDelete = onDeleteModel,
+                        DisclosureRow(
+                            iconRes = R.drawable.ic_settings,
+                            label = "Theme",
+                            value = themeMode.name,
+                            onClick = { pickingTheme = true },
                         )
                     },
                 ),
             )
 
             Section(
-                title = "FEEL",
-                rows = listOf(
-                    {
-                        SwitchRow(
-                            iconRes = R.drawable.ic_audio_waveform,
-                            label = "Haptics",
-                            subtitle = "Following your phone right now",
-                            checked = true,
-                            onCheckedChange = {},
-                            enabled = false,
-                        )
-                    },
-                    {
-                        SwitchRow(
-                            iconRes = R.drawable.ic_audio_waveform,
-                            label = "Reduce motion",
-                            subtitle = "Following your phone right now",
-                            checked = false,
-                            onCheckedChange = {},
-                            enabled = false,
-                        )
-                    },
-                ),
-            )
-
-            Section(
-                title = "DATA",
+                title = "STORAGE & DATA",
                 rows = listOf(
                     {
                         DisclosureRow(
@@ -284,6 +278,32 @@ fun SettingsScreen(
         )
     }
 
+    Sheet(visible = managingAiModel, onDismiss = { managingAiModel = false }) {
+        Text(text = "Notes AI model", style = EchoTheme.typography.heading, color = EchoTheme.colors.textPrimary)
+        ModelCard(
+            aiState = aiState,
+            modelBytes = state.litertModelBytes,
+            wifiOnly = state.wifiOnlyDownload,
+            onWifiOnlyChange = onWifiOnlyDownloadChange,
+            onDownload = onDownloadModel,
+            onCancel = onCancelDownload,
+            onDelete = onDeleteModel,
+        )
+    }
+
+    PickerSheet(
+        visible = pickingTheme,
+        title = "Theme",
+        options = ThemeMode.entries.map { it.name to it },
+        selected = themeMode,
+        subtitle = { if (it == ThemeMode.System) "Follow your phone's setting" else null },
+        onPick = {
+            onThemeModeChange(it)
+            pickingTheme = false
+        },
+        onDismiss = { pickingTheme = false },
+    )
+
     ConfirmSheet(
         visible = confirmingDeleteAll,
         title = "Delete all data?",
@@ -320,7 +340,13 @@ private fun Section(title: String, rows: List<@Composable () -> Unit>) {
 }
 
 @Composable
-private fun DisclosureRow(iconRes: Int, label: String, value: String, onClick: (() -> Unit)?) {
+private fun DisclosureRow(
+    iconRes: Int,
+    label: String,
+    value: String = "",
+    subtitle: String? = null,
+    onClick: (() -> Unit)?,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -345,17 +371,15 @@ private fun DisclosureRow(iconRes: Int, label: String, value: String, onClick: (
             tint = EchoTheme.colors.textSecondary,
             modifier = Modifier.size(18.dp),
         )
-        Text(
-            text = label,
-            style = EchoTheme.typography.body,
-            color = EchoTheme.colors.textPrimary,
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            text = value,
-            style = EchoTheme.typography.bodySm,
-            color = EchoTheme.colors.textTertiary,
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = label, style = EchoTheme.typography.body, color = EchoTheme.colors.textPrimary)
+            subtitle?.let {
+                Text(text = it, style = EchoTheme.typography.caption, color = EchoTheme.colors.textTertiary)
+            }
+        }
+        if (value.isNotEmpty()) {
+            Text(text = value, style = EchoTheme.typography.bodySm, color = EchoTheme.colors.textTertiary)
+        }
         if (onClick != null) {
             Icon(
                 painter = painterResource(R.drawable.ic_arrow_right),
@@ -407,8 +431,6 @@ private fun ModelCard(
     onCancel: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    if (aiState is AiCardState.Checking) return
-
     Column {
         Row(
             modifier = Modifier.fillMaxWidth().padding(vertical = EchoTheme.spacing.s5),
@@ -453,7 +475,7 @@ private fun ModelCard(
         SwitchRow(
             iconRes = R.drawable.ic_settings,
             label = "Download on Wi-Fi only",
-            subtitle = "Model updates wait for Wi-Fi",
+            subtitle = "AI model downloads wait for Wi-Fi",
             checked = wifiOnly,
             onCheckedChange = onWifiOnlyChange,
         )
@@ -471,8 +493,6 @@ private fun ModelCard(
 
                         AiCardState.Ready ->
                             EchoButton(text = "Remove model", onClick = onDelete, variant = ButtonVariant.Danger, fullWidth = true)
-
-                        else -> Unit
                     }
                 }
             }
@@ -484,12 +504,20 @@ private fun ModelCard(
 
 private const val MODEL_NAME = "Qwen3 1.7B"
 
+private fun modelStatus(state: AiCardState): String = when (state) {
+    AiCardState.Ready -> "Ready"
+    is AiCardState.NeedsDownload -> "Not downloaded"
+    is AiCardState.Downloading -> "Downloading ${(state.fraction * 100).toInt()}%"
+    is AiCardState.Unsupported -> "Unsupported"
+    AiCardState.Checking -> "Checking…"
+}
+
 private fun modelMeta(state: AiCardState, modelBytes: Long): String = when (state) {
     AiCardState.Ready -> "${formatBytes(modelBytes)} · on this device"
     is AiCardState.NeedsDownload -> "${formatBytes(state.bytes)} · not downloaded"
     is AiCardState.Downloading -> "Downloading… ${(state.fraction * 100).toInt()}%"
     is AiCardState.Unsupported -> state.reason
-    AiCardState.Checking -> ""
+    AiCardState.Checking -> "Checking availability…"
 }
 
 private fun modelBadge(state: AiCardState): Pair<String, BadgeTone>? = when (state) {

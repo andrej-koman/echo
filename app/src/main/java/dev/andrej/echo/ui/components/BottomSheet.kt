@@ -1,5 +1,6 @@
 package dev.andrej.echo.ui.components
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -139,6 +140,7 @@ internal fun Sheet(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    BackHandler(enabled = visible, onBack = onDismiss)
     val openSheets = LocalOpenSheets.current
     if (visible) {
         DisposableEffect(Unit) {

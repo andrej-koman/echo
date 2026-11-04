@@ -201,6 +201,7 @@ private fun MainApp(
                 composable(Routes.FOLDERS) {
                     FoldersScreen(
                         viewModel = foldersViewModel,
+                        onOpenAllNotes = { notesViewModel.search(""); navController.selectTab(Routes.NOTES) },
                         onOpen = { navController.navigate(Routes.folder(it)) },
                     )
                 }

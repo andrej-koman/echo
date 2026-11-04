@@ -2,7 +2,13 @@ package dev.andrej.echo.ui.folders
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,60 +57,68 @@ import dev.andrej.echo.ui.theme.EchoTheme
 fun FoldersScreen(
     viewModel: FoldersViewModel,
     onOpen: (String) -> Unit,
+    onOpenAllNotes: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var creating by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<Folder?>(null) }
 
     Box(modifier = modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
             EchoTopBar(
                 title = "Folders",
-                subtitle = when {
-                    !state.loaded -> ""
-                    state.unfiled == 1 -> "1 note not in a folder"
-                    else -> "${state.unfiled} notes not in a folder"
-                },
                 trailing = {
                     EchoIconButton(
                         iconRes = R.drawable.ic_plus,
                         contentDescription = "New folder",
+                        modifier = Modifier.clip(EchoTheme.radii.pill).background(EchoTheme.colors.actionPrimaryBg),
+                        size = dev.andrej.echo.ui.components.IconButtonSize.Md,
+                        tint = EchoTheme.colors.actionPrimaryFg,
                         onClick = { creating = true },
                     )
                 },
             )
 
-            if (state.loaded && state.folders.isEmpty()) {
-                EmptyState(
-                    title = "No folders yet",
-                    body = "Group notes by project, person or anything else. Move a note in from its own screen.",
-                    modifier = Modifier.padding(bottom = 150.dp),
-                ) {
-                    EchoButton(
-                        text = "New folder",
-                        onClick = { creating = true },
-                        variant = ButtonVariant.Secondary,
-                        size = ButtonSize.Sm,
-                        modifier = Modifier.padding(top = EchoTheme.spacing.s4),
-                    )
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = EchoTheme.spacing.gutterScreen,
+                    end = EchoTheme.spacing.gutterScreen,
+                    top = 14.dp,
+                    bottom = 150.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(24.dp),
+            ) {
+                item {
+                    EchoCard(modifier = Modifier.fillMaxWidth(), onClick = onOpenAllNotes, padding = CardPadding.None) {
+                        Box(Modifier.padding(horizontal = 12.dp)) {
+                        FolderListRow(
+                            row = FolderRow(Folder("", "All notes", 0, "Folder"), state.total),
+                            onClick = onOpenAllNotes,
+                        )
+                        }
+                    }
                 }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(
-                        start = EchoTheme.spacing.gutterScreen,
-                        end = EchoTheme.spacing.gutterScreen,
-                        top = 14.dp,
-                        bottom = 150.dp,
-                    ),
-                ) {
+                if (state.loaded) {
                     item {
-                        EchoCard(modifier = Modifier.fillMaxWidth(), padding = CardPadding.None) {
-                            Column(modifier = Modifier.padding(horizontal = EchoTheme.spacing.s4)) {
-                                state.folders.forEachIndexed { index, row ->
-                                    FolderListRow(row = row, onClick = { onOpen(row.folder.id) })
-                                    if (index != state.folders.lastIndex) {
-                                        HorizontalDivider(color = EchoTheme.colors.borderSubtle)
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("YOUR FOLDERS", style = EchoTheme.typography.micro,
+                                color = EchoTheme.colors.textTertiary)
+                            if (state.folders.isEmpty()) {
+                                Text("No folders yet. Tap + to create your first folder.",
+                                    style = EchoTheme.typography.body,
+                                    color = EchoTheme.colors.textSecondary)
+                            } else {
+                                EchoCard(modifier = Modifier.fillMaxWidth(), padding = CardPadding.None) {
+                                    Column(modifier = Modifier.padding(horizontal = EchoTheme.spacing.s4)) {
+                                        state.folders.forEachIndexed { index, row ->
+                                            FolderListRow(row, { onOpen(row.folder.id) }, { editing = row.folder })
+                                            if (index != state.folders.lastIndex) {
+                                                HorizontalDivider(color = EchoTheme.colors.borderSubtle,
+                                                    modifier = Modifier.padding(start = 50.dp))
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -114,6 +128,16 @@ fun FoldersScreen(
             }
         }
 
+        FolderSheet(
+            visible = editing != null,
+            folder = editing,
+            onSave = { name, color, icon ->
+                editing?.let { viewModel.save(it.id, name, color, icon) }
+                editing = null
+            },
+            onDismiss = { editing = null },
+            onDelete = { editing?.let { viewModel.delete(it.id) }; editing = null },
+        )
         FolderSheet(
             visible = creating,
             folder = null,
@@ -127,27 +151,22 @@ fun FoldersScreen(
 }
 
 @Composable
-private fun FolderListRow(row: FolderRow, onClick: () -> Unit) {
+private fun FolderListRow(row: FolderRow, onClick: () -> Unit, onEdit: (() -> Unit)? = null) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onEdit, onLongClickLabel = "Edit folder")
             .padding(vertical = EchoTheme.spacing.s4),
         horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         FolderBadge(row.folder)
-        Text(
-            text = row.folder.name,
-            style = EchoTheme.typography.body,
-            color = EchoTheme.colors.textPrimary,
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            text = row.noteCount.toString(),
-            style = EchoTheme.typography.caption,
-            color = EchoTheme.colors.textTertiary,
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = row.folder.name, style = EchoTheme.typography.body,
+                color = EchoTheme.colors.textPrimary)
+            Text(text = "${row.noteCount} ${if (row.noteCount == 1) "note" else "notes"}",
+                style = EchoTheme.typography.caption, color = EchoTheme.colors.textTertiary)
+        }
         Icon(
             painter = painterResource(R.drawable.ic_chevron_right),
             contentDescription = null,
@@ -158,8 +177,18 @@ private fun FolderListRow(row: FolderRow, onClick: () -> Unit) {
 }
 
 @Composable
+private fun folderPalette(): List<Color> {
+    val dark = EchoTheme.colors.surfacePage.luminance() < 0.5f
+    return EchoTheme.colors.palette + if (dark) listOf(
+        Color(0xFF91C4BC), Color(0xFF99B8DC), Color(0xFFBBA6D3), Color(0xFFD6A0B0), Color(0xFFBDBD83),
+    ) else listOf(
+        Color(0xFF397D74), Color(0xFF496F9F), Color(0xFF80619B), Color(0xFFA0526B), Color(0xFF77782F),
+    )
+}
+
+@Composable
 internal fun folderColor(index: Int): Color {
-    val palette = EchoTheme.colors.palette
+    val palette = folderPalette()
     return palette[index.mod(palette.size)]
 }
 
@@ -201,6 +230,7 @@ internal fun FolderSheet(
             style = EchoTheme.typography.heading,
             color = colors.textPrimary,
         )
+        Text("Name", style = EchoTheme.typography.caption, color = colors.textSecondary)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -209,7 +239,7 @@ internal fun FolderSheet(
                 .padding(horizontal = 14.dp, vertical = 12.dp),
         ) {
             if (name.isEmpty()) {
-                Text(text = "Folder name", style = EchoTheme.typography.body, color = colors.textTertiary)
+                Text(text = "Folder", style = EchoTheme.typography.body, color = colors.textTertiary)
             }
             BasicTextField(
                 value = name,
@@ -222,44 +252,46 @@ internal fun FolderSheet(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3)) {
-            colors.palette.indices.forEach { index ->
-                Box(
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(EchoTheme.radii.pill)
-                        .background(folderColor(index))
-                        .then(
-                            if (index == color) {
-                                Modifier.border(3.dp, colors.textPrimary, EchoTheme.radii.pill)
-                            } else {
-                                Modifier
-                            },
-                        )
-                        .clickable { color = index },
-                )
+        Text("Color", style = EchoTheme.typography.caption, color = colors.textSecondary)
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            folderPalette().indices.chunked(5).forEach { row ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    row.forEach { index ->
+                        Box(
+                            Modifier.size(48.dp)
+                                .clip(EchoTheme.radii.pill)
+                                .background(folderColor(index))
+                                .then(if (index == color) Modifier.border(3.dp, colors.textPrimary, EchoTheme.radii.pill) else Modifier)
+                                .semantics { contentDescription = "Folder color ${index + 1}" }
+                                .selectable(selected = index == color, role = Role.RadioButton, onClick = { color = index }),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (index == color) Icon(painterResource(R.drawable.ic_check), null,
+                                tint = if (folderColor(index).luminance() > 0.4f) Color(0xFF2A2318) else Color.White,
+                                modifier = Modifier.size(22.dp))
+                        }
+                    }
+                }
             }
         }
+        Text("Icon", style = EchoTheme.typography.caption, color = colors.textSecondary)
         IconGrid(selected = icon, tint = folderColor(color), onPick = { icon = it })
         EchoButton(
             text = "Save",
+            leading = { Icon(painterResource(R.drawable.ic_check), null, modifier = Modifier.size(18.dp)) },
             onClick = { onSave(name, color, icon) },
             enabled = name.isNotBlank(),
             fullWidth = true,
         )
         if (onDelete != null) {
             EchoButton(
-                text = "Delete folder",
+                text = "Delete",
                 onClick = onDelete,
                 variant = ButtonVariant.Danger,
+                leading = { Icon(painterResource(R.drawable.ic_trash), null, modifier = Modifier.size(18.dp)) },
                 fullWidth = true,
             )
-            Text(
-                text = "Its notes stay, just out of any folder.",
-                style = EchoTheme.typography.micro,
-                color = colors.textTertiary,
-                modifier = Modifier.align(Alignment.CenterHorizontally),
-            )
+
         }
     }
 }
@@ -267,8 +299,8 @@ internal fun FolderSheet(
 @Composable
 private fun IconGrid(selected: FolderIcon, tint: Color, onPick: (FolderIcon) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3)) {
-        FolderIcon.entries.chunked(4).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3)) {
+        FolderIcon.entries.chunked(5).forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 row.forEach { icon ->
                     Box(
                         modifier = Modifier
@@ -277,7 +309,7 @@ private fun IconGrid(selected: FolderIcon, tint: Color, onPick: (FolderIcon) -> 
                             .background(
                                 if (icon == selected) tint.copy(alpha = 0.18f) else EchoTheme.colors.surfaceSunken,
                             )
-                            .clickable { onPick(icon) },
+                            .selectable(selected = icon == selected, role = Role.RadioButton, onClick = { onPick(icon) }),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(

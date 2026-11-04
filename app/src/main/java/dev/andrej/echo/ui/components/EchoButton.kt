@@ -53,6 +53,7 @@ fun EchoButton(
     fullWidth: Boolean = false,
     enabled: Boolean = true,
     loading: Boolean = false,
+    textColor: Color? = null,
     leading: @Composable (RowScope.() -> Unit)? = null,
 ) {
     val colors = EchoTheme.colors
@@ -67,7 +68,7 @@ fun EchoButton(
         variant == ButtonVariant.Inverse -> colors.actionInverseBg
         else -> colors.statusDangerBg
     }
-    val foreground = when {
+    val foreground = if (!off && textColor != null) textColor else when {
         off -> colors.actionDisabledFg
         variant == ButtonVariant.Primary -> colors.actionPrimaryFg
         variant == ButtonVariant.Secondary -> colors.actionSecondaryFg

@@ -24,6 +24,8 @@ enum class FolderIcon(@DrawableRes val drawable: Int) {
     People(R.drawable.ic_user),
     Travel(R.drawable.ic_plane),
     Private(R.drawable.ic_lock),
+    Home(R.drawable.ic_home),
+    Audio(R.drawable.ic_audio_waveform),
     ;
 
     companion object {
@@ -36,6 +38,7 @@ data class FolderRow(val folder: Folder, val noteCount: Int)
 data class FoldersUiState(
     val folders: List<FolderRow> = emptyList(),
     val unfiled: Int = 0,
+    val total: Int = 0,
     val loaded: Boolean = false,
 )
 
@@ -70,6 +73,7 @@ internal fun foldersState(folders: List<Folder>, transcripts: List<Transcript>):
     return FoldersUiState(
         folders = folders.map { FolderRow(it, counts[it.id] ?: 0) },
         unfiled = transcripts.count { it.folderId == null },
+        total = transcripts.size,
         loaded = true,
     )
 }

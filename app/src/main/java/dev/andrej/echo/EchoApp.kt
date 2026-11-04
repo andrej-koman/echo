@@ -61,10 +61,9 @@ import dev.andrej.echo.ui.profile.DictionaryScreen
 import dev.andrej.echo.ui.profile.DictionaryViewModel
 import dev.andrej.echo.ui.profile.HistoryScreen
 import dev.andrej.echo.ui.profile.HistoryViewModel
-import dev.andrej.echo.ui.profile.ProfileScreen
-import dev.andrej.echo.ui.profile.ProfileViewModel
 import dev.andrej.echo.ui.profile.SettingsScreen
 import dev.andrej.echo.ui.profile.SettingsViewModel
+import dev.andrej.echo.ui.profile.StorageScreen
 import dev.andrej.echo.ui.record.RecordViewModel
 import dev.andrej.echo.ui.tasks.EditTaskScreen
 import dev.andrej.echo.ui.tasks.TasksViewModel
@@ -76,8 +75,8 @@ private object Routes {
     const val FOLDERS = "folders"
     const val CALENDAR = "calendar"
     const val CAPTURE = "capture"
-    const val PROFILE = "profile"
     const val SETTINGS = "settings"
+    const val STORAGE = "storage"
     const val DICTIONARY = "dictionary"
     const val DETAIL = "detail/{id}"
     const val FOLDER = "folders/{id}"
@@ -92,7 +91,7 @@ private val Tabs = listOf(
     TabItem(Routes.NOTES, "Notes", R.drawable.ic_home),
     TabItem(Routes.FOLDERS, "Folders", R.drawable.ic_folder),
     TabItem(Routes.CALENDAR, "Calendar", R.drawable.ic_calendar),
-    TabItem(Routes.PROFILE, "Profile", R.drawable.ic_user),
+    TabItem(Routes.SETTINGS, "Settings", R.drawable.ic_settings),
 )
 
 @Composable
@@ -151,7 +150,6 @@ private fun MainApp(
 
     val foldersViewModel: FoldersViewModel = viewModel(factory = viewModelFactory)
     val notesViewModel: NotesViewModel = viewModel(factory = viewModelFactory)
-    val profileViewModel: ProfileViewModel = viewModel(factory = viewModelFactory)
 
     val importPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) {
@@ -238,15 +236,6 @@ private fun MainApp(
                     )
                 }
 
-                composable(Routes.PROFILE) {
-                    val profileState by profileViewModel.state.collectAsStateWithLifecycle()
-                    ProfileScreen(
-                        state = profileState,
-                        onOpenSettings = { navController.navigate(Routes.SETTINGS) },
-                        onOpenHistory = { navController.selectTab(Routes.CALENDAR) },
-                    )
-                }
-
                 composable(Routes.SETTINGS) {
                     val settingsViewModel: SettingsViewModel = viewModel(factory = viewModelFactory)
                     val settingsState by settingsViewModel.state.collectAsStateWithLifecycle()
@@ -256,7 +245,6 @@ private fun MainApp(
                     SettingsScreen(
                         state = settingsState,
                         aiState = aiState,
-                        onBack = { navController.popBackStack() },
                         onLanguageChange = settingsViewModel::setLanguage,
                         onSpeechModelChange = settingsViewModel::setSpeechModel,
                         onImportDayChange = settingsViewModel::setImportDay,
@@ -270,6 +258,21 @@ private fun MainApp(
                         onTestModelDownloadNotification = settingsViewModel.onTestModelDownloadNotification,
                         onReplayOnboarding = settingsViewModel.onReplayOnboarding,
                         onOpenDictionary = { navController.navigate(Routes.DICTIONARY) },
+                        onOpenStorage = { navController.navigate(Routes.STORAGE) },
+                    )
+                }
+
+                composable(Routes.STORAGE) {
+                    val settingsEntry = remember(navController) { navController.getBackStackEntry(Routes.SETTINGS) }
+                    val settingsViewModel: SettingsViewModel = viewModel(
+                        viewModelStoreOwner = settingsEntry,
+                        factory = viewModelFactory,
+                    )
+                    val settingsState by settingsViewModel.state.collectAsStateWithLifecycle()
+                    LaunchedEffect(settingsViewModel) { settingsViewModel.refreshStorage() }
+                    StorageScreen(
+                        usage = settingsState.storage,
+                        onBack = { navController.popBackStack() },
                     )
                 }
 

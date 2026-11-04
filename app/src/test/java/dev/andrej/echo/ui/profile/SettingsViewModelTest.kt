@@ -4,6 +4,8 @@ import dev.andrej.echo.ai.AiCardState
 import dev.andrej.echo.data.FakeSettingsStore
 import dev.andrej.echo.data.SqlDerivedRepository
 import dev.andrej.echo.data.SqlTranscriptRepository
+import dev.andrej.echo.data.StorageCategory
+import dev.andrej.echo.data.StorageUsage
 import dev.andrej.echo.data.testDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -32,6 +34,7 @@ class SettingsViewModelTest {
 
     private fun viewModel(
         settings: FakeSettingsStore = FakeSettingsStore(),
+        storageUsage: () -> StorageUsage = { StorageUsage(emptyList()) },
     ) = SettingsViewModel(
         settings = settings,
         whisperLanguages = { listOf("en", "sl") },
@@ -42,7 +45,7 @@ class SettingsViewModelTest {
         onDownloadModel = {},
         onCancelDownload = {},
         onDeleteModel = {},
-        storageUsedBytes = { 0L },
+        storageUsage = storageUsage,
         computeDispatcher = dispatcher,
     )
 
@@ -78,5 +81,20 @@ class SettingsViewModelTest {
 
         assertNull(settings.transcriptionLanguage)
         assertEquals("Auto-detect", viewModel.state.value.languageLabel)
+    }
+
+    @Test
+    fun `storage refresh replaces the shown category totals`() = runTest {
+        var usage = StorageUsage(listOf(StorageCategory("AI models", 10)))
+        val viewModel = viewModel(storageUsage = { usage })
+        advanceUntilIdle()
+        assertEquals(10, viewModel.state.value.storageBytes)
+
+        usage = StorageUsage(listOf(StorageCategory("Recordings", 7)))
+        viewModel.refreshStorage()
+        advanceUntilIdle()
+
+        assertEquals(7, viewModel.state.value.storageBytes)
+        assertEquals("Recordings", viewModel.state.value.storage.categories.single().label)
     }
 }

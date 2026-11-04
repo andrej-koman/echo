@@ -6,6 +6,7 @@ import dev.andrej.echo.ai.AiCardState
 import dev.andrej.echo.data.DerivedRepository
 import dev.andrej.echo.data.ImportDay
 import dev.andrej.echo.data.SettingsStore
+import dev.andrej.echo.data.StorageUsage
 import dev.andrej.echo.data.TranscriptRepository
 import dev.andrej.echo.speech.whisper.WhisperModel
 import kotlinx.coroutines.CoroutineDispatcher
@@ -32,10 +33,12 @@ data class SettingsUiState(
     val autoAnalyze: Boolean = true,
     val detectSpeakers: Boolean = true,
     val wifiOnlyDownload: Boolean = false,
-    val storageBytes: Long = 0,
+    val storage: StorageUsage = StorageUsage(emptyList()),
     val notesCount: Int = 0,
     val tasksCount: Int = 0,
-)
+) {
+    val storageBytes: Long get() = storage.totalBytes
+}
 
 class SettingsViewModel(
     private val settings: SettingsStore,
@@ -49,7 +52,7 @@ class SettingsViewModel(
     val onDownloadModel: () -> Unit,
     val onCancelDownload: () -> Unit,
     val onDeleteModel: () -> Unit,
-    private val storageUsedBytes: () -> Long,
+    private val storageUsage: () -> StorageUsage,
     val onTestModelDownloadNotification: () -> Unit = {},
     private val onDeleteAllData: suspend () -> Unit = {},
     val onReplayOnboarding: () -> Unit = {},
@@ -60,11 +63,12 @@ class SettingsViewModel(
     val state: StateFlow<SettingsUiState> = _state.asStateFlow()
 
     init {
+        refreshStorage()
         viewModelScope.launch {
             combine(transcripts.transcripts, derived.items) { t, d -> t.size to d.size }
                 .collect { (notesCount, tasksCount) ->
                     _state.value = fromSettings(notesCount, tasksCount)
-                        .copy(languages = _state.value.languages)
+                        .copy(languages = _state.value.languages, storage = _state.value.storage)
                 }
         }
         refreshLanguages()
@@ -80,10 +84,16 @@ class SettingsViewModel(
         autoAnalyze = settings.autoAnalyze,
         detectSpeakers = settings.detectSpeakers,
         wifiOnlyDownload = settings.wifiOnlyDownload,
-        storageBytes = storageUsedBytes(),
         notesCount = notesCount,
         tasksCount = tasksCount,
     )
+
+    fun refreshStorage() {
+        viewModelScope.launch {
+            val usage = withContext(computeDispatcher) { storageUsage() }
+            _state.value = _state.value.copy(storage = usage)
+        }
+    }
 
     private fun refreshLanguages() {
         viewModelScope.launch {
@@ -132,7 +142,10 @@ class SettingsViewModel(
 
 
     fun deleteAllData() {
-        viewModelScope.launch { onDeleteAllData() }
+        viewModelScope.launch {
+            onDeleteAllData()
+            refreshStorage()
+        }
     }
 }
 
@@ -144,6 +157,10 @@ internal fun displayLanguage(code: String): String =
         .replaceFirstChar { it.titlecase() }
 
 internal fun formatBytes(bytes: Long): String {
-    val mb = bytes / 1_000_000.0
-    return "%.1f MB".format(mb)
+    return when {
+        bytes == 0L -> "0 MB"
+        bytes < 100_000 -> "< 0.1 MB"
+        bytes < 1_000_000_000 -> "%.1f MB".format(bytes / 1_000_000.0)
+        else -> "%.2f GB".format(bytes / 1_000_000_000.0)
+    }
 }

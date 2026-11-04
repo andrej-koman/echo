@@ -41,7 +41,6 @@ import dev.andrej.echo.ui.components.ConfirmSheet
 import dev.andrej.echo.ui.components.EchoBadge
 import dev.andrej.echo.ui.components.EchoButton
 import dev.andrej.echo.ui.components.EchoCard
-import dev.andrej.echo.ui.components.EchoIconButton
 import dev.andrej.echo.ui.components.EchoSwitch
 import dev.andrej.echo.ui.components.EchoTopBar
 import dev.andrej.echo.ui.components.PickerSheet
@@ -53,7 +52,6 @@ import dev.andrej.echo.ui.theme.EchoTheme
 fun SettingsScreen(
     state: SettingsUiState,
     aiState: AiCardState,
-    onBack: () -> Unit,
     onLanguageChange: (String) -> Unit,
     onSpeechModelChange: (WhisperModel) -> Unit,
     onImportDayChange: (ImportDay?) -> Unit,
@@ -67,6 +65,7 @@ fun SettingsScreen(
     onTestModelDownloadNotification: () -> Unit = {},
     onReplayOnboarding: () -> Unit = {},
     onOpenDictionary: () -> Unit = {},
+    onOpenStorage: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -79,23 +78,15 @@ fun SettingsScreen(
             .getOrNull() ?: "?"
     }
     Column(modifier = modifier.fillMaxSize()) {
-        EchoTopBar(
-            title = "Settings",
-            leading = {
-                EchoIconButton(
-                    iconRes = R.drawable.ic_chevron_left,
-                    contentDescription = "Back",
-                    onClick = onBack,
-                )
-            },
-        )
+        EchoTopBar(title = "Settings")
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(EchoTheme.spacing.gutterScreen)
-                .navigationBarsPadding(),
+                .navigationBarsPadding()
+                .padding(bottom = 100.dp),
             verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.gapSection),
         ) {
             Section(
@@ -207,7 +198,7 @@ fun SettingsScreen(
                             iconRes = R.drawable.ic_file_text,
                             label = "On this device",
                             value = formatBytes(state.storageBytes),
-                            onClick = null,
+                            onClick = onOpenStorage,
                         )
                     },
                     {

@@ -249,9 +249,8 @@ ui/tasks/     TaskRows (TaskGroupCard/TaskRow/TaskCheckbox for the note screen),
 ui/capture/   CaptureScreen — recording, paused
 ui/record/    RecordViewModel + RecordUiState over RecordingController (still named for its old screen)
 ui/onboarding/ OnboardingScreen + OnboardingSteps (the 5 first-run screens), OnboardingViewModel
-ui/profile/   ProfileScreen (the Profile tab) + ProfileViewModel, SettingsScreen +
-              SettingsViewModel, HistoryScreen + HistoryViewModel (the Calendar tab), DictionaryScreen +
-              DictionaryViewModel
+ui/profile/   SettingsScreen + SettingsViewModel (the Settings tab), StorageScreen, HistoryScreen +
+              HistoryViewModel (the Calendar tab), DictionaryScreen + DictionaryViewModel
 ui/notes/     NotesScreen + NotesViewModel (the Notes tab, search; NoteRow, NoteStage,
               PendingBadge, PendingCopy), NoteCard (+ its ··· sheets: move, delete)
 ui/detail/    NoteDetailScreen (header, By speaker / Full text / Tasks tabs, sheets), TranscriptViews
@@ -263,7 +262,7 @@ notify/       RecordingNotifier (+ RecordingActionReceiver, BootReceiver), Model
 AppContainer manual DI, no Hilt
 ```
 
-Four tabs: Notes / Folders — record button — Calendar / Profile, Notes the start destination.
+Four tabs: Notes / Folders — record button — Calendar / Settings, Notes the start destination.
 **Notes list** (2026-11-02 design): a flat list of `NoteCard`s, newest first, no day headings —
 title, summary (3 lines), then `date · duration · folder` (folder name and icon in the folder's
 own colour; a `PendingBadge` takes that slot while anything is pending). The left stripe is
@@ -276,9 +275,8 @@ becomes "N selected" with Move to folder and Delete (`BulkActionSheets`), back o
 Header is the mascot + "Echo"; the "Pro" badge in the design waits for billing.
 Notes is the one list of everything; Folders lists folders, each opening its notes (no folder
 filter on Notes); Calendar is `HistoryScreen` (month heat grid, the picked day's notes open on
-tap), also reached from Profile's week card. A note is moved from its own screen (folder icon in
-the bar, `PickerSheet`). Raw transcript text lives only in each note's screen. No header account
-icon anywhere — Profile is reached only via its tab. The record
+tap). Settings opens directly from the fourth tab. A note is moved from its own screen (folder icon in
+the bar, `PickerSheet`). Raw transcript text lives only in each note's screen. The record
 button sits in the bar's middle slot (`TabBar(centerGap = true)` leaves the gap, `EchoApp` overlays the
 button on a bar-coloured cradle so it pokes above the hairline). The tab bar is icon-only — no labels, no
 selection crossfade — and the NavHost runs with every transition set to `None`: the design's
@@ -408,13 +406,8 @@ analysed: **By speaker** (runs
   (`GenerationFailed`/`EmptyResult`, exhausted or not — the badge doesn't distinguish) in
   `BadgeTone.Warning`. `EmptyTranscript` never renders — it's never enqueued. No dedicated
   first-run modal; the badge is the only affordance, on note cards and the detail screen, which already has the Analyze button to retry with.
-- **Profile, Settings, History** implement the OutLoud design's three-screen exploration
-  (Claude Design project `582866bc-4d0a-4f8f-a6bc-dbb7efb86455`). `ProfileScreen` replaced the old
-  `AccountScreen` stub: a NOTES/TASKS DONE/CAPTURED stats grid and a "This week" bar-chart card
-  (tap switches to the Calendar tab) with a streak — no identity card or account rail since the offline pivot.
-  `ProfileViewModel.buildState` computes the
-  week bars and streak by walking backward from today over `Transcript.createdAt` grouped by
-  calendar day (zone-aware) — the first empty day stops the streak. `AiViewModel` is gone: its
+- **Settings and History** are reached directly from their tabs. `ProfileScreen` and its stats
+  were removed; there is no account or profile page in the offline app. `AiViewModel` is gone: its
   Download/Cancel/Remove UI moved into `SettingsScreen`'s ON-DEVICE AI card, and `SettingsViewModel`
   now takes the same `aiCardState`/`onDownloadModel`/`onCancelDownload`/`onDeleteModel` shape
   directly from `AppContainer`. `SettingsStore` beyond `transcriptionLanguage`: `detectSpeakers`, `autoAnalyze` (gates the
@@ -423,8 +416,11 @@ analysed: **By speaker** (runs
   is skipped rather than queued if off Wi-Fi). The ON-DEVICE AI card shows the one model, no backend picker. Settings' FEEL section (Haptics, Reduce
   motion) stays read-only by design — threading the setting through `rememberEchoHaptics()`/
   `LocalReducedMotion` would need a new CompositionLocal reaching every call site, out of scope for
-  this pass; the switches render "on" but ignore taps. `AppContainer.storageUsedBytes()` backs
-  Settings' DATA section, alongside **Delete all data** (behind `ConfirmSheet`):
+  this pass; the switches render "on" but ignore taps. Settings' DATA section opens
+  `StorageScreen`; `scanStorage` totals models, recordings, the Echo database (including its WAL),
+  preferences, cache, and other app files. The category totals sum to the displayed total and
+  display rounded MB/GB sizes. Scanning runs off the main thread and refreshes on opening the screen.
+  **Delete all data** is behind `ConfirmSheet`:
   `AppContainer.deleteAllData()` clears the pending queue, every `TodoItem` and every transcript, via each repository's `clear()`. It keeps the model, settings and
   `onboardingDone`. `HistoryScreen`/`HistoryViewModel` render a month calendar
   (`YearMonth`/`LocalDate` state, not persisted) with a 4-level heat grid (0/1/2/3+ notes that

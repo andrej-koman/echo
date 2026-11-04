@@ -21,6 +21,8 @@ import dev.andrej.echo.data.DerivedRepository
 import dev.andrej.echo.data.DictionaryRepository
 import dev.andrej.echo.data.FolderRepository
 import dev.andrej.echo.data.SettingsStore
+import dev.andrej.echo.data.StorageUsage
+import dev.andrej.echo.data.scanStorage
 import dev.andrej.echo.data.SharedPreferencesSettingsStore
 import dev.andrej.echo.data.SqlAnalysisQueueRepository
 import dev.andrej.echo.data.SqlDerivedRepository
@@ -43,7 +45,6 @@ import dev.andrej.echo.transcribe.Transcriptions
 import dev.andrej.echo.ui.folders.FoldersViewModel
 import dev.andrej.echo.ui.profile.DictionaryViewModel
 import dev.andrej.echo.ui.profile.HistoryViewModel
-import dev.andrej.echo.ui.profile.ProfileViewModel
 import dev.andrej.echo.ui.profile.SettingsViewModel
 import dev.andrej.echo.ui.record.RecordViewModel
 import dev.andrej.echo.ui.tasks.TasksViewModel
@@ -277,8 +278,13 @@ class AppContainer(context: Context) {
         appScope.launch { modelStore.delete() }
     }
 
-    fun storageUsedBytes(): Long =
-        applicationContext.filesDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+    fun storageUsage(): StorageUsage = scanStorage(
+        filesDir = applicationContext.filesDir,
+        databasesDir = applicationContext.getDatabasePath("echo.db").parentFile!!,
+        preferencesDir = File(applicationContext.filesDir.parentFile, "shared_prefs"),
+        cacheDir = applicationContext.cacheDir,
+        noBackupDir = applicationContext.noBackupFilesDir,
+    )
 
     val viewModelFactory: ViewModelProvider.Factory = object : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
@@ -323,9 +329,6 @@ class AppContainer(context: Context) {
             modelClass.isAssignableFrom(TasksViewModel::class.java) ->
                 TasksViewModel(derived, repository, aiCardState) as T
 
-            modelClass.isAssignableFrom(ProfileViewModel::class.java) ->
-                ProfileViewModel(repository, derived) as T
-
             modelClass.isAssignableFrom(SettingsViewModel::class.java) ->
                 SettingsViewModel(
                     settings = settings,
@@ -339,7 +342,7 @@ class AppContainer(context: Context) {
                     onDownloadModel = ::downloadModel,
                     onCancelDownload = ::cancelDownload,
                     onDeleteModel = ::deleteModel,
-                    storageUsedBytes = ::storageUsedBytes,
+                    storageUsage = ::storageUsage,
                     onTestModelDownloadNotification = ::sendTestModelDownloadNotification,
                     onDeleteAllData = ::deleteAllData,
                     onReplayOnboarding = ::replayOnboarding,

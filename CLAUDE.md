@@ -114,8 +114,11 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
   runs in-process; the database still gets them per chunk. `NotesViewModel.segments` prefers it
   for that note. The note screen types it in (`typedSegments`: speed follows the backlog so each 30 s
   window's lump drains in ~2.5 s; "Listening…" before the first line), with a blinking caret,
-  following the end until the reader drags away, and shows `TranscribingCard` (status, model, %) above the
-  player while any transcription status but Failed is up.
+  following the end until the reader drags away, and shows `TranscribingCard` (status, model, %)
+  while any transcription status but Failed is up — in place of the player, which is hidden
+  until the job ends. Its stop button (Whisper stage only) calls `Transcriptions.stop`: the
+  Whisper run is cancelled (native abort), the live segments heard so far become the note, and
+  speakers and analysis then run as usual on that text.
 - **Speed** (S24, Large V3 Turbo q5_0, measured 2026-11-03 with `whisper_print_timings` →
   logcat tag `whisper`, wall times under tag `Transcriptions`): the encoder is ~95% of the time,
   one pass per 30 s window, 33 s per pass at full clock. Decoding text is cheap. Samsung caps every

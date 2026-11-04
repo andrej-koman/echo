@@ -365,23 +365,23 @@ fun NoteDetailScreen(
                 }
             }
 
-            status?.let {
-                TranscribingCard(
-                    status = it,
-                    model = viewModel.speechModel(),
-                    modifier = Modifier.padding(
-                        start = EchoTheme.spacing.gutterScreen,
-                        end = EchoTheme.spacing.gutterScreen,
-                        bottom = EchoTheme.spacing.s3,
-                    ),
-                )
+            val playable = player?.takeIf { status == null }
+            if (status != null) {
+                TranscribingRow(status = status, model = viewModel.speechModel())
+                BarCenter {
+                    StopButton(
+                        onStop = { viewModel.stopTranscription(noteId) }
+                            .takeIf { status is TranscriptionStatus.Transcribing },
+                    )
+                }
             }
-            player?.let { player ->
+            playable?.let { player ->
                 ProgressRow(player)
                 BarCenter { PlayButton(player) }
             }
             val barHeight = LocalBottomBarHeight.current
-            Spacer(Modifier.height(if (player != null) (barHeight - PlayRowOverlap).coerceAtLeast(0.dp) else barHeight))
+            val onBar = playable != null || status != null
+            Spacer(Modifier.height(if (onBar) (barHeight - PlayRowOverlap).coerceAtLeast(0.dp) else barHeight))
         }
 
         if (transcript != null) {

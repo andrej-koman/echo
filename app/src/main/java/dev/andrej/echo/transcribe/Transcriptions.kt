@@ -43,6 +43,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -275,8 +277,14 @@ class Transcriptions(
             transcribeLocked(id, report)
         } finally {
             _live.value = null
+            stops.update { it - id }
         }
     }
+
+    private val stops = MutableStateFlow(emptySet<String>())
+
+    /** Ends a running transcription early; the note keeps the text heard so far. */
+    fun stop(id: String) = stops.update { it + id }
 
     private suspend fun transcribeLocked(id: String, report: (TranscriptionStatus) -> Unit) {
         val began = SystemClock.elapsedRealtime()
@@ -343,7 +351,7 @@ class Transcriptions(
             } else {
                 null
             }
-            WhisperTranscriber.load(model).use { whisper ->
+            val whisperRun = async { WhisperTranscriber.load(model).use { whisper ->
                 Log.i(LOG_TAG, "$id: ${speechModel.name} loaded at ${elapsed()} ms")
                 speechModels.deleteAllBut(speechModel)
                 RandomAccessFile(pcm, "r").use { file ->
@@ -382,6 +390,23 @@ class Transcriptions(
                         Log.i(LOG_TAG, "$id: chunk to ${start / SAMPLE_RATE} s done at ${elapsed()} ms")
                     }
                 }
+            } }
+            val stopWatch = launch {
+                stops.first { id in it }
+                whisperRun.cancel()
+            }
+            try {
+                whisperRun.await()
+            } catch (e: CancellationException) {
+                currentCoroutineContext().ensureActive()
+                // Stopped by the user: what was heard so far, mid-chunk lines included, is the note.
+                val heard = _live.value?.takeIf { it.id == id }?.segments ?: segments
+                segments.clear()
+                segments += heard
+                repository.setTranscription(id, transcriptText(segments), language.orEmpty(), durationMs, segments)
+                Log.i(LOG_TAG, "$id: stopped at ${elapsed()} ms")
+            } finally {
+                stopWatch.cancel()
             }
             if (speakers != null) {
                 whisperDone.set(true)

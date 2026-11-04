@@ -91,6 +91,7 @@ class NotesViewModel(
     private val onDeclineImport: (ImportFile) -> Unit = {},
     val importDay: () -> ImportDay? = { null },
     private val onRetryTranscription: (String) -> Unit = {},
+    private val onStopTranscription: (String) -> Unit = {},
     private val onDeleted: (String) -> Unit = {},
     private val audioFile: (String) -> File? = { null },
     folders: Flow<List<Folder>> = flowOf(emptyList()),
@@ -190,6 +191,8 @@ class NotesViewModel(
         combine(repository.segmentsFlow(transcriptId), live) { stored, live ->
             if (live?.id == transcriptId) live.segments else stored
         }
+
+    fun stopTranscription(transcriptId: String) = onStopTranscription(transcriptId)
 
     fun saveSegments(transcriptId: String, segments: List<Segment>) {
         viewModelScope.launch { repository.editSegments(transcriptId, segments) }

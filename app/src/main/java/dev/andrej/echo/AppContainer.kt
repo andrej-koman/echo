@@ -303,6 +303,7 @@ class AppContainer(context: Context) {
                     onDeclineImport = transcriptions::decline,
                     importDay = { settings.importDay },
                     onRetryTranscription = transcriptions::transcribe,
+                    onStopTranscription = transcriptions::stop,
                     onDeleted = transcriptions::discard,
                     audioFile = transcriptions::audioFile,
                     folders = folders.folders,

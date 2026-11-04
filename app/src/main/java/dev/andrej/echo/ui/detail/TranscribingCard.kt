@@ -24,12 +24,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.andrej.echo.R
 import dev.andrej.echo.transcribe.TranscriptionStatus
-import dev.andrej.echo.ui.components.EchoCard
 import dev.andrej.echo.ui.theme.EchoTheme
 
-/** Sits above the player while Whisper works on the note, the text filling in behind it. */
+/**
+ * Takes the seek row's place on the tab bar while Whisper works, the text filling in above it.
+ * The stop disc ([StopButton]) pokes up from the bar below the progress line.
+ */
 @Composable
-internal fun TranscribingCard(status: TranscriptionStatus, model: String, modifier: Modifier = Modifier) {
+internal fun TranscribingRow(status: TranscriptionStatus, model: String, modifier: Modifier = Modifier) {
     val colors = EchoTheme.colors
     val (label, fraction) = when (status) {
         TranscriptionStatus.Queued, TranscriptionStatus.Failed -> "Waiting to transcribe" to null
@@ -39,14 +41,26 @@ internal fun TranscribingCard(status: TranscriptionStatus, model: String, modifi
     }
     val shown by animateFloatAsState(fraction ?: 0f, label = "progress")
 
-    EchoCard(modifier = modifier.fillMaxWidth()) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .barRow()
+            .padding(
+                start = EchoTheme.spacing.gutterScreen,
+                end = EchoTheme.spacing.gutterScreen,
+                top = RowTopPadding,
+                // Puts the progress line level with the player's seek track.
+                bottom = 8.dp,
+            ),
+        verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5),
+    ) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
                 modifier = Modifier
-                    .size(32.dp)
+                    .size(28.dp)
                     .clip(EchoTheme.radii.md)
                     .background(colors.surfaceAccentSoft),
                 contentAlignment = Alignment.Center,
@@ -55,7 +69,7 @@ internal fun TranscribingCard(status: TranscriptionStatus, model: String, modifi
                     painter = painterResource(R.drawable.ic_audio_waveform),
                     contentDescription = null,
                     tint = colors.textAccent,
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(14.dp),
                 )
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -63,6 +77,8 @@ internal fun TranscribingCard(status: TranscriptionStatus, model: String, modifi
                     text = label,
                     style = EchoTheme.typography.bodySm.copy(fontWeight = FontWeight.SemiBold),
                     color = colors.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     text = "$model · on this phone",
@@ -82,7 +98,6 @@ internal fun TranscribingCard(status: TranscriptionStatus, model: String, modifi
         }
         Box(
             modifier = Modifier
-                .padding(top = EchoTheme.spacing.s3)
                 .fillMaxWidth()
                 .height(4.dp)
                 .clip(EchoTheme.radii.pill)

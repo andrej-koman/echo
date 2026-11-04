@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
@@ -22,9 +23,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
@@ -36,10 +41,36 @@ import dev.andrej.echo.ui.theme.EchoTheme
 import dev.andrej.echo.ui.theme.echoShadow
 import dev.andrej.echo.ui.theme.rememberEchoHaptics
 
-private val PlayDiameter = 64.dp
+internal val PlayDiameter = 64.dp
 
 internal val PlayRowOverlap = 16.dp
-private val RowTopPadding = 14.dp
+internal val RowTopPadding = 14.dp
+
+private val BarRowRadius = 16.dp
+
+/**
+ * Chrome of a row resting on the tab bar: rounded top corners with a hairline over them only, so
+ * its sides and bottom run straight into the bar.
+ */
+@Composable
+internal fun Modifier.barRow(): Modifier {
+    val colors = EchoTheme.colors
+    return this
+        .clip(RoundedCornerShape(topStart = BarRowRadius, topEnd = BarRowRadius))
+        .background(colors.surfaceBar)
+        .drawBehind {
+            val stroke = 1.dp.toPx()
+            val r = BarRowRadius.toPx()
+            val inset = stroke / 2
+            val top = Path().apply {
+                moveTo(inset, r)
+                arcTo(Rect(inset, inset, inset + 2 * r, inset + 2 * r), 180f, 90f, false)
+                lineTo(size.width - r - inset, inset)
+                arcTo(Rect(size.width - inset - 2 * r, inset, size.width - inset, inset + 2 * r), 270f, 90f, false)
+            }
+            drawPath(top, colors.borderSubtle, style = Stroke(stroke))
+        }
+}
 
 /**
  * The seek row, sitting straight on the tab bar; the play button is the bar's middle slot
@@ -61,10 +92,7 @@ internal fun ProgressRow(player: NotePlayer, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(colors.surfaceBar)
-            .drawBehind {
-                drawLine(colors.borderSubtle, Offset(0f, 0f), Offset(size.width, 0f), 1.dp.toPx())
-            }
+            .barRow()
             .padding(start = EchoTheme.spacing.gutterScreen, end = EchoTheme.spacing.gutterScreen, top = RowTopPadding, bottom = 0.dp),
         horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3),
         verticalAlignment = Alignment.CenterVertically,
@@ -115,22 +143,46 @@ internal fun ProgressRow(player: NotePlayer, modifier: Modifier = Modifier) {
 /** Takes the record button's place on a note: same bronze disc, play or pause glyph. */
 @Composable
 internal fun PlayButton(player: NotePlayer) {
+    BarDisc(
+        iconRes = if (player.playing) R.drawable.ic_pause else R.drawable.ic_play,
+        contentDescription = if (player.playing) "Pause" else "Play",
+        onClick = player::toggle,
+    )
+}
+
+/** The play button's place while transcribing; null [onStop] when the stage can't be stopped. */
+@Composable
+internal fun StopButton(onStop: (() -> Unit)?) {
+    BarDisc(
+        iconRes = R.drawable.ic_square,
+        contentDescription = "Stop transcribing",
+        onClick = onStop,
+    )
+}
+
+@Composable
+private fun BarDisc(iconRes: Int, contentDescription: String, onClick: (() -> Unit)?) {
     val haptics = rememberEchoHaptics()
     Box(
         modifier = Modifier
             .size(PlayDiameter)
+            .alpha(if (onClick == null) 0.4f else 1f)
             .echoShadow(EchoTheme.elevation.shadow3, cornerRadius = PlayDiameter / 2)
             .clip(EchoTheme.radii.pill)
             .background(Brush.linearGradient(listOf(Bronze400, Bronze500), Offset.Zero, Offset.Infinite))
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+            .clickable(
+                enabled = onClick != null,
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) {
                 haptics.tick()
-                player.toggle()
+                onClick?.invoke()
             },
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            painter = painterResource(if (player.playing) R.drawable.ic_pause else R.drawable.ic_play),
-            contentDescription = if (player.playing) "Pause" else "Play",
+            painter = painterResource(iconRes),
+            contentDescription = contentDescription,
             tint = EchoTheme.colors.recordGlyph,
             modifier = Modifier.size(26.dp),
         )

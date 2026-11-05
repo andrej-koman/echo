@@ -17,6 +17,8 @@ sealed interface LlmAvailability {
  */
 interface LlmRunner {
 
+    val modelName: String get() = "AI model"
+
     suspend fun availability(): LlmAvailability
 
     /** Pulls the model into memory so the first real call is not the slow one. Best effort. */

@@ -22,6 +22,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.andrej.echo.ai.AnalysisProgress
 import dev.andrej.echo.R
 import dev.andrej.echo.transcribe.TranscriptionStatus
 import dev.andrej.echo.ui.theme.EchoTheme
@@ -38,6 +39,7 @@ internal fun TranscribingRow(status: TranscriptionStatus, model: String, modifie
         is TranscriptionStatus.DownloadingModel -> "Getting the speech model" to status.fraction
         is TranscriptionStatus.Transcribing -> "Transcribing…" to status.fraction
         is TranscriptionStatus.FindingSpeakers -> "Finding speakers…" to status.fraction
+        is TranscriptionStatus.Analyzing -> "Analyzing…" to status.fraction
     }
     val shown by animateFloatAsState(fraction ?: 0f, label = "progress")
 
@@ -81,7 +83,7 @@ internal fun TranscribingRow(status: TranscriptionStatus, model: String, modifie
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = "$model · on this phone",
+                    text = "${if (status is TranscriptionStatus.Analyzing) status.model.ifBlank { "Preparing analysis" } else model} · on this phone",
                     style = EchoTheme.typography.micro,
                     color = colors.textTertiary,
                     maxLines = 1,
@@ -113,3 +115,13 @@ internal fun TranscribingRow(status: TranscriptionStatus, model: String, modifie
         }
     }
 }
+
+
+internal fun processingStatus(
+    noteId: String,
+    transcription: TranscriptionStatus?,
+    analysis: AnalysisProgress?,
+): TranscriptionStatus? =
+    analysis?.takeIf { it.transcriptId == noteId }?.let {
+        TranscriptionStatus.Analyzing(it.fraction, it.model)
+    } ?: transcription?.takeIf { it != TranscriptionStatus.Failed }

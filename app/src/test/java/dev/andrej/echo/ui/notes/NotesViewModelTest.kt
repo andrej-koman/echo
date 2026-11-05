@@ -221,6 +221,17 @@ class NotesViewModelTest {
         assertEquals(setOf("a"), byTranscript.keys)
     }
 
+    @Test
+    fun `active analysis is labeled and transcription takes precedence`() {
+        assertEquals("Analyzing…", Work(analyzingId = "a").pendingCopies()["a"]?.text)
+        assertEquals(
+            "Finding speakers… 50%",
+            Work(analyzingId = "a", statuses = mapOf("a" to TranscriptionStatus.FindingSpeakers(0.5f)))
+                .pendingCopies()["a"]?.text,
+        )
+        assertNull(Work().pendingCopies()["a"])
+    }
+
     private fun transcript(id: String, createdAt: Long) = Transcript(
         id = id,
         text = "Something said out loud.",

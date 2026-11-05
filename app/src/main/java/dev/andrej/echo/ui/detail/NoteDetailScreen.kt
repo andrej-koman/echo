@@ -101,10 +101,12 @@ fun NoteDetailScreen(
     onDeleted: () -> Unit,
     onBack: () -> Unit,
     onEditTask: (String) -> Unit,
+    recording: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val transcripts by viewModel.transcripts.collectAsStateWithLifecycle()
     val analyzingId by viewModel.analyzingId.collectAsStateWithLifecycle()
+    val analysisProgress by viewModel.analysisProgress.collectAsStateWithLifecycle()
     val pending by viewModel.pending.collectAsStateWithLifecycle()
     val tasks by viewModel.tasks.collectAsStateWithLifecycle()
     val folders by viewModel.folders.collectAsStateWithLifecycle()
@@ -148,7 +150,7 @@ fun NoteDetailScreen(
             }
 
             val entryPending = pending[noteId]
-            val status = transcription[noteId]?.takeIf { it != TranscriptionStatus.Failed }
+            val status = processingStatus(noteId, transcription[noteId], analysisProgress[noteId])
             // Typing runs on while speakers are found, so the last window's lump still drains.
             val typed = typedSegments(loadedSegments, typing = status != null)
             val typedChars = typed.sumOf { it.text.trim().length }
@@ -157,7 +159,7 @@ fun NoteDetailScreen(
             val liveLine = if (typing) typed.lastIndex else -1
             // Each tab appears once its stage is done: text after Whisper, speakers once found,
             // tasks once analysed. Until then the text fills in with no tabs at all.
-            val transcribed = status == null || status is TranscriptionStatus.FindingSpeakers
+            val transcribed = status == null || status is TranscriptionStatus.FindingSpeakers || status is TranscriptionStatus.Analyzing
             val visibleTabs = buildList {
                 if (speakers.isNotEmpty()) add(NoteTab.BySpeaker)
                 if (transcribed) add(NoteTab.FullText)
@@ -236,7 +238,7 @@ fun NoteDetailScreen(
                                 onClick = { sheet = NoteSheet.Folder },
                             )
                         }
-                        if (entryPending != null && status == null) {
+                        if (entryPending != null && status == null && analyzingId != noteId) {
                             StatusCard(
                                 pending = entryPending,
                                 retrying = analyzingId == noteId,
@@ -381,7 +383,7 @@ fun NoteDetailScreen(
             }
             val barHeight = LocalBottomBarHeight.current
             val onBar = playable != null || status != null
-            Spacer(Modifier.height(if (onBar) (barHeight - PlayRowOverlap).coerceAtLeast(0.dp) else barHeight))
+            Spacer(Modifier.height(if (onBar && !recording) (barHeight - PlayRowOverlap).coerceAtLeast(0.dp) else barHeight))
         }
 
         if (transcript != null) {

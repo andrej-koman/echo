@@ -45,10 +45,15 @@ class TranscriptionWorker(context: Context, params: WorkerParameters) : Coroutin
         }
     }
 
+    private var lastStatus: TranscriptionStatus? = null
+
     private fun report(status: TranscriptionStatus) {
         val percent = status.percent()
-        if (percent == lastPercent) return
+        if (percent == lastPercent && status.javaClass == lastStatus?.javaClass &&
+            (status as? TranscriptionStatus.Analyzing)?.model == (lastStatus as? TranscriptionStatus.Analyzing)?.model
+        ) return
         lastPercent = percent
+        lastStatus = status
         setProgressAsync(status.toData())
         notificationManager.notify(notificationId, notification(status))
     }
@@ -75,6 +80,7 @@ class TranscriptionWorker(context: Context, params: WorkerParameters) : Coroutin
                 when (status) {
                     is TranscriptionStatus.DownloadingModel -> "Getting the speech model"
                     is TranscriptionStatus.FindingSpeakers -> "Finding speakers"
+                    is TranscriptionStatus.Analyzing -> "Analyzing"
                     else -> "Transcribing"
                 },
             )
@@ -90,6 +96,7 @@ class TranscriptionWorker(context: Context, params: WorkerParameters) : Coroutin
         is TranscriptionStatus.DownloadingModel -> (fraction * 100).toInt()
         is TranscriptionStatus.Transcribing -> (fraction * 100).toInt()
         is TranscriptionStatus.FindingSpeakers -> (fraction * 100).toInt()
+        is TranscriptionStatus.Analyzing -> (fraction * 100).toInt()
         else -> -1
     }
 

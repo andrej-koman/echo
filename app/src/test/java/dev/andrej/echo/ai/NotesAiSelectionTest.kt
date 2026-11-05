@@ -25,6 +25,26 @@ class NotesAiSelectionTest {
     }
 
     @Test
+    fun `none survives restart without falling back to a downloaded model`() = runBlocking {
+        val default = store(NotesAiModel.Default, SuccessfulDownloader()).also { it.download() }
+        val fast = store(NotesAiModel.Fast, SuccessfulDownloader()).also { it.download() }
+        val stores = mapOf(NotesAiModel.Default to default, NotesAiModel.Fast to fast)
+        val settings = FakeSettingsStore()
+        val selection = NotesAiSelection(settings, stores)
+        selection.choose(NotesAiModel.Fast)
+        fast.delete()
+        selection.disable()
+
+        val restarted = NotesAiSelection(settings, stores)
+        assertEquals(NotesAiModel.Fast, restarted.active.value)
+        assertEquals(false, restarted.statuses(NotesAiModel.entries.map {
+            stores[it]?.state?.value ?: ModelState.Absent
+        }).any { it.active })
+        assertEquals(ModelChoice.Activated, restarted.choose(NotesAiModel.Default))
+        assertEquals(NotesAiModel.Default.id, settings.notesAiModel)
+    }
+
+    @Test
     fun `undownloaded choice remains pending until its model is ready`() = runBlocking {
         val settings = FakeSettingsStore()
         val fast = store(NotesAiModel.Fast, SuccessfulDownloader())

@@ -5,6 +5,7 @@ import dev.andrej.echo.data.SqlDerivedRepository
 import dev.andrej.echo.data.SqlTranscriptRepository
 import dev.andrej.echo.data.testDatabase
 import java.time.ZoneId
+import kotlinx.coroutines.async
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -179,6 +180,93 @@ class PendingAnalysisWorkerTest {
     }
 
     @Test
+    fun `analysis progress carries the running model and clears after automatic and manual runs`() = runTest {
+        val transcripts = transcripts()
+        val saved = transcripts.save(text = "hello", language = "en", durationMs = 0)
+        val queue = queue()
+        val seen = mutableListOf<AnalysisProgress?>()
+        lateinit var worker: PendingAnalysisWorker
+        val fake = FakeLlmRunner(listOf(good))
+        val runner = object : LlmRunner by fake {
+            override val modelName = "Qwen test model"
+            override suspend fun generate(prompt: String, temperature: Float): String {
+                seen += worker.progress.value[saved.id]
+                return fake.generate(prompt, temperature)
+            }
+        }
+        worker = worker(queue, transcripts, derived(), runner)
+        queue.enqueue(saved.id)
+        worker.requestDrainAndAwait()
+        assertEquals(AnalysisProgress(saved.id, "Qwen test model", 0f), seen.first())
+        assertTrue(worker.progress.value.isEmpty())
+        seen.clear()
+        worker.analyzeNow(saved.id)
+        assertEquals(AnalysisProgress(saved.id, "Qwen test model", 0f), seen.first())
+        assertTrue(worker.progress.value.isEmpty())
+    }
+
+    @Test
+    fun `waiting for one note does not wait for analysis of the next note`() = runTest {
+        val transcripts = transcripts()
+        val first = transcripts.save(text = "first", language = "en", durationMs = 0)
+        val second = transcripts.save(text = "second", language = "en", durationMs = 0)
+        val queue = queue()
+        queue.enqueue(first.id)
+        queue.enqueue(second.id)
+        val nextNote = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val fake = FakeLlmRunner(listOf(good))
+        var calls = 0
+        val runner = object : LlmRunner by fake {
+            override suspend fun generate(prompt: String, temperature: Float): String {
+                if (++calls > 3) nextNote.await()
+                return fake.generate(prompt, temperature)
+            }
+        }
+        val worker = worker(queue, transcripts, derived(), runner)
+        val firstFinished = kotlinx.coroutines.CoroutineScope(dispatcher).async {
+            worker.requestDrainAndAwait(first.id)
+        }
+        runCurrent()
+        assertTrue(firstFinished.isCompleted)
+        assertEquals(second.id, worker.activeId.value)
+        assertTrue(second.id in worker.progress.value)
+        assertTrue(first.id !in worker.progress.value)
+        nextNote.complete(Unit)
+        advanceUntilIdle()
+        assertTrue(worker.progress.value.isEmpty())
+    }
+
+    @Test
+    fun `finishing manual analysis preserves progress of another automatic analysis`() = runTest {
+        val transcripts = transcripts()
+        val first = transcripts.save(text = "unique-alpha", language = "en", durationMs = 0)
+        val second = transcripts.save(text = "unique-beta", language = "en", durationMs = 0)
+        val queue = queue()
+        val firstGate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val secondGate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val runner = object : LlmRunner by FakeLlmRunner() {
+            override suspend fun generate(prompt: String, temperature: Float): String {
+                if ("unique-alpha" in prompt) firstGate.await() else secondGate.await()
+                return good
+            }
+        }
+        val worker = worker(queue, transcripts, derived(), runner)
+        val manual = async { worker.analyzeNow(first.id) }
+        runCurrent()
+        queue.enqueue(second.id)
+        worker.requestDrain()
+        runCurrent()
+        assertEquals(setOf(first.id, second.id), worker.progress.value.keys)
+        firstGate.complete(Unit)
+        runCurrent()
+        assertTrue(manual.isCompleted)
+        assertEquals(setOf(second.id), worker.progress.value.keys)
+        secondGate.complete(Unit)
+        advanceUntilIdle()
+        assertTrue(worker.progress.value.isEmpty())
+    }
+
+    @Test
     fun `activeId is set during an attempt and cleared after`() = runTest {
         val transcripts = transcripts()
         val saved = transcripts.save(text = "hello", language = "en-GB", durationMs = 0)
@@ -234,6 +322,7 @@ class PendingAnalysisWorkerTest {
         worker.cancel(note.id)
         advanceUntilIdle()
         assertTrue(generationCancelled)
+        assertTrue(worker.progress.value.isEmpty())
         assertEquals(1, calls)
         assertTrue(queue.pending.first().isEmpty())
         assertNull(transcripts.transcripts.first().single().analyzedAt)

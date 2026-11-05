@@ -9,6 +9,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,6 +35,11 @@ class PendingAnalysisWorker(
     private val scope: CoroutineScope,
     private val now: () -> Long = System::currentTimeMillis,
 ) {
+
+    private val completedAttempts = MutableSharedFlow<String>(extraBufferCapacity = 64)
+
+    private val _progress = MutableStateFlow<Map<String, AnalysisProgress>>(emptyMap())
+    val progress: StateFlow<Map<String, AnalysisProgress>> = _progress.asStateFlow()
 
     private val _activeId = MutableStateFlow<String?>(null)
 
@@ -63,6 +71,7 @@ class PendingAnalysisWorker(
             if (transcriptId !in cancelled.value) throw e
         } finally {
             attempts.remove(transcriptId, job)
+            completedAttempts.tryEmit(transcriptId)
         }
     }
 
@@ -82,6 +91,24 @@ class PendingAnalysisWorker(
     suspend fun requestDrainAndAwait() {
         requestDrain()
         drainJob?.join()
+    }
+
+    /** A transcription job ends when its own note is processed, not the rest of the queue. */
+    suspend fun requestDrainAndAwait(transcriptId: String) = coroutineScope {
+        val finished = async(start = CoroutineStart.UNDISPATCHED) {
+            completedAttempts.first { it == transcriptId }
+        }
+        requestDrain()
+        val drained = async { drainJob?.join() }
+        try {
+            select<Unit> {
+                finished.onAwait {}
+                drained.onAwait {}
+            }
+        } finally {
+            finished.cancel()
+            drained.cancel()
+        }
     }
 
     /**
@@ -105,7 +132,7 @@ class PendingAnalysisWorker(
         attempt(transcriptId) {
             _activeId.value = transcriptId
             try {
-                val outcome = analyzer.analyze(transcript)
+                val outcome = analyzer.analyze(transcript) { progress -> _progress.update { it + (transcript.id to progress) } }
                 currentCoroutineContext().ensureActive()
                 when (outcome) {
                     is AnalysisOutcome.Success -> applySuccess(transcriptId, outcome)
@@ -115,6 +142,7 @@ class PendingAnalysisWorker(
                     }
                 }
             } finally {
+                _progress.update { it - transcript.id }
                 _activeId.value = null
             }
         }
@@ -134,19 +162,24 @@ class PendingAnalysisWorker(
         for (entry in currentPending) {
             if (entry.transcriptId in cancelled.value) {
                 queue.remove(entry.transcriptId)
+                completedAttempts.tryEmit(entry.transcriptId)
                 continue
             }
             val transcript = currentTranscripts.firstOrNull { it.id == entry.transcriptId }
             if (transcript == null || transcript.analyzedAt != null) {
                 queue.remove(entry.transcriptId)
+                completedAttempts.tryEmit(entry.transcriptId)
                 continue
             }
-            if (entry.attempts >= MAX_ATTEMPTS) continue
+            if (entry.attempts >= MAX_ATTEMPTS) {
+                completedAttempts.tryEmit(entry.transcriptId)
+                continue
+            }
 
             attempt(entry.transcriptId) {
                 _activeId.value = entry.transcriptId
                 try {
-                    val outcome = analyzer.analyze(transcript)
+                    val outcome = analyzer.analyze(transcript) { progress -> _progress.update { it + (transcript.id to progress) } }
                     currentCoroutineContext().ensureActive()
                     when (outcome) {
                         is AnalysisOutcome.Success -> applySuccess(entry.transcriptId, outcome)
@@ -154,6 +187,7 @@ class PendingAnalysisWorker(
                             queue.recordBlock(entry.transcriptId, outcome.reason, outcome.reason.consumesAttempt())
                     }
                 } finally {
+                    _progress.update { it - transcript.id }
                     _activeId.value = null
                 }
             }

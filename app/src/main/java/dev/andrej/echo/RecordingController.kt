@@ -19,8 +19,8 @@ import kotlinx.coroutines.launch
 
 /**
  * Owns the one recording session the app can ever have, on [scope] rather than any
- * ViewModel/Service lifecycle, so it survives leaving [dev.andrej.echo.ui.capture.CaptureScreen]
- * and can be driven equally from there or from [RecordingService].
+ * ViewModel/Service lifecycle, so it survives navigation and can be driven equally from
+ * the app's recording controls or from [RecordingService].
  *
  * A take is recorded to [audioFile] under a fresh id; only on stop does it become a transcript,
  * handed to [onRecorded] for transcription.

@@ -83,6 +83,7 @@ fun SettingsScreen(
     var modelDetails by remember { mutableStateOf<NotesAiModel?>(null) }
     var pickingImportDay by remember { mutableStateOf(false) }
     var pickingTheme by remember { mutableStateOf(false) }
+    var confirmingNoModel by remember { mutableStateOf(false) }
     var confirmingDeleteAll by remember { mutableStateOf(false) }
     val versionName = remember {
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }
@@ -101,7 +102,7 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.gapSection),
         ) {
             Section(
-                title = "MODELS",
+                title = "TRANSCRIPTION",
                 rows = listOf(
                     {
                         DisclosureRow(
@@ -111,20 +112,7 @@ fun SettingsScreen(
                             onClick = { pickingSpeechModel = true },
                         )
                     },
-                    {
-                        DisclosureRow(
-                            iconRes = R.drawable.ic_cpu,
-                            label = "Notes AI model",
-                            subtitle = "${state.notesAiModels.firstOrNull { it.active }?.model?.title ?: NotesAiModel.Default.title} · ${modelStatus(aiState)}",
-                            onClick = { managingAiModel = true },
-                        )
-                    },
-                ),
-            )
 
-            Section(
-                title = "TRANSCRIPTION",
-                rows = listOf(
                     {
                         DisclosureRow(
                             iconRes = R.drawable.ic_mic,
@@ -153,12 +141,21 @@ fun SettingsScreen(
             )
 
             Section(
-                title = "NEW NOTES",
+                title = "NOTES",
                 rows = listOf(
+                    {
+                        DisclosureRow(
+                            iconRes = R.drawable.ic_cpu,
+                            label = "Notes model",
+                            subtitle = state.notesAiModels.firstOrNull { it.active && it.state is ModelState.Ready }?.model?.title ?: "None",
+                            onClick = { managingAiModel = true },
+                        )
+                    },
+
                     {
                         SwitchRow(
                             iconRes = R.drawable.ic_sparkles,
-                            label = "Analyze new notes automatically",
+                            label = "Analyze notes automatically",
                             subtitle = "Create summaries and tasks after transcription",
                             checked = state.autoAnalyze,
                             onCheckedChange = onAutoAnalyzeChange,
@@ -284,7 +281,29 @@ fun SettingsScreen(
         )
     }
 
-    Sheet(visible = managingAiModel, onDismiss = { managingAiModel = false }) {
+    PickerSheet<NotesAiModel?>(
+        visible = managingAiModel && modelDetails == null,
+        title = "Notes model",
+        options = listOf("None" to null) + state.notesAiModels.map { it.model.title to it.model },
+        selected = state.notesAiModels.firstOrNull { it.active && it.state is ModelState.Ready }?.model,
+        subtitle = { model -> state.notesAiModels.firstOrNull { it.model == model }?.let(::modelStatusLine) },
+        onPick = { model ->
+            if (model == null) {
+                managingAiModel = false
+                confirmingNoModel = true
+            } else if (state.notesAiModels.any { it.model == model && it.state is ModelState.Ready }) {
+                onSelectNotesAiModel(model)
+                managingAiModel = false
+            } else {
+                modelDetails = model
+            }
+        },
+        onDismiss = { managingAiModel = false },
+    )
+    Sheet(visible = managingAiModel && modelDetails != null, onDismiss = {
+        managingAiModel = false
+        modelDetails = null
+    }) {
         NotesAiModelSheet(
             models = state.notesAiModels,
             activeAiState = aiState,
@@ -303,6 +322,17 @@ fun SettingsScreen(
             },
         )
     }
+    ConfirmSheet(
+        visible = confirmingNoModel,
+        title = "Use no Notes model?",
+        message = "This will delete the active model. Analyzing notes will be unavailable until you select and download a model.",
+        confirmLabel = "Delete active model",
+        onConfirm = {
+            confirmingNoModel = false
+            onDeleteModel("none")
+        },
+        onDismiss = { confirmingNoModel = false },
+    )
 
     PickerSheet(
         visible = pickingTheme,

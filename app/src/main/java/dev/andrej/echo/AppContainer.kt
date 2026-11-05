@@ -336,12 +336,13 @@ class AppContainer(context: Context) {
     }
 
     fun deleteModel(modelId: String = modelSelection.active.value.id) {
-        val model = NotesAiModel.fromId(modelId)
+        val disable = modelId == "none"
+        val model = if (disable) modelSelection.active.value else NotesAiModel.fromId(modelId)
         appScope.launch {
-            if (downloadTarget.value == model) downloadJob?.cancelAndJoin()
+            if (disable || downloadTarget.value == model) downloadJob?.cancelAndJoin()
             modelSlot.evictLlm(model.id)
             modelStores.getValue(model).delete()
-            modelSelection.modelRemoved(model)
+            if (disable) modelSelection.disable() else modelSelection.modelRemoved(model)
             pendingAnalysisWorker.requestDrain()
         }
     }

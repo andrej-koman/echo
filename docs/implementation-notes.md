@@ -42,7 +42,7 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
   `Transcriptions.transcribe`; a take with no audio is discarded. Afterwards the PCM is encoded to
   AAC `source` (`AudioEncoder`, 32 kbps — ~14 MB/hour instead of 115) and deleted. Encoding goes
   to `source.part` and is renamed: a half-written `source` would read as an import.
-- **No live text while recording, and no Processing screen.** Stop leaves Capture at once; Whisper runs
+- **No live text while recording, and no Processing screen.** Stop closes the compact recording row; Whisper runs
   as a WorkManager job (minutes, not seconds) and the note's badge shows "Transcribing… N%".
   The note's own screen streams the text in as Whisper hears it (see Import and Whisper).
 - Pause/resume append to the same file (resume waits for the paused read to finish first).
@@ -52,8 +52,10 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
   `micFailed` instead of losing the take.
 - Every take runs under `RecordingService` (microphone foreground type), started from
   `RecordViewModel.startRecording` too — not only from the notification — so leaving the app
-  keeps recording. Capture's chevron leaves the screen and keeps recording; the tab bar's record
-  button (`launchSingleTop`) or the notification returns to it.
+  keeps recording. Recording stays on the current page with a persistent row above the tabs:
+  waveform, captured time, pause/resume and microphone interruption status. The center record
+  button becomes Stop across navigation. Notification entry reuses the active take.
+  Model warmup starts with recording, rather than when its app-scoped ViewModel is created.
 - **Startup recovery** (`Transcriptions.recoverInterruptedRecordings`): an `audio.pcm` with no
   transcript row is a take whose process died before Stop; it is filed with its length and
   queued. Called once from `AppContainer.init`, before any take can exist.
@@ -218,7 +220,7 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
 Wireless debugging drops often: `adb connect <ip:port>` from Settings → Developer options → Wireless debugging.
 There are no instrumented tests (the old `RecordScreenTest` tested live recognizer text). Grant
 the mic without the dialog: `adb shell pm grant dev.andrej.echo android.permission.RECORD_AUDIO`.
-Capture opens behind a locked keyguard (`am start -n dev.andrej.echo/.MainActivity --ez
+Recording starts behind a locked keyguard (`am start -n dev.andrej.echo/.MainActivity --ez
 open_capture true`) and records, but Stop can't be tapped — `am force-stop` then leaves the take
 for startup recovery.
 
@@ -246,7 +248,7 @@ ui/folders/   FoldersScreen (the Folders tab) + FoldersViewModel (FolderIcon), F
               folder's notes), FolderSheet (create/edit/delete)
 ui/tasks/     TaskRows (TaskGroupCard/TaskRow/TaskCheckbox for the note screen), EditTaskScreen +
               TasksViewModel
-ui/capture/   CaptureScreen — recording, paused
+ui/capture/   RecordingRow — compact recording and paused controls
 ui/record/    RecordViewModel + RecordUiState over RecordingController (still named for its old screen)
 ui/onboarding/ OnboardingScreen + OnboardingSteps (the 5 first-run screens), OnboardingViewModel
 ui/profile/   SettingsScreen + SettingsViewModel (the Settings tab), StorageScreen, HistoryScreen +
@@ -494,7 +496,7 @@ Onboarding is ported from the separate "Echo Onboarding" Design artifact
   its bars are a scrolling history of the real mic level, so they keep moving regardless.
 - Haptics live in `ui/theme/Haptics.kt`, reached with `rememberEchoHaptics()`. Four calls:
   `tick()` (every button, icon button and tab tap), `engage()` / `release()` (record button down
-  and stop), `success()` (the take is filed away, on leaving Capture). Everything but `success()`
+  and stop), `success()` (the take is filed away). Everything but `success()`
   goes through `View.performHapticFeedback`, which already honours the system haptic setting.
   `success()` needs `VibrationEffect.EFFECT_DOUBLE_CLICK` and so needs the `VIBRATE` permission
   and its own check of `Settings.System.HAPTIC_FEEDBACK_ENABLED`.
@@ -518,14 +520,14 @@ model download progress (`ModelDownloadNotifier`), and transcription progress (p
   `EXTRA_OPEN_CAPTURE`, an `Intent` extra rather than a Navigation-Compose deep link: `EchoApp`
   renders `OnboardingScreen` *outside* the `NavHost`, so a cold-start `handleDeepLink` would be
   dropped. `MainActivity` holds the flag in `Activity` state (the extra removed each time so a
-  config-change recreation doesn't renavigate) and passes it to `MainApp`'s `NavHost`.
+  config-change recreation doesn't renavigate) and passes it to `MainApp` to start recording.
   `FLAG_ACTIVITY_SINGLE_TOP` as an *Intent* flag gets `onNewIntent` delivery against the default
   `standard` launch mode.
-- `POST_NOTIFICATIONS` is requested by Capture together with `RECORD_AUDIO` (API 33+): the
+- `POST_NOTIFICATIONS` is requested when starting a recording together with `RECORD_AUDIO` (API 33+): the
   recording controls and transcription progress live in notifications. Only the mic is required
   to record; denied notifications mean `notify()` silently no-ops.
 - The recording notification is Idle ("tap to record"), Recording or Paused (`RecordingMode`),
-  with Pause/Resume and Stop actions into `RecordingService`; tapping it opens Capture. It is
+  with Pause/Resume and Stop actions into `RecordingService`; tapping it opens the app with the recording row. It is
   re-posted only when the mode changes — the controller's state ticks ten times a second.
 - **`R.drawable.ic_notification_echo`** is the one `smallIcon` on every channel — the launcher's
   stroked ghost closes into a grey blob at 12–24dp, so this is the same silhouette flattened to a
@@ -542,6 +544,16 @@ model download progress (`ModelDownloadNotifier`), and transcription progress (p
   Widgets", Claude Design project `e17770fa-3b8d-43f1-b85d-c74c647c4e70`).
 
 ## On-device AI
+
+- Analysis is an explicit transcription-job phase: the job waits for the analysis queue, so
+  leaving its last speech status in place would show “Finding speakers… 100%” until analysis ends.
+  The same detail progress row shows “Analyzing…”, the running runner's model name, and completion
+  of summary, optional merge, intent and task steps. Retries do not advance the percentage;
+  skipped task extraction completes its step. Manual analysis uses the same progress stream.
+  Progress is keyed by note and clears on completion, failure or cancellation. Each transcription
+  job waits only for its own analysis attempt, so other queued notes cannot hold it at 100%.
+  WorkManager retains phase progress for automatic analysis. This is step completion, not an
+  elapsed-time estimate.
 
 Analysis runs on a downloaded model, the only backend. `LlmRunnerProvider` still takes an ordered
 list and caches the first usable runner (`NeedsDownload` beats the next candidate — the download
@@ -561,8 +573,8 @@ is the user's call), so a smaller per-tier model (Phase 2) slots in as one more 
   the pin and the library together, and don't take the repo's `gpu_composites` file: it needs a
   LiteRT-LM newer than 0.18.1.
 - `Engine.initialize()` costs ~19s against ~5s of inference, so it is held open between calls
-  and warmed up when Capture opens, from an application-scoped coroutine in `AppContainer` —
-  leaving Capture must not cancel a half-finished init.
+  and warmed up when recording starts, from an application-scoped coroutine in `AppContainer` —
+  navigating away must not cancel a half-finished init.
 - **One large model in memory at a time** (`ai/ModelSlot`). Whisper Large and the LLM together
   had the low-memory killer take the app even in the foreground, then again on every relaunch
   as WorkManager resumed the job — it looked like a crash loop with an empty crash buffer
@@ -606,8 +618,8 @@ hard cuts like the rest of the app; system back steps back, and leaves the app o
   the design) so the first note isn't stuck "waiting for model" with no way forward. A note
   recorded mid-download queues and auto-analyses when the model lands (existing drain trigger).
 - **Paths:** Skip (steps 1–2) → Microphone, never past it. Allow → system dialog; granted →
-  First note, denied → finish → Notes. Not now → finish → Notes (Capture asks again later). The
-  record button → finish, then `MainApp` opens straight on Capture through the same
+  First note, denied → finish → Notes. Not now → finish → Notes (the record button asks again later). The
+  record button → finish, then `MainApp` starts recording on Notes through the same
   pending-open-capture flag the recording notification uses. "I'll do it later" → finish → Notes.
 - Voice-to-tasks' three example rows are a static `DemoItemRow` with per-kind icons
   (bell / list-checks / calendar), not `TaskRow` — real `TodoItem`s have no kind.

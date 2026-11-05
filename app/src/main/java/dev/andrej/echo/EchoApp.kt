@@ -1,5 +1,8 @@
 package dev.andrej.echo
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -13,6 +16,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.getValue
@@ -21,6 +25,8 @@ import androidx.compose.runtime.Composable
 import dev.andrej.echo.ui.components.LocalBarCenter
 import dev.andrej.echo.ui.components.LocalBottomBarHeight
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.CompositionLocalProvider
@@ -33,6 +39,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -43,7 +50,9 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import dev.andrej.echo.ai.AiCardState
 import dev.andrej.echo.data.ThemeMode
-import dev.andrej.echo.ui.capture.CaptureScreen
+import dev.andrej.echo.ui.capture.RecordingRow
+import dev.andrej.echo.ui.capture.TAG_RECORD_BUTTON
+import dev.andrej.echo.ui.record.RecordUiState
 import dev.andrej.echo.ui.components.RecordButton
 import dev.andrej.echo.ui.components.RecordButtonSize
 import dev.andrej.echo.ui.components.RecordButtonState
@@ -75,7 +84,6 @@ private object Routes {
     const val NOTES = "notes"
     const val FOLDERS = "folders"
     const val CALENDAR = "calendar"
-    const val CAPTURE = "capture"
     const val SETTINGS = "settings"
     const val STORAGE = "storage"
     const val DICTIONARY = "dictionary"
@@ -155,6 +163,26 @@ private fun MainApp(
     val density = LocalDensity.current
     var barHeight by remember { mutableStateOf(0.dp) }
 
+    val recordViewModel: RecordViewModel = viewModel(factory = viewModelFactory)
+    val recording by recordViewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        if (grants[Manifest.permission.RECORD_AUDIO] == true) recordViewModel.startRecording()
+    }
+    val startRecording = {
+        if (!recording.isRecording) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                recordViewModel.startRecording()
+            } else {
+                permissionLauncher.launch(
+                    if (Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS)
+                    else arrayOf(Manifest.permission.RECORD_AUDIO),
+                )
+            }
+        }
+    }
+    var recordingRowHeight by remember { mutableStateOf(0.dp) }
+
     val foldersViewModel: FoldersViewModel = viewModel(factory = viewModelFactory)
     val notesViewModel: NotesViewModel = viewModel(factory = viewModelFactory)
 
@@ -176,7 +204,7 @@ private fun MainApp(
 
     LaunchedEffect(pendingOpenCapture) {
         if (pendingOpenCapture) {
-            navController.navigate(Routes.CAPTURE) { launchSingleTop = true }
+            startRecording()
             onOpenCaptureHandled()
         }
     }
@@ -189,7 +217,13 @@ private fun MainApp(
             NavHost(
                 navController = navController,
                 startDestination = Routes.NOTES,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().padding(
+                    bottom = when {
+                        !recording.isRecording -> 0.dp
+                        onTabs || onNote -> recordingRowHeight
+                        else -> barHeight
+                    },
+                ),
                 enterTransition = { EnterTransition.None },
                 exitTransition = { ExitTransition.None },
                 popEnterTransition = { EnterTransition.None },
@@ -232,14 +266,6 @@ private fun MainApp(
                         notesViewModel = notesViewModel,
                         onPickDay = historyViewModel::pick,
                         onOpen = { navController.navigate(Routes.detail(it)) },
-                    )
-                }
-
-                composable(Routes.CAPTURE) {
-                    val recordViewModel: RecordViewModel = viewModel(factory = viewModelFactory)
-                    CaptureScreen(
-                        viewModel = recordViewModel,
-                        onDone = { navController.popBackStack() },
                     )
                 }
 
@@ -299,13 +325,14 @@ private fun MainApp(
 
                 composable(Routes.DETAIL) { entry ->
                     val notesViewModel: NotesViewModel = viewModel(factory = viewModelFactory)
-                    CompositionLocalProvider(LocalBottomBarHeight provides barHeight) {
+                    CompositionLocalProvider(LocalBottomBarHeight provides (barHeight - if (recording.isRecording) recordingRowHeight else 0.dp).coerceAtLeast(0.dp)) {
                     NoteDetailScreen(
                         viewModel = notesViewModel,
                         noteId = entry.arguments?.getString("id").orEmpty(),
                         onDeleted = { navController.popBackStack() },
                         onBack = { navController.popBackStack() },
                         onEditTask = { navController.navigate(Routes.editTask(it)) },
+                        recording = recording.isRecording,
                     )
                     }
                 }
@@ -321,7 +348,7 @@ private fun MainApp(
                 }
             }
 
-            if (onTabs || onNote) {
+            if (onTabs || onNote || recording.isRecording) {
                 AnimatedVisibility(
                     visible = openSheets.intValue == 0,
                     enter = fadeIn(),
@@ -330,8 +357,12 @@ private fun MainApp(
                 ) {
                     BottomBar(
                         selected = selectedTab,
-                        navController = navController,
-                        showRecord = !onNote,
+                        showRecord = !onNote || recording.isRecording,
+                        recording = recording,
+                        onRecord = { if (recording.isRecording) recordViewModel.stopRecording() else startRecording() },
+                        onPause = recordViewModel::pause,
+                        onResume = recordViewModel::resume,
+                        onRecordingRowHeight = { recordingRowHeight = it },
                         onSelect = { tab -> if (tab != route) navController.selectTab(tab) },
                         modifier = Modifier.onSizeChanged { barHeight = with(density) { it.height.toDp() } },
                     )
@@ -359,13 +390,26 @@ private fun NavHostController.selectTab(route: String) {
 @Composable
 private fun BottomBar(
     selected: String,
-    navController: NavHostController,
     showRecord: Boolean,
+    recording: RecordUiState,
+    onRecord: () -> Unit,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
+    onRecordingRowHeight: (androidx.compose.ui.unit.Dp) -> Unit,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxWidth()) {
+        val density = LocalDensity.current
         Column(modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter)) {
+            if (recording.isRecording) {
+                RecordingRow(
+                    state = recording,
+                    onPause = onPause,
+                    onResume = onResume,
+                    modifier = Modifier.onSizeChanged { onRecordingRowHeight(with(density) { it.height.toDp() }) },
+                )
+            }
             TabBar(
                 items = Tabs,
                 selected = selected,
@@ -398,9 +442,10 @@ private fun BottomBar(
             )
             if (showRecord) {
                 RecordButton(
-                    state = RecordButtonState.Idle,
-                    onClick = { navController.navigate(Routes.CAPTURE) { launchSingleTop = true } },
+                    state = if (recording.isRecording) RecordButtonState.Recording else RecordButtonState.Idle,
+                    onClick = onRecord,
                     size = RecordButtonSize.Sm,
+                    modifier = Modifier.testTag(TAG_RECORD_BUTTON),
                 )
             } else {
                 // RecordButton centres its disc in a box 1.55× its diameter (room for the pulse);

@@ -232,6 +232,9 @@ class RecordingControllerTest {
         var started = false
         val viewModel = RecordViewModel(controller(), onStarted = { started = true }, warmup = { warmed = true })
 
+        assertFalse(warmed)
+        assertFalse(started)
+
         viewModel.startRecording()
         advanceUntilIdle()
 

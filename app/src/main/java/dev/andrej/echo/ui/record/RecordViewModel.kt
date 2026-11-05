@@ -30,11 +30,8 @@ class RecordViewModel(
 
     val uiState: StateFlow<RecordUiState> = controller.state
 
-    init {
-        warmup()
-    }
-
     fun startRecording() {
+        warmup()
         controller.startRecording()
         onStarted()
     }

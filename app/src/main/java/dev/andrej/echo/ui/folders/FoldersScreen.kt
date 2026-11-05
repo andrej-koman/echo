@@ -106,7 +106,7 @@ fun FoldersScreen(
                             Text("YOUR FOLDERS", style = EchoTheme.typography.micro,
                                 color = EchoTheme.colors.textTertiary)
                             if (state.folders.isEmpty()) {
-                                Text("No folders yet. Tap + to create your first folder.",
+                                Text("Tap + to create your first folder",
                                     style = EchoTheme.typography.body,
                                     color = EchoTheme.colors.textSecondary)
                             } else {

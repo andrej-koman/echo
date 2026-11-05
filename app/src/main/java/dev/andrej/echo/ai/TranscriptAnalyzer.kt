@@ -10,6 +10,8 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
+data class AnalysisProgress(val transcriptId: String, val model: String, val fraction: Float)
+
 /**
  * Owns the prompts and the parsing for every backend, so a new [LlmRunner] costs one class and
  * no prompt tuning. Never throws: a failed analysis leaves the transcript as it was.
@@ -38,7 +40,10 @@ class TranscriptAnalyzer(
         }
     }
 
-    suspend fun analyze(transcript: Transcript): AnalysisOutcome {
+    suspend fun analyze(
+        transcript: Transcript,
+        onProgress: (AnalysisProgress) -> Unit = {},
+    ): AnalysisOutcome {
         if (transcript.text.isBlank()) return AnalysisOutcome.Blocked(AnalysisBlock.EmptyTranscript)
 
         val runner = when (val ready = readyRunner()) {
@@ -50,6 +55,15 @@ class TranscriptAnalyzer(
         val lines = timed.map { it.text }.ifEmpty { sentences(transcript.text) }
         val chunks = chunkLines(lines, CHUNK_WORDS)
 
+        val totalSteps = chunks.size * 3 + if (chunks.size > 1) 1 else 0
+        var completedSteps = 0
+        fun progress() = onProgress(AnalysisProgress(transcript.id, runner.modelName, completedSteps.toFloat() / totalSteps))
+        fun completed() {
+            completedSteps++
+            progress()
+        }
+        progress()
+
         val recordedAt = Instant.ofEpochMilli(transcript.createdAt).atZone(zone).toLocalDateTime()
         // Deliberately today's wall-clock day, not recordedAt's: re-analysing a month-old note
         // should resolve its relative phrases against that note's own moment (the prompt),
@@ -58,16 +72,20 @@ class TranscriptAnalyzer(
 
         return try {
             val parts = chunks.map { chunk ->
-                generate(runner, buildSummaryPrompt(chunk.joinToString(" ") { it.value }), ::parseSummary)
+                generate(runner, buildSummaryPrompt(chunk.joinToString(" ") { it.value }), ::parseSummary).also { completed() }
             }
-            val summary = parts.singleOrNull() ?: generate(runner, buildMergePrompt(parts), ::parseSummary)
+            val summary = parts.singleOrNull() ?: generate(runner, buildMergePrompt(parts), ::parseSummary).also { completed() }
 
             val items = chunks.flatMap { chunk ->
                 val plans = generate(runner, buildIntentPrompt(chunk.joinToString(" ") { it.value }), ::parseIntent)
-                if (!plans) return@flatMap emptyList()
+                completed()
+                if (!plans) {
+                    completed()
+                    return@flatMap emptyList()
+                }
                 generate(runner, buildTasksPrompt(chunk, recordedAt)) { raw ->
                     parseTasks(raw, zone, today, recordedAt) { line -> timed.getOrNull(line)?.startMs }
-                }
+                }.also { completed() }
             }
 
             AnalysisOutcome.Success(Analysis(summary.title, summary.summary, items))

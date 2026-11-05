@@ -20,7 +20,7 @@ class NotesAiSelection(
     private val stores: Map<NotesAiModel, ModelStore>,
 ) {
 
-    private val _active = MutableStateFlow(NotesAiModel.fromId(settings.notesAiModel))
+    private val _active = MutableStateFlow(NotesAiModel.fromId(settings.notesAiModel?.removePrefix("none:")))
     val active: StateFlow<NotesAiModel> = _active.asStateFlow()
 
     fun statuses(states: List<ModelState>): List<NotesAiModelStatus> =
@@ -28,7 +28,7 @@ class NotesAiSelection(
             NotesAiModelStatus(
                 model = model,
                 state = states[index],
-                active = _active.value == model,
+                active = settings.notesAiModel?.startsWith("none:") != true && _active.value == model,
                 pending = settings.pendingNotesAiModel == model.id,
             )
         }
@@ -65,6 +65,11 @@ class NotesAiSelection(
     /** A cancelled or failed download leaves the previous active choice intact. */
     fun downloadEnded(model: NotesAiModel) {
         if (settings.pendingNotesAiModel == model.id) settings.pendingNotesAiModel = null
+    }
+
+    fun disable() {
+        settings.notesAiModel = "none:${_active.value.id}"
+        settings.pendingNotesAiModel = null
     }
 
     fun modelRemoved(model: NotesAiModel) {

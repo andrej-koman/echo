@@ -29,6 +29,20 @@ class TranscriptAnalyzerTest {
         TranscriptAnalyzer({ runner }, { segments }, UTC, logDebug = {}, logWarn = {})
 
     @Test
+    fun `analysis reports progress only after successful steps including skipped tasks`() = runTest {
+        val progress = mutableListOf<Float>()
+        val runner = FakeLlmRunner(listOf("invalid", summary, plans, tasks))
+        val outcome = analyzer(runner).analyze(transcript(), onProgress = { progress += it.fraction })
+        assertTrue(outcome is AnalysisOutcome.Success)
+        assertEquals(listOf(0f, 1f / 3, 2f / 3, 1f), progress)
+
+        progress.clear()
+        analyzer(FakeLlmRunner(listOf(summary, """{"plans":false}""")))
+            .analyze(transcript(), onProgress = { progress += it.fraction })
+        assertEquals(listOf(0f, 1f / 3, 2f / 3, 1f), progress)
+    }
+
+    @Test
     fun `summary and tasks come from separate prompts`() = runTest {
         val runner = FakeLlmRunner(listOf(summary, plans, tasks))
 
@@ -58,7 +72,9 @@ class TranscriptAnalyzerTest {
         val merged = """{"title":"Whole note","summary":"All of it."}"""
         val runner = FakeLlmRunner(listOf(summary, summary, merged, plans, """{"items":[]}""", plans, """{"items":[]}"""))
 
-        val analysis = (analyzer(runner, segments).analyze(transcript(words)) as AnalysisOutcome.Success).analysis
+        val progress = mutableListOf<Float>()
+        val analysis = (analyzer(runner, segments).analyze(transcript(words)) { progress += it.fraction } as AnalysisOutcome.Success).analysis
+        assertEquals((0..7).map { it / 7f }, progress)
 
         assertEquals("Whole note", analysis.title)
         assertTrue(runner.prompts[2].contains("Part 2"))
@@ -89,8 +105,10 @@ class TranscriptAnalyzerTest {
     fun `it gives up after the retry`() = runTest {
         val runner = FakeLlmRunner(listOf("nope", "still nope"))
 
-        val outcome = analyzer(runner).analyze(transcript())
+        val progress = mutableListOf<Float>()
+        val outcome = analyzer(runner).analyze(transcript()) { progress += it.fraction }
 
+        assertEquals(listOf(0f), progress)
         assertEquals(AnalysisOutcome.Blocked(AnalysisBlock.EmptyResult), outcome)
         assertEquals(2, runner.prompts.size)
     }

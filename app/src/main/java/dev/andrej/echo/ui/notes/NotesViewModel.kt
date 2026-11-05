@@ -101,6 +101,7 @@ class NotesViewModel(
     private val query = MutableStateFlow("")
 
     val analyzingId: StateFlow<String?> = worker.activeId
+    val analysisProgress: StateFlow<Map<String, dev.andrej.echo.ai.AnalysisProgress>> = worker.progress
 
     val transcripts: StateFlow<List<Transcript>> = repository.transcripts
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -262,14 +263,16 @@ internal fun rows(
 }
 
 internal fun Work.pendingCopies(): Map<String, PendingCopy> =
-    pendingCopyByTranscript(queued.values.toList()) + statuses.mapValues { it.value.toPendingCopy() }
+    pendingCopyByTranscript(queued.values.toList()) +
+        listOfNotNull(analyzingId?.let { it to PendingCopy("Analyzing…", PendingSeverity.Parked) }).toMap() +
+        statuses.mapValues { it.value.toPendingCopy() }
 
 /** Transcription wins over analysis: a note is analyzed only once its text is in. */
 internal fun stage(transcript: Transcript, work: Work): NoteStage {
     when (val status = work.statuses[transcript.id]) {
         TranscriptionStatus.Queued, is TranscriptionStatus.DownloadingModel -> return NoteStage.Waiting
         is TranscriptionStatus.Transcribing -> return NoteStage.Transcribing(status.fraction)
-        is TranscriptionStatus.FindingSpeakers -> return NoteStage.Analyzing
+        is TranscriptionStatus.FindingSpeakers, is TranscriptionStatus.Analyzing -> return NoteStage.Analyzing
         TranscriptionStatus.Failed -> return NoteStage.Failed
         null -> Unit
     }
@@ -297,6 +300,8 @@ internal fun TranscriptionStatus.toPendingCopy(): PendingCopy = when (this) {
         PendingCopy("Transcribing… ${(fraction * 100).toInt()}%", PendingSeverity.Parked)
     is TranscriptionStatus.FindingSpeakers ->
         PendingCopy("Finding speakers… ${(fraction * 100).toInt()}%", PendingSeverity.Parked)
+    is TranscriptionStatus.Analyzing ->
+        PendingCopy("Analyzing… ${(fraction * 100).toInt()}%", PendingSeverity.Parked)
     TranscriptionStatus.Failed -> PendingCopy("Transcription failed — tap retry", PendingSeverity.Failed)
 }
 

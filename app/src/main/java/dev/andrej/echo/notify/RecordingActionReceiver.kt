@@ -12,7 +12,7 @@ import dev.andrej.echo.RecordingService
 /**
  * The idle notification's Record action. A Service can't prompt for a runtime permission, so this
  * branches: if RECORD_AUDIO is already granted it starts [RecordingService] directly (headless,
- * no UI); otherwise it opens [MainActivity] straight to Capture, which already has the request flow.
+ * no UI); otherwise it opens [MainActivity] with the recording permission request flow.
  */
 class RecordingActionReceiver : BroadcastReceiver() {
 

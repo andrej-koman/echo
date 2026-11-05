@@ -74,6 +74,7 @@ sealed interface TranscriptionStatus {
     data class DownloadingModel(val fraction: Float) : TranscriptionStatus
     data class Transcribing(val fraction: Float) : TranscriptionStatus
     data class FindingSpeakers(val fraction: Float) : TranscriptionStatus
+    data class Analyzing(val fraction: Float = 0f, val model: String = "") : TranscriptionStatus
     data object Failed : TranscriptionStatus
 }
 
@@ -439,7 +440,21 @@ class Transcriptions(
             analysisQueue.enqueue(id)
             // Stop can arrive while the queue write is suspended.
             if (id in stops.value) analysisQueue.remove(id)
-            else analysis.requestDrainAndAwait()
+            else coroutineScope {
+                report(TranscriptionStatus.Analyzing())
+                val progress = launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                    analysis.progress.collect { running ->
+                        running[id]?.let { current ->
+                            report(TranscriptionStatus.Analyzing(current.fraction, current.model))
+                        }
+                    }
+                }
+                try {
+                    analysis.requestDrainAndAwait(id)
+                } finally {
+                    progress.cancel()
+                }
+            }
         }
         })
     }
@@ -504,6 +519,7 @@ class Transcriptions(
             is TranscriptionStatus.DownloadingModel -> workDataOf(KEY_PHASE to "download", KEY_FRACTION to fraction)
             is TranscriptionStatus.Transcribing -> workDataOf(KEY_PHASE to "transcribe", KEY_FRACTION to fraction)
             is TranscriptionStatus.FindingSpeakers -> workDataOf(KEY_PHASE to "speakers", KEY_FRACTION to fraction)
+            is TranscriptionStatus.Analyzing -> workDataOf(KEY_PHASE to "analyze", KEY_FRACTION to fraction, "model" to model)
             else -> Data.EMPTY
         }
 
@@ -513,6 +529,7 @@ class Transcriptions(
                 "download" -> TranscriptionStatus.DownloadingModel(fraction)
                 "transcribe" -> TranscriptionStatus.Transcribing(fraction)
                 "speakers" -> TranscriptionStatus.FindingSpeakers(fraction)
+                "analyze" -> TranscriptionStatus.Analyzing(fraction, getString("model").orEmpty())
                 else -> null
             }
         }

@@ -123,6 +123,11 @@ class SqlTranscriptRepository(
         Unit
     }
 
+    override suspend fun rename(id: String, title: String) = withContext(ioDispatcher) {
+        val trimmed = title.trim()
+        if (trimmed.isNotEmpty()) queries.rename(trimmed, id)
+        Unit
+    }
 
     override suspend fun moveToFolder(id: String, folderId: String?) = withContext(ioDispatcher) {
         queries.setFolder(folderId, id)

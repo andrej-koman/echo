@@ -57,7 +57,8 @@ interface TranscriptRepository {
         analyzedAt: Long = System.currentTimeMillis(),
     )
 
-    /** Null restores the original. */
+    /** A nonblank title chosen by the user; later analysis keeps it. */
+    suspend fun rename(id: String, title: String)
 
     /** Null takes it out of any folder. */
     suspend fun moveToFolder(id: String, folderId: String?)

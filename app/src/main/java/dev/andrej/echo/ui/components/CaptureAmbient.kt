@@ -5,7 +5,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,58 +13,13 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.unit.dp
 import dev.andrej.echo.ui.theme.Bronze400
-import dev.andrej.echo.ui.theme.Bronze500
 import dev.andrej.echo.ui.theme.EchoTheme
 import dev.andrej.echo.ui.theme.LocalReducedMotion
-import dev.andrej.echo.ui.theme.echoShadow
 import kotlin.math.abs
-
-private const val RIPPLE_PERIOD_MS = 2600
-private const val RIPPLE_COUNT = 3
-
-/** The three clay rings the board expands out from behind the mascot while listening. */
-@Composable
-fun RecordRipples(modifier: Modifier = Modifier) {
-    if (LocalReducedMotion.current) return
-
-    val transition = rememberInfiniteTransition(label = "ripples")
-    val cycle by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(RIPPLE_PERIOD_MS, easing = LinearEasing),
-        ),
-        label = "ripplePhase",
-    )
-
-    val color = EchoTheme.colors.recordLive
-    val easing = EchoTheme.motion.easeOutSoft
-
-    repeat(RIPPLE_COUNT) { index ->
-        val phase = (cycle + index.toFloat() / RIPPLE_COUNT) % 1f
-        val scale = 0.86f + easing.transform(phase) * (1.55f - 0.86f)
-        val alpha = (0.5f * (1f - phase / 0.7f)).coerceAtLeast(0f)
-
-        Canvas(modifier = modifier.size(118.dp).scale(scale)) {
-            drawCircle(
-                color = color.copy(alpha = alpha),
-                radius = size.minDimension / 2f - 1.dp.toPx(),
-                style = Stroke(width = 2.dp.toPx()),
-            )
-        }
-    }
-}
 
 /** Three bronze dots that hop in sequence while Echo is thinking. */
 @Composable

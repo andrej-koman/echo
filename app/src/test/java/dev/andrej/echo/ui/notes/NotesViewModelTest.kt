@@ -96,12 +96,6 @@ class NotesViewModelTest {
     }
 
     @Test
-    fun `spoken total switches to hours past sixty minutes`() {
-        assertEquals("14m", spokenTotal(TimeUnit.MINUTES.toMillis(14)))
-        assertEquals("2h 14m", spokenTotal(TimeUnit.MINUTES.toMillis(134)))
-    }
-
-    @Test
     fun `rows are newest first with a relative date`() {
         val now = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 12) }.timeInMillis
         val day = TimeUnit.DAYS.toMillis(1)

@@ -306,6 +306,11 @@ Haptics and reduced motion still follow Android, without inactive Settings switc
 ## Notes
 
 - No Room: KSP has no release matching Kotlin 2.4.10.
+- **Backup policy:** Android cloud backup and device transfer exclude all app storage domains,
+  including device-protected storage. `allowBackup=false` is paired with legacy full-backup and
+  Android 12+ extraction exclusions because some manufacturers transfer data despite that flag.
+  Notes and audio leave through explicit Share/export only; there is no automatic restore on a new phone.
+  Rules follow https://developer.android.com/identity/data/autobackup.
 - **Fully offline, no account.** Google sign-in, Supabase auth and sync were removed
   (2026-10-29). The only network traffic left is the LLM weights download (`HttpModelDownloader`,
   hence `INTERNET`) and the system's own speech language-pack download. The remote Supabase
@@ -315,6 +320,10 @@ Haptics and reduced motion still follow Android, without inactive Settings switc
   Note cards prefer `title`/`summary` when present. Since Phase 5 `summary` is the
   gist — a sentence or two, a short paragraph or bullets for a long note. Summaries appear only
   as note-card descriptions in the UI; note details have no Summary tab, and Tasks contains only tasks.
+- Note details' **More → Rename note** edits the displayed title, including its text-derived
+  fallback before analysis. Save trims whitespace and requires a nonblank title; Cancel discards
+  the draft. Renaming sets `transcript.titleByUser`, so re-analysis can refresh the summary and
+  tasks without replacing the user's title, including when analysis was already running.
 - Task and Reminder unified into one `TodoItem` (`text`, `dueAt` — never null, `hasTime`,
   `done`). A speaker who names no date at all still gets an item due **today**; `hasTime`
   records only whether a clock time was stated. `resolveDue` (in `ai/AnalysisPrompt.kt`)
@@ -490,8 +499,8 @@ Onboarding is ported from the separate "Echo Onboarding" Design artifact
   `tnum` feature (nor does Google Fonts' variable DM Sans 4.004), so digits are proportional and
   a ticking timer jitters slightly — `fontFeatureSettings = "tnum"` would silently do nothing. The mascot is a raster `drawable-xxxhdpi/mascot_echo.png` (the polished
   artwork) on a square 1024px canvas with the ghost centred in it — `Mascot` renders it with
-  `ContentScale.Fit` into a square, so a non-square canvas both shrinks and offsets him. Three
-  prop variants sit beside it (`mascot_tasks`, `mascot_notes`, `mascot_transcripts`) and are
+  `ContentScale.Fit` into a square, so a non-square canvas both shrinks and offsets him. Two
+  prop variants sit beside it (`mascot_tasks`, `mascot_notes`) and are
   selected with `Mascot(variant = ...)` / `EmptyState(variant = ...)`: each per-tab screen uses its
   own variant in both the top bar's leading slot and its empty state. `MascotVariant.Plain` is the
   default everywhere else. `mascot_echo` is
@@ -503,7 +512,7 @@ Onboarding is ported from the separate "Echo Onboarding" Design artifact
   launcher size the darker cornsilk reads as a dull beige tile. Icons
   are hand-authored VectorDrawables tracing lucide 0.454 — Material's filled glyphs do not
   match, and `material-icons-extended` is not worth its size.
-- Ambient animation (breathing, ripples, dots, shimmer) must check `LocalReducedMotion`, which
+- Ambient animation (breathing and dots) must check `LocalReducedMotion`, which
   reads `ANIMATOR_DURATION_SCALE`. It is decoration, not feedback. `Waveform` is the exception:
   its bars are a scrolling history of the real mic level, so they keep moving regardless.
 - Haptics live in `ui/theme/Haptics.kt`, reached with `rememberEchoHaptics()`. Four calls:

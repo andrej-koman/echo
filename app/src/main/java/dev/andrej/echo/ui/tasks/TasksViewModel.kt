@@ -11,7 +11,6 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -29,7 +28,6 @@ data class TasksUiState(
     val groups: List<DueGroup> = emptyList(),
     val completed: List<TodoItem> = emptyList(),
     val loaded: Boolean = false,
-    val query: String = "",
     /** No usable backend and nothing to show — the empty state should point at AccountScreen. */
     val aiOff: Boolean = false,
 )
@@ -42,29 +40,21 @@ class TasksViewModel(
     private val now: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
 
-    private val query = MutableStateFlow("")
-
     val transcripts: StateFlow<List<Transcript>> =
         transcriptRepository.transcripts.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val state: StateFlow<TasksUiState> =
-        combine(derived.items, aiCardState, query) { items, ai, text ->
-            val filtered = filterByQuery(items, text)
+        combine(derived.items, aiCardState) { items, ai ->
             TasksUiState(
-                groups = groupByDue(filtered, now(), zone),
-                completed = completedByRecency(filtered),
+                groups = groupByDue(items, now(), zone),
+                completed = completedByRecency(items),
                 loaded = true,
-                query = text,
                 aiOff = items.isEmpty() && ai !is AiCardState.Ready,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TasksUiState())
 
     fun setDone(itemId: String, done: Boolean) {
         viewModelScope.launch { derived.setDone(itemId, done) }
-    }
-
-    fun search(text: String) {
-        query.value = text
     }
 
     fun update(itemId: String, text: String, dueAt: Long, hasTime: Boolean, hasDate: Boolean) {
@@ -76,9 +66,6 @@ class TasksViewModel(
     }
 }
 
-internal fun filterByQuery(items: List<TodoItem>, query: String): List<TodoItem> =
-    items.filter { it.text.contains(query, ignoreCase = true) }
-
 private fun dayOf(epochMilli: Long, zone: ZoneId): LocalDate =
     Instant.ofEpochMilli(epochMilli).atZone(zone).toLocalDate()
 
@@ -86,12 +73,6 @@ private fun dayOf(epochMilli: Long, zone: ZoneId): LocalDate =
 internal fun isOverdue(item: TodoItem, now: Long, zone: ZoneId): Boolean =
     if (!item.hasDate) false else if (item.hasTime) item.dueAt < now else dayOf(item.dueAt, zone) < dayOf(now, zone)
 
-/**
- * Three buckets: Today (includes every overdue item, sorted ahead of the rest of today's, plus
- * every dateless item — a task with no stated date/time reads as a plain pending to-do for today,
- * every day, until done), Tomorrow, and one flat Upcoming group for everything later. Done items
- * never appear here — they collapse into [completedByRecency] instead.
- */
 internal fun groupByDue(items: List<TodoItem>, now: Long, zone: ZoneId): List<DueGroup> {
     val today = dayOf(now, zone)
     val tomorrow = today.plusDays(1)

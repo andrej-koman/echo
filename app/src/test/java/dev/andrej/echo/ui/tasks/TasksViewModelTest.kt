@@ -144,16 +144,4 @@ class TasksViewModelTest {
             today,
         )
     }
-
-    @Test
-    fun `filterByQuery matches task text case-insensitively`() {
-        val items = listOf(
-            item("Buy milk", TODAY_START, hasTime = false),
-            item("Call mum", TODAY_START, hasTime = false),
-        )
-
-        assertEquals(listOf("Buy milk"), filterByQuery(items, "milk").map { it.text })
-        assertEquals(listOf("Buy milk"), filterByQuery(items, "MILK").map { it.text })
-        assertEquals(items.map { it.text }, filterByQuery(items, "").map { it.text })
-    }
 }

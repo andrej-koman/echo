@@ -152,6 +152,10 @@ class NotesViewModel(
         viewModelScope.launch { repository.moveToFolder(transcriptId, folderId) }
     }
 
+    fun rename(transcriptId: String, title: String) {
+        viewModelScope.launch { repository.rename(transcriptId, title) }
+    }
+
     private val searchHits: Flow<Set<String>?> = query.flatMapLatest { text ->
         if (text.isBlank()) flowOf(null) else repository.search(text)
     }
@@ -346,11 +350,6 @@ internal fun title(text: String): String {
 internal fun clock(durationMs: Long): String {
     val totalSeconds = TimeUnit.MILLISECONDS.toSeconds(durationMs)
     return "%d:%02d".format(totalSeconds / 60, totalSeconds % 60)
-}
-
-internal fun spokenTotal(durationMs: Long): String {
-    val minutes = TimeUnit.MILLISECONDS.toMinutes(durationMs)
-    return if (minutes >= 60) "${minutes / 60}h ${minutes % 60}m" else "${minutes}m"
 }
 
 internal fun dateLabel(createdAt: Long, now: Long): String {

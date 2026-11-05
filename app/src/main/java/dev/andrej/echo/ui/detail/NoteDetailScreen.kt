@@ -91,7 +91,7 @@ private enum class NoteTab(val label: String, val icon: Int) {
     Tasks("Tasks", R.drawable.ic_list_checks),
 }
 
-private enum class NoteSheet { More, Delete, Share, Folder }
+private enum class NoteSheet { More, Rename, Delete, Share, Folder }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -413,6 +413,7 @@ fun NoteDetailScreen(
                     scope.launch { Exporter(context).share(format, note, exportOptions, audio) }
                 },
                 onMove = { viewModel.moveToFolder(noteId, it) },
+                onRename = { viewModel.rename(noteId, it) },
                 onAnalyze = { viewModel.analyze(noteId) },
                 onCopy = { context.copyToClipboard(transcript.text) },
                 onDelete = {
@@ -720,6 +721,7 @@ private fun DetailSheets(
     onExportOptions: (ExportOptions) -> Unit,
     onShare: (ExportFormat) -> Unit,
     onMove: (String?) -> Unit,
+    onRename: (String) -> Unit,
     onAnalyze: () -> Unit,
     onCopy: () -> Unit,
     onDelete: () -> Unit,
@@ -727,6 +729,12 @@ private fun DetailSheets(
     val dismiss = { onSheet(null) }
     Sheet(visible = sheet == NoteSheet.More, onDismiss = dismiss) {
         Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3)) {
+            EchoButton(
+                text = "Rename note",
+                onClick = { onSheet(NoteSheet.Rename) },
+                variant = ButtonVariant.Secondary,
+                fullWidth = true,
+            )
             EchoButton(
                 text = if (analyzing) "Analyzing…" else "Re-analyze",
                 onClick = {
@@ -754,6 +762,15 @@ private fun DetailSheets(
             )
         }
     }
+    RenameNoteSheet(
+        visible = sheet == NoteSheet.Rename,
+        title = title,
+        onSave = {
+            onRename(it)
+            dismiss()
+        },
+        onDismiss = dismiss,
+    )
     ConfirmSheet(
         visible = sheet == NoteSheet.Delete,
         title = "Delete this note?",

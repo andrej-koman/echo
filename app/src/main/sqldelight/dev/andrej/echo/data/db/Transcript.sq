@@ -32,6 +32,9 @@ UPDATE transcript SET title = CASE WHEN titleByUser THEN title ELSE :title END, 
     analyzedAt = :analyzedAt
 WHERE id = :id;
 
+rename:
+UPDATE transcript SET title = ?, titleByUser = 1 WHERE id = ?;
+
 delete:
 DELETE FROM transcript WHERE id = ?;
 

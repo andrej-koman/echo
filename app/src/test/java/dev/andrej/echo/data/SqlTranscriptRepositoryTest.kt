@@ -59,6 +59,37 @@ class SqlTranscriptRepositoryTest {
     }
 
     @Test
+    fun `renaming trims the title and preserves it through analysis`() = runTest {
+        val database = testDatabase()
+        val repository = SqlTranscriptRepository(database)
+        val saved = repository.save(text = "the tap drips", language = "en", durationMs = 0)
+        repository.attachAnalysis(saved.id, "Fix the tap", "It drips.", analyzedAt = 1_000)
+
+        repository.rename(saved.id, "  Kitchen repairs  ")
+
+        assertEquals("Kitchen repairs", SqlTranscriptRepository(database).transcripts.first().single().title)
+        assertEquals(setOf(saved.id), repository.search("Kitchen").first())
+        repository.attachAnalysis(saved.id, "AI replacement", "A new summary", analyzedAt = 2_000)
+        val stored = repository.transcripts.first().single()
+        assertEquals("Kitchen repairs", stored.title)
+        assertEquals("A new summary", stored.summary)
+        assertEquals(2_000L, stored.analyzedAt)
+    }
+
+    @Test
+    fun `blank rename leaves the previous title and analysis ownership unchanged`() = runTest {
+        val repository = repository()
+        val saved = repository.save(text = "the tap drips", language = "en", durationMs = 0)
+        repository.attachAnalysis(saved.id, "Fix the tap", null)
+
+        repository.rename(saved.id, " \n ")
+
+        assertEquals("Fix the tap", repository.transcripts.first().single().title)
+        repository.attachAnalysis(saved.id, "New AI title", null)
+        assertEquals("New AI title", repository.transcripts.first().single().title)
+    }
+
+    @Test
     fun `attachAnalysis on an unknown id changes nothing`() = runTest {
         val repository = repository()
         repository.save(text = "untouched", language = "en-GB", durationMs = 0)

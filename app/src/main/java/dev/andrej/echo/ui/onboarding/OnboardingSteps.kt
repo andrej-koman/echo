@@ -303,7 +303,7 @@ internal fun ColumnScope.PrivacyStep(onContinue: () -> Unit) {
             Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s6)) {
                 PrivacyRow(R.drawable.ic_cpu, "Transcribed on this device")
                 PrivacyRow(R.drawable.ic_plane, "Works in airplane mode")
-                PrivacyRow(R.drawable.ic_lock, "Recordings never leave your phone")
+                PrivacyRow(R.drawable.ic_lock, "Recordings stay here unless you share them")
             }
         }
     }

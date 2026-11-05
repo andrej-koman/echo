@@ -58,7 +58,8 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
   Model warmup starts with recording, rather than when its app-scoped ViewModel is created.
 - **Startup recovery** (`Transcriptions.recoverInterruptedRecordings`): an `audio.pcm` with no
   transcript row is a take whose process died before Stop; it is filed with its length and
-  queued. Called once from `AppContainer.init`, before any take can exist.
+  queued. Known blank notes with raw PCM are also queued, covering process death between Stop's
+  row save and enqueue. Called once from `AppContainer.init`, before any take can exist.
 - **Dictionary** (Settings → Dictionary, `DictionaryRepository`): terms joined into Whisper's
   `initial_prompt` with `carry_initial_prompt` on, so it holds for every 30 s window of a chunk,
   not only the first. Applies to new transcriptions only.
@@ -113,7 +114,12 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
   until the job ends. Its stop button (Whisper stage only) calls `Transcriptions.stop`: the
   Whisper run is cancelled (native abort), the live segments heard so far become the note, and
   speakers and analysis then run as usual on that text.
-- **Restart recovery**: after Whisper and speaker assignment finish, `Transcriptions` creates
+- **Restart recovery**: imports persist `transcription-pending` before their row is saved, copy to
+  `source.part`, sync, then rename to `source`. Startup reconciles pending notes with unique KEEP
+  work; an interrupted copy is shown as failed rather than decoded as complete audio. Each finished
+  Whisper chunk atomically saves `speech-chunk` with its next sample, language, and segments before
+  updating the database, so a restart restores the snapshot and skips finished chunks. Explicit
+  transcription resets this snapshot; startup recovery preserves it. After Whisper and speaker assignment finish, `Transcriptions` creates
   `recordings/<id>/speech-complete` before finalizing audio or awaiting analysis. If Android kills
   the process during that later work, WorkManager's restarted job skips Whisper and keeps the
   saved transcript and speaker labels. An explicit transcription request removes the marker.
@@ -200,6 +206,10 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
   a bare `AND`/`OR`/`NOT` is an FTS operator.
 - `segment` holds Whisper's timed segments (bracketed captions already dropped);
   `transcript.text` stays as the joined text, which is all a pre-Phase-3 recording had. `TranscriptRepository.setTranscription` replaces text and segments in one transaction.
+- Analysis results check transcript existence, replace tasks, attach metadata, and remove the
+  queue entry in one transaction. Note deletion cancels and awaits analysis before removing the
+  transcript and tasks, so native generation returning late cannot recreate reminders. Drain
+  scheduling uses a synchronized single-job guard shared by callers on different threads.
 - No foreign keys: SQLite needs `PRAGMA foreign_keys` per connection. Deleting a transcript
   deletes its segments in the same transaction; todos and queue entries are deleted by the
   callers, as before.

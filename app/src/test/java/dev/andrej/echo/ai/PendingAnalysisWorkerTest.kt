@@ -37,10 +37,12 @@ class PendingAnalysisWorkerTest {
     @After
     fun tearDown() = Dispatchers.resetMain()
 
-    private fun transcripts() = SqlTranscriptRepository(testDatabase(), dispatcher)
+    private var database = testDatabase()
+
+    private fun transcripts() = SqlTranscriptRepository(database, dispatcher)
     private fun derived() =
-        SqlDerivedRepository(testDatabase(), dispatcher)
-    private fun queue() = SqlAnalysisQueueRepository(testDatabase(), dispatcher)
+        SqlDerivedRepository(database, dispatcher)
+    private fun queue() = SqlAnalysisQueueRepository(database, dispatcher)
 
     private fun worker(
         queue: SqlAnalysisQueueRepository,
@@ -423,6 +425,115 @@ class PendingAnalysisWorkerTest {
         advanceUntilIdle()
         assertEquals(1, calls)
         assertNull(transcripts.transcripts.first().single().analyzedAt)
+        assertTrue(derived.items.first().isEmpty())
+        assertTrue(queue.pending.first().isEmpty())
+    }
+
+    @Test
+    fun `deletion during generation cannot recreate tasks`() = runTest {
+        val transcripts = transcripts()
+        val derived = derived()
+        val queue = queue()
+        val note = transcripts.save(text = "hello", language = "en", durationMs = 0)
+        queue.enqueue(note.id)
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val runner = object : LlmRunner by FakeLlmRunner() {
+            override suspend fun generate(prompt: String, temperature: Float): String {
+                release.await()
+                return good
+            }
+        }
+        val worker = worker(queue, transcripts, derived, runner)
+        worker.requestDrain()
+        runCurrent()
+        transcripts.delete(note.id)
+        release.complete(Unit)
+        advanceUntilIdle()
+        assertTrue(derived.items.first().isEmpty())
+        assertTrue(queue.pending.first().isEmpty())
+    }
+
+    @Test
+    fun `deleting a queued note during another generation skips its cached transcript`() = runTest {
+        val transcripts = transcripts()
+        val queue = queue()
+        val a = transcripts.save(text = "first", language = "en", durationMs = 0)
+        val b = transcripts.save(text = "second", language = "en", durationMs = 0)
+        queue.enqueue(a.id, 1)
+        queue.enqueue(b.id, 2)
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        var deletedNoteAnalyzed = false
+        val runner = object : LlmRunner by FakeLlmRunner() {
+            override suspend fun generate(prompt: String, temperature: Float): String {
+                if ("second" in prompt) deletedNoteAnalyzed = true
+                release.await()
+                return good
+            }
+        }
+        val worker = worker(queue, transcripts, derived(), runner)
+        worker.requestDrain()
+        runCurrent()
+        transcripts.delete(b.id)
+        release.complete(Unit)
+        advanceUntilIdle()
+        assertTrue(!deletedNoteAnalyzed)
+    }
+
+    @Test
+    fun `requests from simultaneous threads start only one drain`() = runTest {
+        val executor = java.util.concurrent.Executors.newFixedThreadPool(16)
+        try {
+            repeat(40) {
+                val transcripts = transcripts()
+                val queue = queue()
+                val note = transcripts.save(text = "hello", language = "en", durationMs = 0)
+                queue.enqueue(note.id)
+                val runner = FakeLlmRunner(List(100) { good })
+                val worker = worker(queue, transcripts, derived(), runner)
+                val barrier = java.util.concurrent.CyclicBarrier(16)
+                val requests = List(16) {
+                    executor.submit {
+                        barrier.await()
+                        worker.requestDrain()
+                    }
+                }
+                requests.forEach { it.get(5, java.util.concurrent.TimeUnit.SECONDS) }
+                advanceUntilIdle()
+                assertEquals(3, runner.prompts.size)
+            }
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `cancel and await waits for native generation before deletion`() = runTest {
+        val transcripts = transcripts()
+        val derived = derived()
+        val queue = queue()
+        val note = transcripts.save(text = "hello", language = "en", durationMs = 0)
+        queue.enqueue(note.id)
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val runner = object : LlmRunner by FakeLlmRunner() {
+            override suspend fun generate(prompt: String, temperature: Float): String {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { release.await() }
+                return good
+            }
+        }
+        val worker = worker(queue, transcripts, derived, runner)
+        worker.requestDrain()
+        runCurrent()
+        val deletion = async {
+            worker.cancelAllAndAwait()
+            transcripts.clear()
+            derived.clear()
+        }
+        runCurrent()
+        assertTrue(!deletion.isCompleted)
+        release.complete(Unit)
+        advanceUntilIdle()
+        assertTrue(deletion.isCompleted)
+        assertTrue(transcripts.transcripts.first().isEmpty())
         assertTrue(derived.items.first().isEmpty())
         assertTrue(queue.pending.first().isEmpty())
     }

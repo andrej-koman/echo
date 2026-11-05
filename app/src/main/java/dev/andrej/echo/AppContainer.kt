@@ -254,9 +254,10 @@ class AppContainer(context: Context) {
 
     suspend fun deleteAllData() {
         transcriptions.discardAll()
+        pendingAnalysisWorker.cancelAllAndAwait()
+        repository.clear()
         analysisQueue.clear()
         derived.clear()
-        repository.clear()
     }
 
     fun recordingNotification() = recordingNotifier.notification(recordingController.state.value.mode())

@@ -56,6 +56,19 @@ class PendingAnalysisWorker(
         scope.launch { if (transcriptId in cancelled.value) queue.remove(transcriptId) }
     }
 
+    suspend fun cancelAndAwait(transcriptId: String) {
+        cancel(transcriptId)
+        attempts[transcriptId]?.join()
+        queue.remove(transcriptId)
+    }
+
+    suspend fun cancelAllAndAwait() {
+        val ids = transcripts.transcripts.first().map { it.id } + attempts.keys + queue.pending.first().map { it.transcriptId }
+        ids.forEach(::cancel)
+        attempts.values.toList().forEach { it.join() }
+        ids.forEach { queue.remove(it) }
+    }
+
     /** An explicit transcription retry or Analyze tap may process a previously stopped note. */
     fun allow(transcriptId: String) = cancelled.update { it - transcriptId }
 
@@ -75,22 +88,26 @@ class PendingAnalysisWorker(
         }
     }
 
+    private val schedulingLock = Any()
     private var drainJob: Job? = null
     private var rerunRequested = false
 
     /** Fire-and-forget. A request arriving mid-drain is folded into one rerun, not lost. */
-    fun requestDrain() {
-        if (drainJob?.isActive == true) {
-            rerunRequested = true
-            return
+    fun requestDrain(): Job {
+        val job = synchronized(schedulingLock) {
+            drainJob?.let {
+                rerunRequested = true
+                return@synchronized it
+            }
+            scope.launch(start = CoroutineStart.LAZY) { drainLoop() }.also { drainJob = it }
         }
-        drainJob = scope.launch { drainLoop() }
+        job.start()
+        return job
     }
 
     /** Used where the caller has to wait for the result: a transcription job, and the manual retry. */
     suspend fun requestDrainAndAwait() {
-        requestDrain()
-        drainJob?.join()
+        requestDrain().join()
     }
 
     /** A transcription job ends when its own note is processed, not the rest of the queue. */
@@ -98,8 +115,8 @@ class PendingAnalysisWorker(
         val finished = async(start = CoroutineStart.UNDISPATCHED) {
             completedAttempts.first { it == transcriptId }
         }
-        requestDrain()
-        val drained = async { drainJob?.join() }
+        val drain = requestDrain()
+        val drained = async { drain.join() }
         try {
             select<Unit> {
                 finished.onAwait {}
@@ -149,14 +166,29 @@ class PendingAnalysisWorker(
     }
 
     private suspend fun drainLoop() {
-        do {
-            rerunRequested = false
-            drainOnce()
-        } while (rerunRequested)
+        val job = currentCoroutineContext()[Job]
+        try {
+            while (true) {
+                drainOnce()
+                val again = synchronized(schedulingLock) {
+                    if (rerunRequested) {
+                        rerunRequested = false
+                        true
+                    } else {
+                        if (drainJob === job) drainJob = null
+                        false
+                    }
+                }
+                if (!again) return
+            }
+        } finally {
+            synchronized(schedulingLock) {
+                if (drainJob === job) drainJob = null
+            }
+        }
     }
 
     private suspend fun drainOnce() {
-        val currentTranscripts = transcripts.transcripts.first()
         val currentPending = queue.pending.first()
 
         for (entry in currentPending) {
@@ -165,7 +197,7 @@ class PendingAnalysisWorker(
                 completedAttempts.tryEmit(entry.transcriptId)
                 continue
             }
-            val transcript = currentTranscripts.firstOrNull { it.id == entry.transcriptId }
+            val transcript = transcripts.transcripts.first().firstOrNull { it.id == entry.transcriptId }
             if (transcript == null || transcript.analyzedAt != null) {
                 queue.remove(entry.transcriptId)
                 completedAttempts.tryEmit(entry.transcriptId)
@@ -195,16 +227,12 @@ class PendingAnalysisWorker(
     }
 
     private suspend fun applySuccess(transcriptId: String, outcome: AnalysisOutcome.Success) {
-        derived.replaceFor(
+        derived.applyAnalysis(
             transcriptId = transcriptId,
             items = outcome.analysis.items,
-            createdAt = now(),
-        )
-        transcripts.attachAnalysis(
-            id = transcriptId,
             title = outcome.analysis.title,
             summary = outcome.analysis.summary,
-            analyzedAt = now(),
+            createdAt = now(),
         )
         queue.remove(transcriptId)
     }

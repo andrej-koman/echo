@@ -333,12 +333,13 @@ fun NoteDetailScreen(
                         )
                     }
                     shown == NoteTab.FullText -> items(typed.indices.toList(), key = { "p$it" }) { i ->
-                        Paragraph(
-                            text = typed[i].text.trim(),
+                        FullTextLine(
+                            value = edits[i] ?: TextFieldValue(typed[i].text.trim()),
+                            editing = editing,
+                            onValueChange = { edits[i] = it },
                             current = i == current,
                             highlight = highlight,
                             onClick = { player?.playFrom(segments[i].startMs) },
-                            modifier = Modifier.padding(horizontal = EchoTheme.spacing.gutterScreen),
                             live = i == liveLine,
                         )
                     }
@@ -851,3 +852,22 @@ private fun Context.copyToClipboard(text: String) {
 }
 
 const val TAG_DETAIL_TEXT = "detail_text"
+
+@Composable
+internal fun FullTextLine(
+    value: TextFieldValue,
+    editing: Boolean,
+    onValueChange: (TextFieldValue) -> Unit,
+    current: Boolean = false,
+    highlight: String = "",
+    onClick: () -> Unit = {},
+    live: Boolean = false,
+) {
+    Box(Modifier.padding(horizontal = EchoTheme.spacing.gutterScreen)) {
+        if (editing) {
+            SegmentLine(value, current, true, false, highlight, onValueChange, onClick, {}, live)
+        } else {
+            Paragraph(value.text, current, highlight, onClick, live = live)
+        }
+    }
+}

@@ -15,6 +15,15 @@ interface DerivedRepository {
         createdAt: Long = System.currentTimeMillis(),
     )
 
+    /** Applies analysis only while its transcript exists, including queue removal in one transaction. */
+    suspend fun applyAnalysis(
+        transcriptId: String,
+        items: List<NewTodo>,
+        title: String?,
+        summary: String?,
+        createdAt: Long,
+    )
+
     suspend fun setDone(itemId: String, done: Boolean)
 
     suspend fun update(itemId: String, text: String, dueAt: Long, hasTime: Boolean, hasDate: Boolean)

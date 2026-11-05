@@ -33,32 +33,52 @@ class SqlDerivedRepository(
         createdAt: Long,
     ) = withContext(ioDispatcher) {
         database.transaction {
-            val before = queries.selectFor(transcriptId, ::TodoItem).executeAsList().associateBy { it.id }
-            val savedAt = now()
-            queries.deleteFor(transcriptId)
-            items.distinctBy { derivedId(transcriptId, it.text) }.forEach { newTodo ->
-                val id = derivedId(transcriptId, newTodo.text)
-                val old = before[id]
-                val changed = old == null || scheduleChanged(old, newTodo.dueAt, newTodo.hasTime, newTodo.hasDate)
-                val reminder = if (changed) taskReminderTime(newTodo.dueAt, newTodo.hasTime, newTodo.hasDate, savedAt, zone()) else null
-                queries.insert(
-                    Todo(
-                        id = id,
-                        sourceTranscriptId = transcriptId,
-                        text = newTodo.text,
-                        dueAt = newTodo.dueAt,
-                        hasTime = newTodo.hasTime,
-                        hasDate = newTodo.hasDate,
-                        done = old?.done ?: false,
-                        createdAt = old?.createdAt ?: createdAt,
-                        updatedAt = savedAt,
-                        sourceOffsetMs = newTodo.sourceOffsetMs,
-                        reminderAt = if (changed) reminder?.at else old.reminderAt,
-                        reminderDate = if (changed) reminder?.date else old.reminderDate,
-                        reminderDelivered = if (changed) false else old.reminderDelivered,
-                    ),
-                )
+            replaceItems(transcriptId, items, createdAt)
+        }
+    }
+
+    override suspend fun applyAnalysis(
+        transcriptId: String,
+        items: List<NewTodo>,
+        title: String?,
+        summary: String?,
+        createdAt: Long,
+    ) = withContext(ioDispatcher) {
+        database.transaction {
+            if (database.transcriptQueries.existsById(transcriptId).executeAsOne()) {
+                replaceItems(transcriptId, items, createdAt)
+                database.transcriptQueries.attachAnalysis(title, summary, createdAt, transcriptId)
+                database.analysisQueueQueries.remove(transcriptId)
             }
+        }
+    }
+
+    private fun replaceItems(transcriptId: String, items: List<NewTodo>, createdAt: Long) {
+        val before = queries.selectFor(transcriptId, ::TodoItem).executeAsList().associateBy { it.id }
+        val savedAt = now()
+        queries.deleteFor(transcriptId)
+        items.distinctBy { derivedId(transcriptId, it.text) }.forEach { newTodo ->
+            val id = derivedId(transcriptId, newTodo.text)
+            val old = before[id]
+            val changed = old == null || scheduleChanged(old, newTodo.dueAt, newTodo.hasTime, newTodo.hasDate)
+            val reminder = if (changed) taskReminderTime(newTodo.dueAt, newTodo.hasTime, newTodo.hasDate, savedAt, zone()) else null
+            queries.insert(
+                Todo(
+                    id = id,
+                    sourceTranscriptId = transcriptId,
+                    text = newTodo.text,
+                    dueAt = newTodo.dueAt,
+                    hasTime = newTodo.hasTime,
+                    hasDate = newTodo.hasDate,
+                    done = old?.done ?: false,
+                    createdAt = old?.createdAt ?: createdAt,
+                    updatedAt = savedAt,
+                    sourceOffsetMs = newTodo.sourceOffsetMs,
+                    reminderAt = if (changed) reminder?.at else old.reminderAt,
+                    reminderDate = if (changed) reminder?.date else old.reminderDate,
+                    reminderDelivered = if (changed) false else old.reminderDelivered,
+                ),
+            )
         }
     }
 

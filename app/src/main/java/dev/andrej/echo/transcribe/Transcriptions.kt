@@ -37,6 +37,7 @@ import dev.andrej.echo.speech.whisper.WhisperTranscriber
 import java.io.File
 import java.io.IOException
 import java.io.RandomAccessFile
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
@@ -106,14 +107,16 @@ class Transcriptions(
     private val lock = Mutex()
 
     /** Copying a large file takes a while, and the row must not read as failed meanwhile. */
+    private val interruptedImports = MutableStateFlow(emptySet<String>())
     private val copying = MutableStateFlow(emptySet<String>())
 
     private val _live = MutableStateFlow<LiveTranscript?>(null)
     val live: StateFlow<LiveTranscript?> = _live
 
     val status: Flow<Map<String, TranscriptionStatus>> =
-        combine(workManager.getWorkInfosByTagFlow(TAG), copying) { infos, copyingIds ->
+        combine(workManager.getWorkInfosByTagFlow(TAG), copying, interruptedImports) { infos, copyingIds, failedIds ->
             buildMap {
+                failedIds.forEach { put(it, TranscriptionStatus.Failed) }
                 copyingIds.forEach { put(it, TranscriptionStatus.Queued) }
                 // A retried job's failed predecessor can linger; the live one wins.
                 infos.sortedBy { it.state != WorkInfo.State.FAILED }.forEach { info ->
@@ -179,7 +182,11 @@ class Transcriptions(
     }
 
     private suspend fun importOne(file: ImportFile, createdAt: Long, title: String?, open: Boolean) {
+        val id = UUID.randomUUID().toString()
+        val importDir = dirFor(id).apply { mkdirs() }
+        File(importDir, PENDING).writeText("import")
         val transcript = repository.save(
+            id = id,
             text = "",
             language = "",
             durationMs = file.durationMs ?: 0,
@@ -193,10 +200,17 @@ class Transcriptions(
             withContext(Dispatchers.IO) {
                 val dir = dirFor(transcript.id).apply { mkdirs() }
                 context.contentResolver.openInputStream(file.uri)!!.use { input ->
-                    File(dir, SOURCE).outputStream().use { input.copyTo(it) }
+                    val partial = File(dir, "$SOURCE.part")
+                    java.io.FileOutputStream(partial).use { output ->
+                        input.copyTo(output)
+                        output.fd.sync()
+                    }
+                    if (!partial.renameTo(File(dir, SOURCE))) throw IOException("could not finalize import")
                 }
             }
             enqueue(transcript.id)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.w(LOG_TAG, "import of ${file.uri} failed: ${e.message}")
             repository.delete(transcript.id)
@@ -213,30 +227,38 @@ class Transcriptions(
     fun audioFile(id: String): File? = File(dirFor(id), SOURCE).takeIf { it.isFile }
 
     /**
-     * A take whose process died before Stop leaves `audio.pcm` with no transcript. Raw PCM needs
-     * no finishing, so it is filed as it stands. Call only before any recording can have started.
+     * Reconciles raw takes and saved notes whose process died before WorkManager accepted them.
+     * Incomplete imports remain visibly failed because their URI grant may no longer exist.
+     * Call only before any recording can have started.
      */
     fun recoverInterruptedRecordings() {
         scope.launch {
-            val known = repository.transcripts.first().map { it.id }.toSet()
-            val orphans = withContext(Dispatchers.IO) {
-                recordingsDir.listFiles().orEmpty().filter { it.name !in known && File(it, PCM).isFile }
-            }
-            orphans.forEach { dir ->
-                val pcm = File(dir, PCM)
-                if (pcm.length() == 0L) {
-                    dir.deleteRecursively()
-                    return@forEach
+            val notes = repository.transcripts.first().associateBy { it.id }
+            val directories = withContext(Dispatchers.IO) { recordingsDir.listFiles().orEmpty().toList() }
+            directories.forEach { dir ->
+                val note = notes[dir.name]
+                val pending = File(dir, PENDING).isFile
+                val unfinished = pending || (note?.text?.isBlank() == true && !File(dir, SPEECH_COMPLETE).isFile)
+                when (recoveryAction(dir, note != null, unfinished)) {
+                    RecoveryAction.ENQUEUE -> {
+                        if (note == null) {
+                            val pcm = File(dir, PCM)
+                            val durationMs = pcm.length() / 2 * 1000 / SAMPLE_RATE
+                            repository.save(id = dir.name, text = "", language = "", durationMs = durationMs,
+                                createdAt = pcm.lastModified() - durationMs)
+                        }
+                        enqueue(dir.name, restart = false)
+                    }
+                    RecoveryAction.FAILED -> interruptedImports.update { it + dir.name }
+                    RecoveryAction.NONE -> {
+                        val pcm = File(dir, PCM)
+                        if (note == null && pcm.isFile && pcm.length() == 0L) dir.deleteRecursively()
+                    }
                 }
-                val durationMs = pcm.length() / 2 * 1000 / SAMPLE_RATE
-                repository.save(
-                    id = dir.name,
-                    text = "",
-                    language = "",
-                    durationMs = durationMs,
-                    createdAt = pcm.lastModified() - durationMs,
-                )
-                enqueue(dir.name)
+            }
+            // Covers older versions' save-before-directory window too.
+            notes.values.filter { it.text.isBlank() && !dirFor(it.id).exists() }.forEach { note ->
+                interruptedImports.update { it + note.id }
             }
         }
     }
@@ -248,17 +270,24 @@ class Transcriptions(
     }
 
     fun discard(id: String) {
+        analysis.cancel(id)
+        interruptedImports.update { it - id }
         workManager.cancelUniqueWork(workName(id))
         scope.launch(Dispatchers.IO) { dirFor(id).deleteRecursively() }
     }
 
     fun discardAll() {
         workManager.cancelAllWorkByTag(TAG)
+        scope.launch { repository.transcripts.first().forEach { analysis.cancel(it.id) } }
+        interruptedImports.value = emptySet()
         scope.launch(Dispatchers.IO) { recordingsDir.deleteRecursively() }
     }
 
-    private fun enqueue(id: String) {
-        TranscriptionCheckpoint(File(dirFor(id), SPEECH_COMPLETE)).reset()
+    private fun enqueue(id: String, restart: Boolean = true) {
+        val dir = dirFor(id).apply { mkdirs() }
+        File(dir, PENDING).writeText("queued")
+        if (restart) TranscriptionCheckpoint(File(dir, SPEECH_COMPLETE)).reset()
+        interruptedImports.update { it - id }
         stops.update { it - id }
         analysis.allow(id)
         val request = OneTimeWorkRequestBuilder<TranscriptionWorker>()
@@ -272,7 +301,7 @@ class Transcriptions(
                 }
             }
             .build()
-        workManager.enqueueUniqueWork(workName(id), ExistingWorkPolicy.REPLACE, request)
+        workManager.enqueueUniqueWork(workName(id), if (restart) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP, request)
     }
 
     internal suspend fun run(id: String, report: (TranscriptionStatus) -> Unit) = lock.withLock {
@@ -284,6 +313,8 @@ class Transcriptions(
                 if (transcript != null && heard != null) {
                     repository.setTranscription(id, transcriptText(heard), transcript.language, transcript.durationMs, heard)
                 }
+                File(dirFor(id), SPEECH_COMPLETE).createNewFile()
+                File(dirFor(id), PENDING).delete()
                 try {
                     finishAudio(id)
                 } catch (e: CancellationException) {
@@ -315,7 +346,8 @@ class Transcriptions(
         val pcm = File(dir, PCM)
         if (!source.isFile && !pcm.isFile) throw IOException("audio is gone")
 
-        TranscriptionCheckpoint(File(dir, SPEECH_COMPLETE)).run(transcribe = {
+        val checkpoint = TranscriptionCheckpoint(File(dir, SPEECH_COMPLETE))
+        checkpoint.run(transcribe = {
         val speechModel = speechModels.current
         val modelStore = speechModels.store(speechModel)
         if (modelStore.state.value !is ModelState.Ready) {
@@ -354,9 +386,14 @@ class Transcriptions(
         }
 
         Log.i(LOG_TAG, "$id: ${durationMs / 1000} s of audio decoded at ${elapsed()} ms")
-        val segments = mutableListOf<Segment>()
+        val resumed = checkpoint.chunk()
+        val segments = resumed?.segments?.toMutableList() ?: mutableListOf()
+        if (resumed != null) {
+            repository.setTranscription(id, transcriptText(segments), resumed.language, durationMs, segments)
+            _live.value = LiveTranscript(id, segments.toList())
+        }
         var firstSegmentLogged = false
-        var language: String? = settings.transcriptionLanguage
+        var language: String? = resumed?.language ?: settings.transcriptionLanguage
         val prompt = whisperPrompt(dictionary.all().map { it.term })
         // The LLM is closed first: both models at once had the low-memory killer take the app.
         modelSlot.whisper { coroutineScope {
@@ -378,7 +415,7 @@ class Transcriptions(
                 speechModels.deleteAllBut(speechModel)
                 RandomAccessFile(pcm, "r").use { file ->
                     val total = file.length() / 2
-                    var start = 0L
+                    var start = resumed?.nextSample ?: 0L
                     while (start < total) {
                         val samples = file.readFloats(start, minOf(CHUNK_SAMPLES.toLong(), total - start).toInt())
                         val length = if (start + samples.size < total) quietestCut(samples) else samples.size
@@ -407,8 +444,9 @@ class Transcriptions(
                         language = language ?: result.language
                         segments += result.segments.spoken()
                             .map { it.copy(startMs = it.startMs + offsetMs, endMs = it.endMs + offsetMs) }
-                        repository.setTranscription(id, transcriptText(segments), language.orEmpty(), durationMs, segments)
                         start += length
+                        checkpoint.saveChunk(start, language.orEmpty(), segments)
+                        repository.setTranscription(id, transcriptText(segments), language.orEmpty(), durationMs, segments)
                         Log.i(LOG_TAG, "$id: chunk to ${start / SAMPLE_RATE} s done at ${elapsed()} ms")
                     }
                 }
@@ -457,6 +495,7 @@ class Transcriptions(
             }
         }
         })
+        File(dir, PENDING).delete()
     }
 
     /** Finalize playback after completion or a user stop, once native readers have returned. */
@@ -508,6 +547,7 @@ class Transcriptions(
         private const val ID_TAG_PREFIX = "transcript:"
         private const val SOURCE = "source"
         private const val PCM = "audio.pcm"
+        private const val PENDING = "transcription-pending"
         private const val SPEECH_COMPLETE = "speech-complete"
         private const val DECODE_SHARE = 0.05f
         private const val KEY_PHASE = "phase"

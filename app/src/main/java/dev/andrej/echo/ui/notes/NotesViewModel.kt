@@ -32,6 +32,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Calendar
+import dev.andrej.echo.ui.calendarDaysBetween
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -184,8 +185,9 @@ class NotesViewModel(
     fun delete(id: String) {
         onDeleted(id)
         viewModelScope.launch {
-            derived.deleteFor(id)
+            worker.cancelAndAwait(id)
             repository.delete(id)
+            derived.deleteFor(id)
         }
     }
 
@@ -365,16 +367,4 @@ private fun sameYear(a: Long, b: Long): Boolean =
     Calendar.getInstance().apply { timeInMillis = a }.get(Calendar.YEAR) ==
         Calendar.getInstance().apply { timeInMillis = b }.get(Calendar.YEAR)
 
-private fun daysBetween(then: Long, now: Long): Int {
-    val start = Calendar.getInstance().apply { timeInMillis = then }.midnight()
-    val end = Calendar.getInstance().apply { timeInMillis = now }.midnight()
-    return TimeUnit.MILLISECONDS.toDays(end - start).toInt()
-}
-
-private fun Calendar.midnight(): Long {
-    set(Calendar.HOUR_OF_DAY, 0)
-    set(Calendar.MINUTE, 0)
-    set(Calendar.SECOND, 0)
-    set(Calendar.MILLISECOND, 0)
-    return timeInMillis
-}
+private fun daysBetween(then: Long, now: Long): Int = calendarDaysBetween(then, now).toInt()

@@ -48,7 +48,7 @@ import dev.andrej.echo.ui.components.FilterPill
 import dev.andrej.echo.ui.components.IconButtonVariant
 import dev.andrej.echo.ui.components.ThinkingDots
 import dev.andrej.echo.ui.formatTime
-import dev.andrej.echo.ui.midnight
+import dev.andrej.echo.ui.calendarDaysBetween
 import dev.andrej.echo.ui.notes.clock
 import dev.andrej.echo.ui.notes.title
 import dev.andrej.echo.ui.theme.EchoTheme
@@ -228,7 +228,7 @@ fun EditTaskScreen(
                     hasTime = editedHasTime,
                     onToday = { editedDueAt = withDate(editedDueAt, System.currentTimeMillis()) },
                     onTomorrow = {
-                        editedDueAt = withDate(editedDueAt, System.currentTimeMillis() + DAY_MILLIS)
+                        editedDueAt = withDate(editedDueAt, Calendar.getInstance().apply { add(Calendar.DAY_OF_MONTH, 1) }.timeInMillis)
                     },
                     onTime = { hourOfDay ->
                         editedHasTime = true
@@ -428,8 +428,9 @@ private fun QuickChipRow(
     onTomorrow: () -> Unit,
     onTime: (Int) -> Unit,
 ) {
-    val today = (dueAt.midnight() - System.currentTimeMillis().midnight()) / DAY_MILLIS == 0L
-    val tomorrow = (dueAt.midnight() - System.currentTimeMillis().midnight()) / DAY_MILLIS == 1L
+    val days = calendarDaysBetween(System.currentTimeMillis(), dueAt)
+    val today = days == 0L
+    val tomorrow = days == 1L
     val hour = Calendar.getInstance().apply { timeInMillis = dueAt }.get(Calendar.HOUR_OF_DAY)
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -481,9 +482,7 @@ private fun showTimePicker(context: Context, dueAt: Long, onPick: (Long) -> Unit
     ).show()
 }
 
-private const val DAY_MILLIS = 24 * 60 * 60 * 1000L
-
-private fun dayLabel(dueAt: Long): String = when ((dueAt.midnight() - System.currentTimeMillis().midnight()) / DAY_MILLIS) {
+internal fun dayLabel(dueAt: Long, now: Long = System.currentTimeMillis()): String = when (calendarDaysBetween(now, dueAt)) {
     0L -> "Today"
     1L -> "Tomorrow"
     else -> dayFormat.format(Date(dueAt))

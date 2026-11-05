@@ -14,6 +14,56 @@ class SqlDerivedRepositoryTest {
         NewTodo(text, dueAt, hasTime, hasDate)
 
     @Test
+    fun `analysis for a missing transcript creates no tasks or queue writes`() = runTest {
+        val database = testDatabase()
+        val repository = SqlDerivedRepository(database)
+        database.analysisQueueQueries.enqueue("missing", 1L)
+
+        repository.applyAnalysis("missing", listOf(item("Orphan task")), "Title", "Summary", 2L)
+
+        assertTrue(repository.items.first().isEmpty())
+        assertEquals("missing", database.analysisQueueQueries.selectAll().executeAsList().single().transcriptId)
+    }
+
+    @Test
+    fun `analysis finishing after transcript deletion creates no tasks`() = runTest {
+        val database = testDatabase()
+        val transcripts = SqlTranscriptRepository(database)
+        val repository = SqlDerivedRepository(database)
+        transcripts.save(id = "deleted", text = "Buy milk", language = "en", durationMs = 0)
+        database.analysisQueueQueries.enqueue("deleted", 1L)
+        transcripts.delete("deleted")
+        database.analysisQueueQueries.remove("deleted")
+
+        repository.applyAnalysis("deleted", listOf(item("Buy milk")), "Shopping", "Milk", 2L)
+
+        assertTrue(repository.items.first().isEmpty())
+        assertTrue(database.analysisQueueQueries.selectAll().executeAsList().isEmpty())
+    }
+
+    @Test
+    fun `analysis persists tasks metadata and removes its queue entry`() = runTest {
+        val database = testDatabase()
+        val transcripts = SqlTranscriptRepository(database)
+        val repository = SqlDerivedRepository(database)
+        transcripts.save(id = "live", text = "Buy milk", language = "en", durationMs = 0)
+        database.analysisQueueQueries.enqueue("live", 1L)
+        repository.replaceFor("live", listOf(item("Old task")))
+
+        repository.applyAnalysis("live", listOf(item("Buy milk")), "Shopping", "Milk", 2L)
+
+        val task = repository.items.first().single()
+        assertEquals("Buy milk", task.text)
+        assertEquals("live", task.sourceTranscriptId)
+        assertEquals(2L, task.createdAt)
+        val stored = transcripts.transcripts.first().single()
+        assertEquals("Shopping", stored.title)
+        assertEquals("Milk", stored.summary)
+        assertEquals(2L, stored.analyzedAt)
+        assertTrue(database.analysisQueueQueries.selectAll().executeAsList().isEmpty())
+    }
+
+    @Test
     fun `items are stored against their transcript`() = runTest {
         val repository = repository()
 

@@ -28,7 +28,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.LaunchedEffect
@@ -162,10 +162,11 @@ private fun MainApp(
 
     val onTabs = route in Tabs.map { it.route }
     val onNote = route == Routes.DETAIL
-    val stack by navController.currentBackStack.collectAsState()
-    // A note keeps the tab it was opened from lit.
-    val selectedTab = stack.lastOrNull { entry -> Tabs.any { it.route == entry.destination.route } }
-        ?.destination?.route.orEmpty()
+    // Keep the source tab selected while a note or another child destination is open.
+    var selectedTab by rememberSaveable { mutableStateOf(Routes.NOTES) }
+    LaunchedEffect(route) {
+        if (route in Tabs.map { it.route }) selectedTab = route.orEmpty()
+    }
     val density = LocalDensity.current
     var barHeight by remember { mutableStateOf(0.dp) }
 
@@ -311,8 +312,8 @@ private fun MainApp(
                     )
                 }
 
-                composable(Routes.STORAGE) {
-                    val settingsEntry = remember(navController) { navController.getBackStackEntry(Routes.SETTINGS) }
+                composable(Routes.STORAGE) { entry ->
+                    val settingsEntry = remember(entry) { navController.getBackStackEntry(Routes.SETTINGS) }
                     val settingsViewModel: SettingsViewModel = viewModel(
                         viewModelStoreOwner = settingsEntry,
                         factory = viewModelFactory,

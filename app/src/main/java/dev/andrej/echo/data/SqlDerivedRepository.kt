@@ -5,6 +5,11 @@ import app.cash.sqldelight.coroutines.mapToList
 import dev.andrej.echo.data.db.EchoDatabase
 import dev.andrej.echo.data.db.Todo
 import java.util.UUID
+import java.time.ZoneId
+import java.time.Instant
+import dev.andrej.echo.notify.TaskReminderTime
+import dev.andrej.echo.notify.dateReminderTime
+import dev.andrej.echo.notify.taskReminderTime
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -13,6 +18,8 @@ import kotlinx.coroutines.withContext
 class SqlDerivedRepository(
     private val database: EchoDatabase,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val now: () -> Long = System::currentTimeMillis,
+    private val zone: () -> ZoneId = ZoneId::systemDefault,
 ) : DerivedRepository {
 
     private val queries = database.todoQueries
@@ -26,10 +33,14 @@ class SqlDerivedRepository(
         createdAt: Long,
     ) = withContext(ioDispatcher) {
         database.transaction {
-            val doneBefore = queries.doneFor(transcriptId).executeAsList().associate { it.id to it.done }
+            val before = queries.selectFor(transcriptId, ::TodoItem).executeAsList().associateBy { it.id }
+            val savedAt = now()
             queries.deleteFor(transcriptId)
             items.distinctBy { derivedId(transcriptId, it.text) }.forEach { newTodo ->
                 val id = derivedId(transcriptId, newTodo.text)
+                val old = before[id]
+                val changed = old == null || scheduleChanged(old, newTodo.dueAt, newTodo.hasTime, newTodo.hasDate)
+                val reminder = if (changed) taskReminderTime(newTodo.dueAt, newTodo.hasTime, newTodo.hasDate, savedAt, zone()) else null
                 queries.insert(
                     Todo(
                         id = id,
@@ -38,10 +49,13 @@ class SqlDerivedRepository(
                         dueAt = newTodo.dueAt,
                         hasTime = newTodo.hasTime,
                         hasDate = newTodo.hasDate,
-                        done = doneBefore[id] ?: false,
-                        createdAt = createdAt,
-                        updatedAt = createdAt,
+                        done = old?.done ?: false,
+                        createdAt = old?.createdAt ?: createdAt,
+                        updatedAt = savedAt,
                         sourceOffsetMs = newTodo.sourceOffsetMs,
+                        reminderAt = if (changed) reminder?.at else old.reminderAt,
+                        reminderDate = if (changed) reminder?.date else old.reminderDate,
+                        reminderDelivered = if (changed) false else old.reminderDelivered,
                     ),
                 )
             }
@@ -55,13 +69,33 @@ class SqlDerivedRepository(
         ).toString()
 
     override suspend fun setDone(itemId: String, done: Boolean) = withContext(ioDispatcher) {
-        queries.setDone(done, System.currentTimeMillis(), itemId)
+        database.transaction {
+            val old = queries.selectById(itemId, ::TodoItem).executeAsOneOrNull()
+            val savedAt = now()
+            queries.setDone(done, savedAt, itemId)
+            if (old?.done == true && !done) {
+                val reminder = if (old.reminderDate != null) {
+                    TaskReminderTime(dateReminderTime(old.reminderDate, savedAt, zone()), old.reminderDate)
+                } else if (old.reminderAt != null) {
+                    TaskReminderTime(maxOf(savedAt, old.reminderAt))
+                } else taskReminderTime(old.dueAt, old.hasTime, old.hasDate, savedAt, zone())
+                queries.updateReminder(reminder.at, reminder.date, false, itemId)
+            }
+        }
         Unit
     }
 
     override suspend fun update(itemId: String, text: String, dueAt: Long, hasTime: Boolean, hasDate: Boolean) =
         withContext(ioDispatcher) {
-            queries.update(text, dueAt, hasTime, hasDate, System.currentTimeMillis(), itemId)
+            database.transaction {
+                val old = queries.selectById(itemId, ::TodoItem).executeAsOneOrNull()
+                val savedAt = now()
+                queries.update(text, dueAt, hasTime, hasDate, savedAt, itemId)
+                if (old != null && scheduleChanged(old, dueAt, hasTime, hasDate)) {
+                    val reminder = taskReminderTime(dueAt, hasTime, hasDate, savedAt, zone())
+                    queries.updateReminder(reminder.at, reminder.date, false, itemId)
+                }
+            }
             Unit
         }
 
@@ -78,5 +112,15 @@ class SqlDerivedRepository(
     override suspend fun clear() = withContext(ioDispatcher) {
         queries.clear()
         Unit
+    }
+
+    private fun scheduleChanged(old: TodoItem, dueAt: Long, hasTime: Boolean, hasDate: Boolean): Boolean {
+        if (old.hasDate != hasDate) return true
+        if (!hasDate) return false
+        if (old.hasTime != hasTime) return true
+        if (old.dueAt == dueAt) return false
+        if (hasTime) return old.dueAt != dueAt
+        val oldDate = old.reminderDate ?: Instant.ofEpochMilli(old.dueAt).atZone(zone()).toLocalDate().toString()
+        return oldDate != Instant.ofEpochMilli(dueAt).atZone(zone()).toLocalDate().toString()
     }
 }

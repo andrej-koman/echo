@@ -186,6 +186,8 @@ fun SettingsScreen(
                 ),
             )
 
+            TaskReminderSettings()
+
             Section(
                 title = "STORAGE & DATA",
                 rows = listOf(
@@ -362,7 +364,7 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun Section(title: String, rows: List<@Composable () -> Unit>) {
+internal fun Section(title: String, rows: List<@Composable () -> Unit>) {
     Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3)) {
         Text(
             text = title,
@@ -383,7 +385,7 @@ private fun Section(title: String, rows: List<@Composable () -> Unit>) {
 }
 
 @Composable
-private fun DisclosureRow(
+internal fun DisclosureRow(
     iconRes: Int,
     label: String,
     value: String = "",

@@ -112,6 +112,8 @@ fun EchoApp(
     modifier: Modifier = Modifier,
     pendingOpenCapture: Boolean = false,
     onOpenCaptureHandled: () -> Unit = {},
+    pendingOpenTask: String? = null,
+    onOpenTaskHandled: () -> Unit = {},
 ) {
     val done by onboardingDone.collectAsStateWithLifecycle()
     var captureAfterOnboarding by remember { mutableStateOf(false) }
@@ -133,6 +135,8 @@ fun EchoApp(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 pendingOpenCapture = pendingOpenCapture || captureAfterOnboarding,
+                pendingOpenTask = pendingOpenTask,
+                onOpenTaskHandled = onOpenTaskHandled,
                 onOpenCaptureHandled = {
                     captureAfterOnboarding = false
                     onOpenCaptureHandled()
@@ -149,6 +153,8 @@ private fun MainApp(
     onThemeModeChange: (ThemeMode) -> Unit,
     pendingOpenCapture: Boolean = false,
     onOpenCaptureHandled: () -> Unit = {},
+    pendingOpenTask: String? = null,
+    onOpenTaskHandled: () -> Unit = {},
 ) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -206,6 +212,13 @@ private fun MainApp(
         if (pendingOpenCapture) {
             startRecording()
             onOpenCaptureHandled()
+        }
+    }
+
+    LaunchedEffect(pendingOpenTask) {
+        pendingOpenTask?.let {
+            navController.navigate(Routes.editTask(it)) { launchSingleTop = true }
+            onOpenTaskHandled()
         }
     }
 

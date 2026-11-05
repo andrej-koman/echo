@@ -109,6 +109,12 @@ class AppContainer(context: Context) {
 
     val derived: DerivedRepository = SqlDerivedRepository(database)
 
+    val taskReminders = dev.andrej.echo.notify.TaskReminders(
+        derived,
+        dev.andrej.echo.data.SqlTaskReminderRepository(database),
+        dev.andrej.echo.notify.AndroidTaskReminderDelivery(applicationContext),
+    )
+
     val analysisQueue: AnalysisQueueRepository = SqlAnalysisQueueRepository(database)
 
     val dictionary = DictionaryRepository(database)
@@ -257,6 +263,10 @@ class AppContainer(context: Context) {
 
     init {
         appScope.launch {
+            taskReminders.reconcile(refreshDates = true, force = true)
+            derived.items.distinctUntilChanged().collect { taskReminders.reconcile() }
+        }
+        appScope.launch {
             modelDownloadState.collect { target ->
                 if (target == null) modelDownloadNotifier.update(null, null, null)
                 else modelDownloadNotifier.update(target.first.id, target.first.title, target.second)
@@ -289,6 +299,7 @@ class AppContainer(context: Context) {
     /** Called from Activity.onStart — a capable backend may have appeared while backgrounded. */
     fun onAppForegrounded() {
         pendingAnalysisWorker.requestDrain()
+        appScope.launch { taskReminders.reconcile(refreshDates = true, force = true) }
     }
 
     /** [dev.andrej.echo.notify.BootReceiver] calls this — the idle notification does not survive a reboot either. */

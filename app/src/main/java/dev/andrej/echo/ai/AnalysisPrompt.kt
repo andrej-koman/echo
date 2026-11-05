@@ -25,6 +25,10 @@ fun buildSummaryPrompt(text: String): String = """
 
     {"title":"...","summary":"..."}
 
+    Use only information explicitly stated in the voice note below for both title and summary.
+    Do not invent or assume any topic, event, person, object, or action. The example shows the
+    format and style only: never use its details unless the voice note itself states them.
+
     title: what the note is about, at most 6 words.
 
     summary: the gist, in the language the speaker used. One or two sentences for a short note;
@@ -47,6 +51,9 @@ fun buildMergePrompt(parts: List<NoteSummary>): String = """
     summary of the whole note. Reply with JSON only, both keys always present:
 
     {"title":"...","summary":"..."}
+
+    Use only information explicitly stated in the parts below for both title and summary.
+    Do not invent or assume any topic, event, person, object, or action, or add missing details.
 
     title: what the whole note is about, at most 6 words.
 

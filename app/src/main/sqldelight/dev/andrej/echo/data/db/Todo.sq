@@ -10,13 +10,31 @@ CREATE TABLE todo (
     done INTEGER AS Boolean NOT NULL,
     createdAt INTEGER NOT NULL,
     updatedAt INTEGER NOT NULL,
-    sourceOffsetMs INTEGER
+    sourceOffsetMs INTEGER,
+    reminderAt INTEGER,
+    reminderDate TEXT,
+    reminderDelivered INTEGER AS Boolean NOT NULL DEFAULT 0
 );
 
 CREATE INDEX todo_source ON todo(sourceTranscriptId);
 
 selectAll:
 SELECT * FROM todo ORDER BY dueAt, hasTime DESC, createdAt;
+
+selectById:
+SELECT * FROM todo WHERE id = ?;
+
+selectFor:
+SELECT * FROM todo WHERE sourceTranscriptId = ?;
+
+updateReminder:
+UPDATE todo SET reminderAt = ?, reminderDate = ?, reminderDelivered = ? WHERE id = ?;
+
+deliverReminder:
+UPDATE todo SET reminderDelivered = 1 WHERE id = ?;
+
+retryReminder:
+UPDATE todo SET reminderDelivered = 0 WHERE id = ? AND reminderAt = ?;
 
 doneFor:
 SELECT id, done FROM todo WHERE sourceTranscriptId = ?;

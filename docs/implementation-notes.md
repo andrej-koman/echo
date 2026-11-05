@@ -190,7 +190,7 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
   numbered `.sqm` migration beside the `.sq` files. `1.sqm` (Phase 5) added
   `transcript.polishedText` and `todo.sourceOffsetMs`; `2.sqm` (Phase 7) added `segment_fts` and
   `dictionary_term`; `3.sqm` (Phase 6) added `speaker` and `segment.speaker`; `4.sqm` (Phase 8) added `folder` and
-  `transcript.folderId`; `5.sqm` added `transcript.titleByUser`; schema is version 6. Deleting a folder un-files its notes in the same
+  `transcript.folderId`; `5.sqm` added `transcript.titleByUser`; `6.sqm` adds task reminder time, local date, and delivery state; schema is version 7. Deleting a folder un-files its notes in the same
   transaction. A folder's `color` indexes `EchoColors.palette` (shared with speakers), its `icon`
   is a `FolderIcon` name.
 - **Search** (`TranscriptRepository.search`, Notes' search field): `segment_fts` (FTS4,
@@ -218,7 +218,9 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
 ```
 
 Wireless debugging drops often: `adb connect <ip:port>` from Settings → Developer options → Wireless debugging.
-There are no instrumented tests (the old `RecordScreenTest` tested live recognizer text). Grant
+Instrumented tests use the separate `uitest` application (`dev.andrej.echo.uitest`) so they
+never install over the user's notes. `testUitestUnitTest` runs JVM tests; `assembleUitestAndroidTest`
+builds device tests, including task reminder delivery/navigation and Compose gesture checks. Grant
 the mic without the dialog: `adb shell pm grant dev.andrej.echo android.permission.RECORD_AUDIO`.
 Recording starts behind a locked keyguard (`am start -n dev.andrej.echo/.MainActivity --ez
 open_capture true`) and records, but Stop can't be tapped — `am force-stop` then leaves the take
@@ -507,10 +509,31 @@ Onboarding is ported from the separate "Echo Onboarding" Design artifact
 
 ## Notifications
 
-Three channels, no per-task reminders (cut in Phase 0): the recording notification
+Four channels: task reminders, the recording notification
 (`RecordingNotifier` — idle "tap to record", or ongoing while `RecordingService` runs), the
 model download progress (`ModelDownloadNotifier`), and transcription progress (posted by
 `TranscriptionWorker` itself, including the Whisper download inside the job).
+
+- **Task reminders** use `TaskReminders`, `AndroidTaskReminderDelivery`, and
+  `TaskReminderReceiver`. Explicit times use the resolved instant; date-only tasks notify at
+  09:00 local time; undated tasks notify one hour after their first database save, independent
+  of the recording's age. Past reminder times notify immediately. Defaults are stored separately
+  from task deadlines so undated tasks remain undated in the UI.
+- Reminder time, original local date (date-only), and delivery state persist in `todo`.
+  Migration leaves existing tasks without reminders to avoid an upgrade notification flood.
+  Re-analysis preserves an unchanged task's countdown, creation time, and delivered state.
+  Deadline edits and reopening re-arm reminders; reopening an overdue reminder delivers now.
+  Completing/deleting tasks cancels pending alarms and visible notifications.
+- AlarmManager uses exact idle alarms when permitted and inexact idle alarms otherwise.
+  Settings → Task reminders exposes notification and exact-alarm system settings; inexact
+  delivery can be delayed by Android. Android 13+ notification permission is offered once when
+  pending task reminders exist; refusal never blocks task creation. Pending reminders blocked
+  by permission denial are retried when the app is foregrounded.
+- Boot, app update, time/timezone changes, exact-alarm permission grant, and app foreground
+  reconcile pending reminders. Persisted local dates prevent a timezone change from moving a
+  date-only reminder to the wrong calendar day. The receiver claims current task state
+  transactionally before posting, ignoring stale or duplicate broadcasts. Tapping opens task
+  editing through an Activity extra, deferred through onboarding like the capture action.
 
 - **`MY_PACKAGE_REPLACED` and reboot clear the idle recording notification**, so
   `notify/BootReceiver.kt` listens for both and re-posts it. It is *not* `directBootAware` and does

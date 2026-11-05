@@ -14,6 +14,9 @@ data class TodoItem(
     val updatedAt: Long = createdAt,
     /** Where in the recording the task was said; null when the transcript had no timed segments. */
     val sourceOffsetMs: Long? = null,
+    val reminderAt: Long? = null,
+    val reminderDate: String? = null,
+    val reminderDelivered: Boolean = false,
 )
 
 /** What the analyzer produces, before the repository gives it an id. */

@@ -12,7 +12,7 @@ Echo is an offline-first Android voice-notes app. Kotlin, Compose, minSdk 29. It
 
 ## Product and architecture
 
-- The target is `Echo — Feature Spec (v1).pdf`. The rebuild is phased; implement the requested phase or feature only. Notes is the start tab; tasks live inside notes. The app has no account, sync, reminders, or vendor-only AI dependency.
+- The target is `Echo — Feature Spec (v1).pdf`. The rebuild is phased; implement the requested phase or feature only. Notes is the start tab; tasks live inside notes with local task reminders. The app has no account, sync, or vendor-only AI dependency.
 - `AppContainer` provides manual dependency injection. `data/` uses SQLDelight and repository interfaces; ViewModels do not access SQL directly. FTS uses FTS4 for platform SQLite compatibility. Migrations are numbered `.sqm` files beside the schema.
 - `RecordingController` writes 16 kHz PCM16 to `recordings/<id>/audio.pcm`. `Transcriptions` handles imports and recordings in unique WorkManager jobs: decode, Whisper, speaker assignment, audio finalization, then analysis. Analysis has its own persistent queue. Preserve restart recovery and partial transcript behavior when editing this pipeline.
 - Whisper runs through `whisper.cpp` JNI; speaker detection uses sherpa-onnx's C API. The LLM uses LiteRT-LM with a downloaded Qwen3 `.litertlm` model. `ModelSlot` prevents Whisper and the LLM from residing in memory together.

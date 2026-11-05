@@ -18,6 +18,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -69,6 +70,7 @@ class SettingsViewModelTest {
 
         assertEquals("sl", settings.transcriptionLanguage)
         assertEquals("sl", viewModel.state.value.languageCode)
+        assertTrue(viewModel.state.value.languageLabel.startsWith("🇸🇮 "))
     }
 
     @Test
@@ -80,7 +82,7 @@ class SettingsViewModelTest {
         viewModel.setLanguage("")
 
         assertNull(settings.transcriptionLanguage)
-        assertEquals("Auto-detect", viewModel.state.value.languageLabel)
+        assertEquals("🌐 Auto-detect", viewModel.state.value.languageLabel)
     }
 
     @Test

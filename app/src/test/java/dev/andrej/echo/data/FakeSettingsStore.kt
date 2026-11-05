@@ -7,6 +7,8 @@ class FakeSettingsStore(initial: String? = null) : SettingsStore {
     override var wifiOnlyDownload: Boolean = false
     override var onboardingDone: Boolean = false
     override var speechModel: String? = null
+    override var notesAiModel: String = "qwen3_1_7b"
+    override var pendingNotesAiModel: String? = null
     override var importDay: ImportDay? = null
     override var themeMode: ThemeMode = ThemeMode.Dark
 }

@@ -14,7 +14,10 @@ class OnboardingViewModel(
     private val onStartDownloads: () -> Unit,
     private val onDownloadNow: () -> Unit,
     private val onFinish: () -> Unit,
+    modelDownloadBytes: Long = 977_000_000L,
 ) : ViewModel() {
+
+    val modelDownloadLabel: String = "${(modelDownloadBytes / 1_000_000.0).toInt()} MB"
 
     private val _step = MutableStateFlow(OnboardingStep.Welcome)
     val step: StateFlow<OnboardingStep> = _step.asStateFlow()

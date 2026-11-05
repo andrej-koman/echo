@@ -9,11 +9,11 @@ import androidx.lifecycle.ViewModelProvider
 import dev.andrej.echo.ai.AiCardState
 import dev.andrej.echo.ai.HttpModelDownloader
 import dev.andrej.echo.ai.LiteRtLlmRunner
-import dev.andrej.echo.ai.LlmRunnerProvider
 import dev.andrej.echo.ai.ModelSlot
 import dev.andrej.echo.ai.ModelStore
 import dev.andrej.echo.ai.PendingAnalysisWorker
-import dev.andrej.echo.ai.QWEN3_1_7B_INT4
+import dev.andrej.echo.ai.NotesAiModel
+import dev.andrej.echo.ai.NotesAiSelection
 import dev.andrej.echo.ai.TranscriptAnalyzer
 import dev.andrej.echo.ai.toCardState
 import dev.andrej.echo.data.AnalysisQueueRepository
@@ -54,8 +54,10 @@ import dev.andrej.echo.ui.onboarding.OnboardingViewModel
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -66,10 +68,14 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class AppContainer(context: Context) {
 
     private val applicationContext = context.applicationContext
@@ -109,21 +115,29 @@ class AppContainer(context: Context) {
 
     val folders = FolderRepository(database)
 
-    val modelStore = ModelStore(
-        directory = File(applicationContext.filesDir, "models"),
-        spec = QWEN3_1_7B_INT4,
-        downloader = HttpModelDownloader(),
-    )
+    private val modelStores = NotesAiModel.entries.associateWith { model ->
+        ModelStore(
+            directory = File(applicationContext.filesDir, "models"),
+            spec = model.spec,
+            downloader = HttpModelDownloader(),
+        )
+    }
+
+    private val modelSelection = NotesAiSelection(settings, modelStores)
+    private val downloadTarget = MutableStateFlow<NotesAiModel?>(null)
 
     private val activityManager = applicationContext.getSystemService(ActivityManager::class.java)
 
     private val modelSlot = ModelSlot()
 
-    private val liteRtRunner = LiteRtLlmRunner(
-        store = modelStore,
-        activityManager = activityManager,
-        slot = modelSlot,
-    )
+    private val liteRtRunners = NotesAiModel.entries.associateWith { model ->
+        LiteRtLlmRunner(
+            store = modelStores.getValue(model),
+            activityManager = activityManager,
+            slot = modelSlot,
+            modelId = model.id,
+        )
+    }
 
     private val speechModels = SpeechModels(
         directory = File(applicationContext.filesDir, "models"),
@@ -136,13 +150,30 @@ class AppContainer(context: Context) {
         embedding = ModelStore(File(applicationContext.filesDir, "models"), SPEAKER_EMBEDDING, HttpModelDownloader()),
     )
 
-    private val llmRunners = LlmRunnerProvider(listOf(liteRtRunner))
-
-    val analyzer = TranscriptAnalyzer(llmRunners::runner, repository::segments)
+    val analyzer = TranscriptAnalyzer(
+        runners = { liteRtRunners.getValue(modelSelection.active.value) },
+        segments = repository::segments,
+    )
 
     val aiCardState: Flow<AiCardState> = flow {
         emit(AiCardState.Checking)
-        emitAll(modelStore.state.map { liteRtRunner.availability().toCardState() })
+        emitAll(
+            modelSelection.active.flatMapLatest { active ->
+                    modelStores.getValue(active).state.map {
+                        liteRtRunners.getValue(active).availability().toCardState()
+                    }
+                },
+        )
+    }
+
+    val notesAiModelStates = combine(
+        modelSelection.active,
+        combine(NotesAiModel.entries.map { modelStores.getValue(it).state }) { states -> states.toList() },
+    ) { _, states -> modelSelection.statuses(states) }
+
+    private val modelDownloadState = downloadTarget.flatMapLatest { model ->
+        if (model == null) flowOf(null)
+        else modelStores.getValue(model).state.map { model to it }
     }
 
     private fun warmUpLlm() {
@@ -208,7 +239,7 @@ class AppContainer(context: Context) {
             if (settings.detectSpeakers) diarizer.download {}
         }
         appScope.launch {
-            if (llmNeedsDownload.first()) downloadModel()
+            if (llmNeedsDownload.first()) downloadModel(modelSelection.active.value)
         }
     }
 
@@ -226,18 +257,25 @@ class AppContainer(context: Context) {
 
     init {
         appScope.launch {
-            modelStore.state
-                .map { it.javaClass.simpleName }
-                .distinctUntilChanged()
-                .drop(1)
-                .collect {
-                    llmRunners.invalidate()
+            modelDownloadState.collect { target ->
+                if (target == null) modelDownloadNotifier.update(null, null, null)
+                else modelDownloadNotifier.update(target.first.id, target.first.title, target.second)
+            }
+        }
+
+        modelStores.forEach { (model, store) ->
+            appScope.launch {
+                store.state.map { it::class }.distinctUntilChanged().collect {
+                    modelSelection.modelStateChanged(model)
                     pendingAnalysisWorker.requestDrain()
                 }
+            }
         }
 
         appScope.launch {
-            modelStore.state.collect(modelDownloadNotifier::update)
+            modelSelection.active.drop(1).collect {
+                pendingAnalysisWorker.requestDrain()
+            }
         }
 
         appScope.launch {
@@ -250,7 +288,6 @@ class AppContainer(context: Context) {
 
     /** Called from Activity.onStart — a capable backend may have appeared while backgrounded. */
     fun onAppForegrounded() {
-        llmRunners.invalidate()
         pendingAnalysisWorker.requestDrain()
     }
 
@@ -262,15 +299,29 @@ class AppContainer(context: Context) {
     /** Debug-only: shows the download notification with fake progress. */
     fun sendTestModelDownloadNotification() {
         if (!BuildConfig.DEBUG) return
-        modelDownloadNotifier.update(ModelState.Downloading(bytesDownloaded = 412_000_000L, totalBytes = 1_100_000_000L))
+        modelDownloadNotifier.update(
+            NotesAiModel.Default.id,
+            NotesAiModel.Default.title,
+            ModelState.Downloading(bytesDownloaded = 412_000_000L, totalBytes = 1_100_000_000L),
+        )
     }
 
     private var downloadJob: Job? = null
 
-    fun downloadModel() {
+    fun downloadModel(model: NotesAiModel = modelSelection.active.value) {
         if (downloadJob?.isActive == true) return
         if (settings.wifiOnlyDownload && !onWifi()) return
-        downloadJob = appScope.launch { modelStore.download() }
+        modelSelection.startDownload(model)
+        downloadTarget.value = model
+        downloadJob = appScope.launch {
+            try {
+                modelStores.getValue(model).download()
+                modelSelection.modelStateChanged(model)
+            } finally {
+                modelSelection.downloadEnded(model)
+                downloadTarget.value = null
+            }
+        }
     }
 
     private fun onWifi(): Boolean {
@@ -279,12 +330,20 @@ class AppContainer(context: Context) {
         return capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
     }
 
-    fun cancelDownload() {
-        downloadJob?.cancel()
+    fun cancelDownload(modelId: String? = null) {
+        val target = downloadTarget.value ?: return
+        if (modelId == null || target.id == modelId) downloadJob?.cancel()
     }
 
-    fun deleteModel() {
-        appScope.launch { modelStore.delete() }
+    fun deleteModel(modelId: String = modelSelection.active.value.id) {
+        val model = NotesAiModel.fromId(modelId)
+        appScope.launch {
+            if (downloadTarget.value == model) downloadJob?.cancelAndJoin()
+            modelSlot.evictLlm(model.id)
+            modelStores.getValue(model).delete()
+            modelSelection.modelRemoved(model)
+            pendingAnalysisWorker.requestDrain()
+        }
     }
 
     fun storageUsage(): StorageUsage = scanStorage(
@@ -328,8 +387,9 @@ class AppContainer(context: Context) {
                 OnboardingViewModel(
                     needsDownload = llmNeedsDownload,
                     onStartDownloads = ::startOnboardingDownloads,
-                    onDownloadNow = ::downloadModel,
+                    onDownloadNow = { downloadModel() },
                     onFinish = ::finishOnboarding,
+                    modelDownloadBytes = modelSelection.active.value.spec.bytes,
                 ) as T
 
             modelClass.isAssignableFrom(FoldersViewModel::class.java) ->
@@ -347,10 +407,12 @@ class AppContainer(context: Context) {
                     transcripts = repository,
                     derived = derived,
                     aiCardState = aiCardState,
-                    litertModelBytes = modelStore.spec.bytes,
+                    notesAiModelStates = notesAiModelStates,
+                    litertModelBytes = modelSelection.active.value.spec.bytes,
                     onDownloadModel = ::downloadModel,
                     onCancelDownload = ::cancelDownload,
                     onDeleteModel = ::deleteModel,
+                    onSelectNotesAiModel = { modelSelection.choose(it) },
                     storageUsage = ::storageUsage,
                     onTestModelDownloadNotification = ::sendTestModelDownloadNotification,
                     onDeleteAllData = ::deleteAllData,

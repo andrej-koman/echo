@@ -11,17 +11,45 @@ import kotlinx.coroutines.sync.withLock
 class ModelSlot {
 
     private val mutex = Mutex()
-    private var evictLlm: suspend () -> Unit = {}
+    private val evictLlm = mutableMapOf<String, suspend () -> Unit>()
+    private var activeLlm: String? = null
 
-    /** The LLM registers how to free itself, so Whisper can take the slot. */
-    fun onEvictLlm(evict: suspend () -> Unit) {
-        evictLlm = evict
+    /** Each model registers its own close operation. */
+    fun onEvictLlm(modelId: String, evict: suspend () -> Unit) {
+        evictLlm[modelId] = evict
     }
 
-    suspend fun <T> llm(block: suspend () -> T): T = mutex.withLock { block() }
+    /** Compatibility for the single-model callers and tests. */
+    fun onEvictLlm(evict: suspend () -> Unit) {
+        onEvictLlm(DEFAULT_MODEL_ID, evict)
+        activeLlm = DEFAULT_MODEL_ID
+    }
+
+    suspend fun <T> llm(modelId: String, block: suspend () -> T): T = mutex.withLock {
+        if (activeLlm != modelId) {
+            activeLlm?.let { evictLlm[it]?.invoke() }
+            activeLlm = modelId
+        }
+        block()
+    }
+
+    suspend fun <T> llm(block: suspend () -> T): T = llm(DEFAULT_MODEL_ID, block)
+
+    /** Closes a model before its store removes the weights. */
+    suspend fun evictLlm(modelId: String) = mutex.withLock {
+        if (activeLlm == modelId) {
+            evictLlm[modelId]?.invoke()
+            activeLlm = null
+        }
+    }
 
     suspend fun <T> whisper(block: suspend () -> T): T = mutex.withLock {
-        evictLlm()
+        activeLlm?.let { evictLlm[it]?.invoke() }
+        activeLlm = null
         block()
+    }
+
+    private companion object {
+        const val DEFAULT_MODEL_ID = "default"
     }
 }

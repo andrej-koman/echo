@@ -1,12 +1,14 @@
 package dev.andrej.echo.ai
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ModelSlotTest {
 
     @Test
@@ -35,5 +37,31 @@ class ModelSlotTest {
         runCurrent()
 
         assertEquals(listOf("llm start", "llm end", "evict", "whisper"), events)
+    }
+
+    @Test
+    fun `switching models closes the previous engine before the next is used`() = runTest {
+        val slot = ModelSlot()
+        val events = mutableListOf<String>()
+        slot.onEvictLlm("fast") { events += "close fast" }
+        slot.onEvictLlm("default") { events += "close default" }
+
+        slot.llm("fast") { events += "use fast" }
+        slot.llm("default") { events += "use default" }
+
+        assertEquals(listOf("use fast", "close fast", "use default"), events)
+    }
+
+    @Test
+    fun `whisper closes whichever model is currently loaded`() = runTest {
+        val slot = ModelSlot()
+        val events = mutableListOf<String>()
+        slot.onEvictLlm("fast") { events += "close fast" }
+        slot.onEvictLlm("default") { events += "close default" }
+
+        slot.llm("default") { events += "use default" }
+        slot.whisper { events += "whisper" }
+
+        assertEquals(listOf("use default", "close default", "whisper"), events)
     }
 }

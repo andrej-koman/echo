@@ -72,4 +72,17 @@ class OnboardingViewModelTest {
         assertFalse(viewModel.back())
         assertEquals(OnboardingStep.Welcome, viewModel.step.value)
     }
+
+    @Test
+    fun `download size follows the selected model`() {
+        val viewModel = OnboardingViewModel(
+            needsDownload = flowOf(true),
+            onStartDownloads = {},
+            onDownloadNow = {},
+            onFinish = {},
+            modelDownloadBytes = 329_000_000L,
+        )
+
+        assertEquals("329 MB", viewModel.modelDownloadLabel)
+    }
 }

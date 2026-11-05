@@ -126,3 +126,15 @@ val QWEN3_1_7B_INT4 = ModelSpec(
     fileName = "Qwen3-1.7B_dynamic_wi4b32_afp32.litertlm",
     bytes = 977_000_000,
 )
+
+/**
+ * Pin the pre-external-weights export: the current artifact crashes on Android's LiteRT-LM 0.18.1
+ * GPU path. This revision is the 329 MB, 4096-token export tested with 0.18.1.
+ */
+val QWEN3_0_6B_INT4 = ModelSpec(
+    url = "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/" +
+        "e6bb3e4a1eb3f663153f0c1c12b735d64be657a7/" +
+        "Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
+    fileName = "Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
+    bytes = 329_000_000,
+)

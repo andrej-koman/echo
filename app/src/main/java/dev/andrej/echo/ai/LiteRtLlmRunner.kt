@@ -20,6 +20,7 @@ class LiteRtLlmRunner(
     private val store: ModelStore,
     private val activityManager: ActivityManager?,
     private val slot: ModelSlot,
+    private val modelId: String = store.spec.fileName,
     private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : LlmRunner {
 
@@ -28,7 +29,7 @@ class LiteRtLlmRunner(
     private var engine: Engine? = null
 
     init {
-        slot.onEvictLlm {
+        slot.onEvictLlm(modelId) {
             engine?.close()
             engine = null
         }
@@ -50,13 +51,13 @@ class LiteRtLlmRunner(
 
     override suspend fun warmup() {
         try {
-            slot.llm { engineOrNull() }
+            slot.llm(modelId) { engineOrNull() }
         } catch (e: Exception) {
             Log.w(TAG, "warmup failed, the first call will be slow: ${e.message}")
         }
     }
 
-    override suspend fun generate(prompt: String, temperature: Float): String = slot.llm {
+    override suspend fun generate(prompt: String, temperature: Float): String = slot.llm(modelId) {
         val engine = engineOrNull() ?: error("the model is not on this device yet")
         withContext(computeDispatcher) { converse(engine, prompt, temperature) }
     }

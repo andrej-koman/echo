@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material3.Icon
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateFloatAsState
@@ -101,6 +102,7 @@ fun <T> PickerSheet(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     subtitle: (T) -> String? = { null },
+    dividerBefore: (T) -> Boolean = { false },
 ) {
     Sheet(visible = visible, onDismiss = onDismiss, modifier = modifier) {
         Text(text = title, style = EchoTheme.typography.heading, color = EchoTheme.colors.textPrimary)
@@ -110,6 +112,7 @@ fun <T> PickerSheet(
                 .verticalScroll(rememberScrollState()),
         ) {
             options.forEach { (label, value) ->
+                if (dividerBefore(value)) HorizontalDivider(color = EchoTheme.colors.borderSubtle)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()

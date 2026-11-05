@@ -25,6 +25,12 @@ interface SettingsStore {
     /** A `WhisperModel.id`; null picks by the phone's memory. */
     var speechModel: String?
 
+    /** The active Notes AI model. Existing installs default to the original 1.7B model. */
+    var notesAiModel: String
+
+    /** A model whose download was explicitly requested and may be activated when ready. */
+    var pendingNotesAiModel: String?
+
     /** Null asks on every import. */
     var importDay: ImportDay?
 
@@ -59,6 +65,14 @@ class SharedPreferencesSettingsStore(context: Context) : SettingsStore {
         get() = preferences.getString(KEY_SPEECH_MODEL, null)
         set(value) = preferences.edit().putString(KEY_SPEECH_MODEL, value).apply()
 
+    override var notesAiModel: String
+        get() = preferences.getString(KEY_NOTES_AI_MODEL, DEFAULT_NOTES_AI_MODEL) ?: DEFAULT_NOTES_AI_MODEL
+        set(value) = preferences.edit().putString(KEY_NOTES_AI_MODEL, value).apply()
+
+    override var pendingNotesAiModel: String?
+        get() = preferences.getString(KEY_PENDING_NOTES_AI_MODEL, null)
+        set(value) = preferences.edit().putString(KEY_PENDING_NOTES_AI_MODEL, value).apply()
+
     override var importDay: ImportDay?
         get() = preferences.getString(KEY_IMPORT_DAY, null)?.let { name -> ImportDay.entries.find { it.name == name } }
         set(value) = preferences.edit().putString(KEY_IMPORT_DAY, value?.name).apply()
@@ -75,7 +89,10 @@ class SharedPreferencesSettingsStore(context: Context) : SettingsStore {
         const val KEY_WIFI_ONLY_DOWNLOAD = "wifi_only_download"
         const val KEY_ONBOARDING_DONE = "onboarding_done"
         const val KEY_SPEECH_MODEL = "speech_model"
+        const val KEY_NOTES_AI_MODEL = "notes_ai_model"
+        const val KEY_PENDING_NOTES_AI_MODEL = "pending_notes_ai_model"
         const val KEY_IMPORT_DAY = "import_day"
         const val KEY_THEME_MODE = "theme_mode"
+        const val DEFAULT_NOTES_AI_MODEL = "qwen3_1_7b"
     }
 }

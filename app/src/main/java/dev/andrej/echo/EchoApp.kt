@@ -264,6 +264,7 @@ private fun MainApp(
                         onDownloadModel = settingsViewModel.onDownloadModel,
                         onCancelDownload = settingsViewModel.onCancelDownload,
                         onDeleteModel = settingsViewModel.onDeleteModel,
+                        onSelectNotesAiModel = { settingsViewModel.onSelectNotesAiModel(it) },
                         onTestModelDownloadNotification = settingsViewModel.onTestModelDownloadNotification,
                         onReplayOnboarding = settingsViewModel.onReplayOnboarding,
                         onOpenDictionary = { navController.navigate(Routes.DICTIONARY) },

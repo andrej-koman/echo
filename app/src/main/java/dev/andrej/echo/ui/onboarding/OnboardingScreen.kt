@@ -95,6 +95,7 @@ fun OnboardingScreen(
             OnboardingStep.FirstNote -> ProgressStep(index = 4) {
                 FirstNoteStep(
                     needsDownload = needsDownload,
+                    modelDownloadLabel = viewModel.modelDownloadLabel,
                     onDownload = viewModel::downloadNow,
                     onRecord = {
                         viewModel.finish()

@@ -427,6 +427,7 @@ internal fun ColumnScope.MicrophoneStep(onAllow: () -> Unit, onNotNow: () -> Uni
 @Composable
 internal fun ColumnScope.FirstNoteStep(
     needsDownload: Boolean,
+    modelDownloadLabel: String,
     onDownload: () -> Unit,
     onRecord: () -> Unit,
     onLater: () -> Unit,
@@ -453,7 +454,7 @@ internal fun ColumnScope.FirstNoteStep(
     // download. Without it the first note would sit "waiting for model" with no way forward here.
     if (needsDownload) {
         EchoButton(
-            text = "Download AI · 977 MB",
+            text = "Download AI · $modelDownloadLabel",
             onClick = onDownload,
             variant = ButtonVariant.Soft,
             size = ButtonSize.Sm,

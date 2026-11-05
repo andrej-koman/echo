@@ -14,16 +14,16 @@ class ModelDownloadNotifier(private val context: Context) {
 
     private val notificationManager = context.getSystemService(NotificationManager::class.java)
 
-    fun update(state: ModelState) {
+    fun update(modelId: String?, modelTitle: String?, state: ModelState?) {
         val downloading = state as? ModelState.Downloading
-        if (downloading == null) {
+        if (downloading == null || modelId == null || modelTitle == null) {
             notificationManager.cancel(NOTIFICATION_ID)
             return
         }
-        post(downloading)
+        post(modelId, modelTitle, downloading)
     }
 
-    private fun post(state: ModelState.Downloading) {
+    private fun post(modelId: String, modelTitle: String, state: ModelState.Downloading) {
         notificationManager.createNotificationChannel(
             NotificationChannel(CHANNEL_ID, "Model download", NotificationManager.IMPORTANCE_LOW).apply {
                 setSound(null, null)
@@ -35,22 +35,32 @@ class ModelDownloadNotifier(private val context: Context) {
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_echo)
-            .setContentTitle("Getting the on-device model")
+            .setContentTitle("Downloading $modelTitle")
             .setContentText("Once it's down, everything stays on your phone.")
             .setProgress(100, percent, indeterminate)
             .setSubText(if (indeterminate) null else "$percent%")
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setSilent(true)
-            .addAction(R.drawable.ic_pause, "Pause", actionPendingIntent(ModelDownloadActionReceiver.ACTION_PAUSE, 1))
-            .addAction(R.drawable.ic_x, "Cancel", actionPendingIntent(ModelDownloadActionReceiver.ACTION_CANCEL, 2))
+            .addAction(
+                R.drawable.ic_pause,
+                "Pause",
+                actionPendingIntent(ModelDownloadActionReceiver.ACTION_PAUSE, 1, modelId),
+            )
+            .addAction(
+                R.drawable.ic_x,
+                "Cancel",
+                actionPendingIntent(ModelDownloadActionReceiver.ACTION_CANCEL, 2, modelId),
+            )
             .build()
 
         notificationManager.notify(NOTIFICATION_ID, notification)
     }
 
-    private fun actionPendingIntent(action: String, requestCode: Int): PendingIntent {
-        val intent = Intent(context, ModelDownloadActionReceiver::class.java).setAction(action)
+    private fun actionPendingIntent(action: String, requestCode: Int, modelId: String): PendingIntent {
+        val intent = Intent(context, ModelDownloadActionReceiver::class.java)
+            .setAction(action)
+            .putExtra(EXTRA_MODEL_ID, modelId)
         return PendingIntent.getBroadcast(
             context,
             requestCode,
@@ -60,6 +70,7 @@ class ModelDownloadNotifier(private val context: Context) {
     }
 
     companion object {
+        const val EXTRA_MODEL_ID = "model_id"
         private const val CHANNEL_ID = "model_download"
         private const val NOTIFICATION_ID = 20260102
     }

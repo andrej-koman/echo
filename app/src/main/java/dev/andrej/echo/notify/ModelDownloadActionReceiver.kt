@@ -10,11 +10,12 @@ class ModelDownloadActionReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         val container = (context.applicationContext as EchoApplication).container
+        val modelId = intent.getStringExtra(ModelDownloadNotifier.EXTRA_MODEL_ID)
         when (intent.action) {
-            ACTION_PAUSE -> container.cancelDownload()
+            ACTION_PAUSE -> container.cancelDownload(modelId)
             ACTION_CANCEL -> {
-                container.cancelDownload()
-                container.deleteModel()
+                container.cancelDownload(modelId)
+                modelId?.let(container::deleteModel)
             }
         }
     }

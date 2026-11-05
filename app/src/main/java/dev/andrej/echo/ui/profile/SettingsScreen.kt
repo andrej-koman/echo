@@ -34,6 +34,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.andrej.echo.R
 import dev.andrej.echo.ai.AiCardState
+import dev.andrej.echo.ai.ModelState
+import dev.andrej.echo.ai.NotesAiModel
+import dev.andrej.echo.ai.NotesAiModelStatus
 import dev.andrej.echo.ui.components.BadgeTone
 import dev.andrej.echo.ui.components.ButtonVariant
 import dev.andrej.echo.ui.components.CardPadding
@@ -63,9 +66,10 @@ fun SettingsScreen(
     onDetectSpeakersChange: (Boolean) -> Unit,
     onWifiOnlyDownloadChange: (Boolean) -> Unit,
     onDeleteAllData: () -> Unit,
-    onDownloadModel: () -> Unit,
-    onCancelDownload: () -> Unit,
-    onDeleteModel: () -> Unit,
+    onDownloadModel: (NotesAiModel) -> Unit,
+    onCancelDownload: (String?) -> Unit,
+    onDeleteModel: (String) -> Unit,
+    onSelectNotesAiModel: (NotesAiModel) -> Unit,
     onTestModelDownloadNotification: () -> Unit = {},
     onReplayOnboarding: () -> Unit = {},
     onOpenDictionary: () -> Unit = {},
@@ -76,6 +80,7 @@ fun SettingsScreen(
     var pickingLanguage by remember { mutableStateOf(false) }
     var pickingSpeechModel by remember { mutableStateOf(false) }
     var managingAiModel by remember { mutableStateOf(false) }
+    var modelDetails by remember { mutableStateOf<NotesAiModel?>(null) }
     var pickingImportDay by remember { mutableStateOf(false) }
     var pickingTheme by remember { mutableStateOf(false) }
     var confirmingDeleteAll by remember { mutableStateOf(false) }
@@ -110,7 +115,7 @@ fun SettingsScreen(
                         DisclosureRow(
                             iconRes = R.drawable.ic_cpu,
                             label = "Notes AI model",
-                            subtitle = "$MODEL_NAME · ${modelStatus(aiState)}",
+                            subtitle = "${state.notesAiModels.firstOrNull { it.active }?.model?.title ?: NotesAiModel.Default.title} · ${modelStatus(aiState)}",
                             onClick = { managingAiModel = true },
                         )
                     },
@@ -139,7 +144,7 @@ fun SettingsScreen(
                         SwitchRow(
                             iconRes = R.drawable.ic_user,
                             label = "Detect speakers",
-                            subtitle = "Label who said what after transcribing",
+                            subtitle = "Downloads about 41 MB once · label who said what after transcribing",
                             checked = state.detectSpeakers,
                             onCheckedChange = onDetectSpeakersChange,
                         )
@@ -243,8 +248,9 @@ fun SettingsScreen(
     PickerSheet(
         visible = pickingLanguage,
         title = "Language",
-        options = state.languages.map { it.label to it.code },
+        options = state.languages.map { "${it.flag} ${it.label}" to it.code },
         selected = state.languageCode,
+        dividerBefore = { code -> state.languages.firstOrNull { it.code == code }?.dividerBefore == true },
         onPick = {
             onLanguageChange(it)
             pickingLanguage = false
@@ -279,15 +285,22 @@ fun SettingsScreen(
     }
 
     Sheet(visible = managingAiModel, onDismiss = { managingAiModel = false }) {
-        Text(text = "Notes AI model", style = EchoTheme.typography.heading, color = EchoTheme.colors.textPrimary)
-        ModelCard(
-            aiState = aiState,
-            modelBytes = state.litertModelBytes,
+        NotesAiModelSheet(
+            models = state.notesAiModels,
+            activeAiState = aiState,
+            details = modelDetails,
             wifiOnly = state.wifiOnlyDownload,
             onWifiOnlyChange = onWifiOnlyDownloadChange,
+            onOpenDetails = { modelDetails = it },
+            onBack = { modelDetails = null },
             onDownload = onDownloadModel,
             onCancel = onCancelDownload,
             onDelete = onDeleteModel,
+            onSelect = { model ->
+                onSelectNotesAiModel(model)
+                managingAiModel = false
+                modelDetails = null
+            },
         )
     }
 
@@ -422,87 +435,117 @@ private fun SwitchRow(
 }
 
 @Composable
-private fun ModelCard(
-    aiState: AiCardState,
-    modelBytes: Long,
+private fun NotesAiModelSheet(
+    models: List<NotesAiModelStatus>,
+    activeAiState: AiCardState,
+    details: NotesAiModel?,
     wifiOnly: Boolean,
     onWifiOnlyChange: (Boolean) -> Unit,
-    onDownload: () -> Unit,
-    onCancel: () -> Unit,
-    onDelete: () -> Unit,
+    onOpenDetails: (NotesAiModel) -> Unit,
+    onBack: () -> Unit,
+    onDownload: (NotesAiModel) -> Unit,
+    onCancel: (String?) -> Unit,
+    onDelete: (String) -> Unit,
+    onSelect: (NotesAiModel) -> Unit,
 ) {
     Column {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = EchoTheme.spacing.s5),
-            horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(EchoTheme.colors.surfaceAccentSoft),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_audio_waveform),
-                    contentDescription = null,
-                    tint = EchoTheme.colors.textAccent,
-                    modifier = Modifier.size(16.dp),
-                )
+        if (details == null) {
+            Text(text = "Choose a model", style = EchoTheme.typography.bodySm, color = EchoTheme.colors.textSecondary)
+            if (models.isEmpty()) {
+                Text(text = "Checking model files…", style = EchoTheme.typography.caption, color = EchoTheme.colors.textTertiary)
             }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = MODEL_NAME, style = EchoTheme.typography.body, color = EchoTheme.colors.textPrimary)
-                Text(
-                    text = modelMeta(aiState, modelBytes),
-                    style = EchoTheme.typography.caption,
-                    color = EchoTheme.colors.textTertiary,
-                )
-            }
-            modelBadge(aiState)?.let { (text, tone) -> EchoBadge(text = text, tone = tone) }
-        }
-
-        if (aiState is AiCardState.Downloading) {
-            LinearProgressIndicator(
-                progress = { aiState.fraction },
-                modifier = Modifier.fillMaxWidth().padding(bottom = EchoTheme.spacing.s4),
-                color = EchoTheme.colors.textAccent,
-                trackColor = EchoTheme.colors.surfaceAccentSoft,
-            )
-        }
-
-        HorizontalDivider(color = EchoTheme.colors.borderSubtle)
-        SwitchRow(
-            iconRes = R.drawable.ic_settings,
-            label = "Download on Wi-Fi only",
-            subtitle = "AI model downloads wait for Wi-Fi",
-            checked = wifiOnly,
-            onCheckedChange = onWifiOnlyChange,
-        )
-
-        when (aiState) {
-            is AiCardState.NeedsDownload, is AiCardState.Downloading, AiCardState.Ready -> {
-                HorizontalDivider(color = EchoTheme.colors.borderSubtle)
-                Box(modifier = Modifier.fillMaxWidth().padding(vertical = EchoTheme.spacing.s5)) {
-                    when (aiState) {
-                        is AiCardState.NeedsDownload ->
-                            EchoButton(text = "Download", onClick = onDownload, variant = ButtonVariant.Secondary, fullWidth = true)
-
-                        is AiCardState.Downloading ->
-                            EchoButton(text = "Cancel", onClick = onCancel, variant = ButtonVariant.Secondary, fullWidth = true)
-
-                        AiCardState.Ready ->
-                            EchoButton(text = "Remove model", onClick = onDelete, variant = ButtonVariant.Danger, fullWidth = true)
+            models.forEach { status ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onOpenDetails(status.model) }
+                        .padding(vertical = EchoTheme.spacing.s5),
+                    horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = status.model.title, style = EchoTheme.typography.body, color = EchoTheme.colors.textPrimary)
+                        Text(
+                            text = modelStatusLine(status),
+                            style = EchoTheme.typography.caption,
+                            color = EchoTheme.colors.textTertiary,
+                        )
                     }
+                    if (status.active) EchoBadge(text = "Active", tone = BadgeTone.Success)
+                }
+                if (status != models.last()) HorizontalDivider(color = EchoTheme.colors.borderSubtle)
+            }
+        } else {
+            val status = models.firstOrNull { it.model == details }
+            EchoButton(text = "All models", onClick = onBack, variant = ButtonVariant.Ghost)
+            Text(text = details.title, style = EchoTheme.typography.heading, color = EchoTheme.colors.textPrimary)
+            Text(
+                text = status?.let(::modelStatusLine) ?: "Checking availability…",
+                style = EchoTheme.typography.bodySm,
+                color = EchoTheme.colors.textSecondary,
+            )
+            if (status?.state is ModelState.Downloading) {
+                val downloading = status.state
+                LinearProgressIndicator(
+                    progress = { downloading.fraction },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = EchoTheme.colors.textAccent,
+                    trackColor = EchoTheme.colors.surfaceAccentSoft,
+                )
+            }
+            HorizontalDivider(color = EchoTheme.colors.borderSubtle)
+            SwitchRow(
+                iconRes = R.drawable.ic_settings,
+                label = "Download on Wi-Fi only",
+                subtitle = "AI model downloads wait for Wi-Fi",
+                checked = wifiOnly,
+                onCheckedChange = onWifiOnlyChange,
+            )
+            when (status?.state) {
+                is ModelState.Absent, is ModelState.Failed, null -> {
+                    EchoButton(
+                        text = "Download",
+                        onClick = { onDownload(details) },
+                        variant = ButtonVariant.Secondary,
+                        fullWidth = true,
+                    )
+                }
+                is ModelState.Downloading -> {
+                    EchoButton(
+                        text = "Cancel",
+                        onClick = { onCancel(details.id) },
+                        variant = ButtonVariant.Secondary,
+                        fullWidth = true,
+                    )
+                }
+                is ModelState.Ready -> {
+                    if (status.active) {
+                        Text(text = "This model is active", style = EchoTheme.typography.caption, color = EchoTheme.colors.textTertiary)
+                    } else {
+                        EchoButton(text = "Use this model", onClick = { onSelect(details) }, fullWidth = true)
+                    }
+                    EchoButton(
+                        text = "Remove model",
+                        onClick = { onDelete(details.id) },
+                        variant = ButtonVariant.Danger,
+                        fullWidth = true,
+                    )
                 }
             }
-
-            else -> Unit
+            if (status?.active == true && activeAiState is AiCardState.Unsupported) {
+                Text(text = activeAiState.reason, style = EchoTheme.typography.caption, color = EchoTheme.colors.textTertiary)
+            }
         }
     }
 }
 
-private const val MODEL_NAME = "Qwen3 1.7B"
+private fun modelStatusLine(status: NotesAiModelStatus): String = when (val state = status.state) {
+    ModelState.Absent -> "${formatBytes(status.model.spec.bytes)} · ${if (status.pending) "Download paused" else "Not downloaded"}"
+    is ModelState.Downloading -> "${formatBytes(status.model.spec.bytes)} · Downloading ${(state.fraction * 100).toInt()}%"
+    is ModelState.Ready -> "${formatBytes(state.file.length())} · on this device"
+    is ModelState.Failed -> "${formatBytes(status.model.spec.bytes)} · Download failed"
+}
 
 private fun modelStatus(state: AiCardState): String = when (state) {
     AiCardState.Ready -> "Ready"
@@ -510,22 +553,6 @@ private fun modelStatus(state: AiCardState): String = when (state) {
     is AiCardState.Downloading -> "Downloading ${(state.fraction * 100).toInt()}%"
     is AiCardState.Unsupported -> "Unsupported"
     AiCardState.Checking -> "Checking…"
-}
-
-private fun modelMeta(state: AiCardState, modelBytes: Long): String = when (state) {
-    AiCardState.Ready -> "${formatBytes(modelBytes)} · on this device"
-    is AiCardState.NeedsDownload -> "${formatBytes(state.bytes)} · not downloaded"
-    is AiCardState.Downloading -> "Downloading… ${(state.fraction * 100).toInt()}%"
-    is AiCardState.Unsupported -> state.reason
-    AiCardState.Checking -> "Checking availability…"
-}
-
-private fun modelBadge(state: AiCardState): Pair<String, BadgeTone>? = when (state) {
-    AiCardState.Ready -> "Ready" to BadgeTone.Success
-    is AiCardState.NeedsDownload -> "Download" to BadgeTone.Neutral
-    is AiCardState.Downloading -> "Downloading" to BadgeTone.Info
-    is AiCardState.Unsupported -> "Unsupported" to BadgeTone.Warning
-    AiCardState.Checking -> null
 }
 
 private fun importDayLabel(day: ImportDay?) = when (day) {

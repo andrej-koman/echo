@@ -95,7 +95,7 @@ internal fun TaskRow(
             verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
             Text(
-                text = task.text,
+                text = formatTaskText(task.text),
                 style = EchoTheme.typography.bodySm,
                 color = if (task.done) EchoTheme.colors.textTertiary else EchoTheme.colors.textPrimary,
                 textDecoration = if (task.done) TextDecoration.LineThrough else null,

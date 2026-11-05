@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.HorizontalDivider
@@ -58,9 +59,9 @@ internal fun ShareSheet(
             if (timed) Triple(ExportFormat.Subtitles, R.drawable.ic_captions, "Subtitles" to ".srt") else null,
             audioSize?.let { Triple(ExportFormat.Audio, R.drawable.ic_audio_waveform, "Audio" to it) },
         )
-        Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3)) {
+        Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5)) {
             tiles.chunked(2).forEach { row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5)) {
                     row.forEach { (format, icon, labels) ->
                         FormatTile(
                             icon = icon,
@@ -95,12 +96,13 @@ private fun FormatTile(icon: Int, label: String, detail: String, onClick: () -> 
     val colors = EchoTheme.colors
     Column(
         modifier = modifier
+            .heightIn(min = 112.dp)
             .clip(EchoTheme.radii.md)
             .background(colors.surfaceCard)
             .hairline(colors.borderSubtle, cornerRadius = 12.dp)
             .clickable(onClick = onClick)
-            .padding(EchoTheme.spacing.s4),
-        verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s2),
+            .padding(EchoTheme.spacing.s6),
+        verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
     ) {
         Icon(
             painter = painterResource(icon),
@@ -123,7 +125,7 @@ private fun ToggleRow(label: String, checked: Boolean, onToggle: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onToggle)
-            .padding(horizontal = EchoTheme.spacing.s4, vertical = EchoTheme.spacing.s4),
+            .padding(horizontal = EchoTheme.spacing.s6, vertical = EchoTheme.spacing.s6),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(

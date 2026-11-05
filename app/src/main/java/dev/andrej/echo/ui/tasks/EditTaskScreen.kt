@@ -76,7 +76,7 @@ fun EditTaskScreen(
     var loadedFor by remember { mutableStateOf<String?>(null) }
 
     if (task != null && loadedFor != taskId) {
-        editedText = task.text
+        editedText = formatTaskText(task.text)
         editedDueAt = task.dueAt
         editedHasTime = task.hasTime
         editedHasDate = task.hasDate

@@ -248,7 +248,7 @@ ui/folders/   FoldersScreen (the Folders tab) + FoldersViewModel (FolderIcon), F
               folder's notes), FolderSheet (create/edit/delete)
 ui/tasks/     TaskRows (TaskGroupCard/TaskRow/TaskCheckbox for the note screen), EditTaskScreen +
               TasksViewModel
-ui/capture/   RecordingRow — compact recording and paused controls
+ui/capture/   RecordingRow — timer/pause controls above a full-width waveform; static record button below
 ui/record/    RecordViewModel + RecordUiState over RecordingController (still named for its old screen)
 ui/onboarding/ OnboardingScreen + OnboardingSteps (the 5 first-run screens), OnboardingViewModel
 ui/profile/   SettingsScreen + SettingsViewModel (the Settings tab), StorageScreen, HistoryScreen +
@@ -301,8 +301,8 @@ Haptics and reduced motion still follow Android, without inactive Settings switc
 - `ui.notes.title()` derives a title from the opening of the text (first sentence, or
   six words) — the fallback for a transcript analysis has not named yet, not a permanent scheme.
   Note cards prefer `title`/`summary` when present. Since Phase 5 `summary` is the
-  gist — a sentence or two, a short paragraph or bullets for a long note. Card excerpts and the
-  note's Tasks tab render it as-is.
+  gist — a sentence or two, a short paragraph or bullets for a long note. Summaries appear only
+  as note-card descriptions in the UI; note details have no Summary tab, and Tasks contains only tasks.
 - Task and Reminder unified into one `TodoItem` (`text`, `dueAt` — never null, `hasTime`,
   `done`). A speaker who names no date at all still gets an item due **today**; `hasTime`
   records only whether a clock time was stated. `resolveDue` (in `ai/AnalysisPrompt.kt`)
@@ -594,7 +594,14 @@ is the user's call), so a smaller per-tier model (Phase 2) slots in as one more 
   steps someone explains, the 1.7B model still turned every step of an imported how-to video
   into a task; asked the yes/no alone, it answered no. Keep the tasks prompt's examples varied
   in line numbers: an example with only low numbers made every task point at line 0.
+  The intent prompt explicitly counts personal obligations ("I have to", "I need to") and
+  appointments as plans: without positive examples, the small model answered false for a
+  barber/store itinerary and silently skipped extraction. Shared dates carry across errands;
+  vague filler such as "some stuff to do" is not a task.
   This replaced the 3000-word truncation.
+- Task text uses sentence case and final punctuation in the extraction prompt. `formatTaskText`
+  also formats task rows and the initial edit text so older lowercase model output reads correctly
+  without re-analysis; it preserves existing punctuation and capitalization within the sentence.
 - **Tasks point into the recording.** The tasks prompt numbers its lines with their index in the
   whole transcript (Whisper's segments, or sentences for a transcript without them) and asks for
   each task's `line`; `parseTasks` turns that into `TodoItem.sourceOffsetMs`, the segment's

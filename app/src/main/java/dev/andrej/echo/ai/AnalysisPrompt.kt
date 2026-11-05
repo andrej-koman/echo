@@ -62,9 +62,19 @@ fun buildMergePrompt(parts: List<NoteSummary>): String = """
  * 1.7B model listed every step of a how-to video as a task anyway.
  */
 fun buildIntentPrompt(text: String): String = """
-    Does the speaker of this voice note talk about things they themselves plan to do, or want to
-    be reminded of? Explaining how to do something, teaching, telling a story or describing what
-    already happened does not count. Reply with JSON only: {"plans":true} or {"plans":false}.
+    Decide whether this voice note contains the speaker's own intended actions or obligations.
+    "I have to", "I need to", "I will", appointments, errands, and requests for reminders count
+    as plans, even if the speaker never says the word "plan". If at least one such action is
+    present, answer true. Instructions teaching someone else, past events, and general discussion
+    without a personal action are false. Reply with JSON only: {"plans":true} or {"plans":false}.
+
+    Examples:
+    "Tomorrow I have to visit the dentist at 9 and pick up groceries at 11." -> {"plans":true}
+    "I need to call Alex." -> {"plans":true}
+    "Remind me to water the plants." -> {"plans":true}
+    "To install the game, download Steam and click Install." -> {"plans":false}
+    "Yesterday I went shopping." -> {"plans":false}
+    "I'm thinking about possible names for a podcast." -> {"plans":false}
 
     Voice note:
     ""${'"'}
@@ -86,11 +96,15 @@ fun buildTasksPrompt(lines: List<IndexedValue<String>>, now: LocalDateTime): Str
     tasks in this voice note: things the speaker says they themselves will do or want to be
     reminded of, one per stated intention. Steps the speaker explains or teaches to others
     ("click download", "go to Applications") are not tasks; neither is anything they already
-    did. List each task once. Reply with JSON only:
+    did. Extract concrete actions only: vague filler such as "some stuff to do" is not a task.
+    List each task once. A shared date such as "tomorrow" applies to all the following actions
+    in the same plan unless the speaker states a different date. Reply with JSON only:
 
     {"items":[{"text":"...","due":"ISO date, ISO datetime, or null","due_relative_minutes":123 or null,"line":0}]}
 
     text: the action itself, imperative, no time attached, in the language the speaker used.
+    Use sentence case: start with a capital letter, preserve proper names, and use correct
+    punctuation including a final period. Example: "Go to the barber shop."
     due: if an explicit clock time or date was stated ("at 10am", "tomorrow at 3", "tomorrow",
     "on Friday") resolve it — a clock time to a full ISO8601 timestamp using today's date above,
     a date alone to a bare ISO date; for anything else use null. due_relative_minutes: if the
@@ -103,7 +117,7 @@ fun buildTasksPrompt(lines: List<IndexedValue<String>>, now: LocalDateTime): Str
     [0] Remind me to call the dentist tomorrow at 9am.
     [1] Also water the plants in 20 minutes.
     [2] Oh and I need to buy milk.
-    {"items":[{"text":"Call the dentist","due":"2026-01-02T09:00:00","due_relative_minutes":null,"line":0},{"text":"Water the plants","due":null,"due_relative_minutes":20,"line":1},{"text":"Buy milk","due":null,"due_relative_minutes":null,"line":2}]}
+    {"items":[{"text":"Call the dentist.","due":"2026-01-02T09:00:00","due_relative_minutes":null,"line":0},{"text":"Water the plants.","due":null,"due_relative_minutes":20,"line":1},{"text":"Buy milk.","due":null,"due_relative_minutes":null,"line":2}]}
 
     Example. Today is 2026-01-01, the current time is 08:00.
     [0] I think I should start a podcast, I'm thinking about names.

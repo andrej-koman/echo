@@ -172,7 +172,8 @@ fun NoteDetailScreen(
                 wasTranscribed = transcribed
             }
             val shown = tab.takeIf { it in visibleTabs } ?: NoteTab.FullText
-            FollowLiveText(listState, following = status != null && shown != NoteTab.Tasks, typedChars)
+            val showingTranscript = shown == NoteTab.BySpeaker || shown == NoteTab.FullText
+            FollowLiveText(listState, following = status != null && showingTranscript, typedChars)
             val editable = segments.isNotEmpty() && noteId !in transcribing
             val textSelection = edits.entries.firstOrNull { !it.value.selection.collapsed }
             val current = player?.takeIf { it.playing || it.positionMs > 0 }
@@ -183,7 +184,7 @@ fun NoteDetailScreen(
                 HeaderAction(R.drawable.ic_search, "Find", active = finding) {
                     finding = !finding
                     if (!finding) findQuery = ""
-                    if (finding && shown == NoteTab.Tasks) tab = NoteTab.FullText
+                    if (finding && !showingTranscript) tab = NoteTab.FullText
                 }
                 if (editable) {
                     HeaderAction(R.drawable.ic_pen_line, "Edit", active = editing) {
@@ -192,7 +193,7 @@ fun NoteDetailScreen(
                                 viewModel.saveSegments(noteId, applyEdits(segments, edits.mapValues { it.value.text }))
                             }
                             edits.clear()
-                        } else if (shown == NoteTab.Tasks) {
+                        } else if (!showingTranscript) {
                             tab = NoteTab.FullText
                         }
                         editing = !editing
@@ -261,7 +262,7 @@ fun NoteDetailScreen(
                     }
                 }
 
-                if (shown != NoteTab.Tasks) {
+                if (showingTranscript) {
                     item(key = "tools") {
                         Column(
                             modifier = Modifier.padding(horizontal = EchoTheme.spacing.gutterScreen),
@@ -312,7 +313,6 @@ fun NoteDetailScreen(
 
                 when {
                     shown == NoteTab.Tasks -> tasksTab(
-                        summary = transcript.summary,
                         tasks = tasks.filter { it.sourceTranscriptId == noteId },
                         analyzed = transcript.analyzedAt != null,
                         onToggle = { viewModel.setTaskDone(it.id, !it.done) },
@@ -558,7 +558,6 @@ private fun SpeakerRun(
 }
 
 private fun LazyListScope.tasksTab(
-    summary: String?,
     tasks: List<TodoItem>,
     analyzed: Boolean,
     onToggle: (TodoItem) -> Unit,
@@ -570,9 +569,6 @@ private fun LazyListScope.tasksTab(
             modifier = Modifier.padding(horizontal = EchoTheme.spacing.gutterScreen),
             verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5),
         ) {
-            if (summary != null) {
-                Text(text = summary, style = EchoTheme.typography.body, color = EchoTheme.colors.textPrimary)
-            }
             if (tasks.isNotEmpty()) {
                 TaskGroupCard(
                     items = tasks,
@@ -826,7 +822,7 @@ private fun StatusCard(pending: PendingCopy, retrying: Boolean, onRetry: () -> U
                     text = if (failed) {
                         "The recording is safe — retry when the phone is idle, or leave it as a plain recording."
                     } else {
-                        "The summary and tasks appear under Tasks as soon as Echo is done."
+                        "The summary appears on the note card and tasks appear under Tasks as soon as Echo is done."
                     },
                     style = EchoTheme.typography.micro,
                     color = EchoTheme.colors.textSecondary,

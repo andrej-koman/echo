@@ -448,7 +448,7 @@ private fun BottomBar(
                     modifier = Modifier.testTag(TAG_RECORD_BUTTON),
                 )
             } else {
-                // RecordButton centres its disc in a box 1.55× its diameter (room for the pulse);
+                // Match the record button’s outer box to keep center controls at the same height;
                 // the same box puts the slot's disc at the record button's height.
                 Box(
                     modifier = Modifier.size(RecordButtonSize.Sm.diameter * 1.55f),

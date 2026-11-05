@@ -1,5 +1,8 @@
 package dev.andrej.echo.ui.capture
 
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -36,10 +39,11 @@ fun RecordingRow(
             .padding(horizontal = EchoTheme.spacing.gutterScreen, vertical = 10.dp),
     ) {
         Row(
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column {
+            Column(Modifier.weight(1f)) {
                 RecordingTimer(
                     seconds = state.elapsedMs / 1000,
                     live = live,
@@ -57,14 +61,6 @@ fun RecordingRow(
                     color = if (state.micFailed) EchoTheme.colors.textDanger else EchoTheme.colors.textSecondary,
                 )
             }
-            Waveform(
-                modifier = Modifier.weight(1f),
-                bars = 18,
-                level = state.level,
-                live = live,
-                height = 32.dp,
-                color = EchoTheme.colors.recordLive,
-            )
             EchoIconButton(
                 iconRes = if (state.isPaused) R.drawable.ic_mic else R.drawable.ic_pause,
                 contentDescription = if (state.isPaused) "Resume recording" else "Pause recording",
@@ -73,6 +69,16 @@ fun RecordingRow(
                 modifier = Modifier.testTag(TAG_PAUSE_BUTTON),
             )
         }
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            Waveform(
+                bars = ((maxWidth + 3.dp) / 6.dp).toInt().coerceAtLeast(1),
+                level = state.level,
+                live = live,
+                height = 32.dp,
+                color = EchoTheme.colors.recordLive,
+            )
+        }
+        Spacer(Modifier.height(EchoTheme.spacing.s7))
         if (state.micFailed) {
             Text(
                 text = "The microphone is in use by another app. Tap resume to try again.",

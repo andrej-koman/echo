@@ -227,6 +227,13 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
 ./gradlew assembleDebug
 ```
 
+Google Play uploads use `./gradlew bundleRelease` and an `.aab` signed with a private upload
+key. Keep the keystore and its password outside the repository. The debug APK is for local installs.
+
+Release builds run `lintVitalRelease`. Keep the Fragment dependency constraint: Google Play
+services brings in Fragment 1.1.0 transitively through Billing, which fails the Activity Result
+API compatibility check. Upgrade the transitive library rather than suppressing that check.
+
 Wireless debugging drops often: `adb connect <ip:port>` from Settings → Developer options → Wireless debugging.
 Instrumented tests use the separate `uitest` application (`dev.andrej.echo.uitest`) so they
 never install over the user's notes. `testUitestUnitTest` runs JVM tests; `assembleUitestAndroidTest`

@@ -23,7 +23,7 @@ android {
         minSdk = 29
         targetSdk = 36
         buildConfigField("String", "REVENUECAT_API_KEY", quotedRevenueCatKey)
-        versionCode = 1
+        versionCode = 2
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -89,6 +89,11 @@ sqldelight {
 }
 
 dependencies {
+    constraints {
+        implementation(libs.androidx.fragment) {
+            because("Google Play services pulls Fragment 1.1.0, which is incompatible with Activity Result APIs.")
+        }
+    }
     implementation(libs.revenuecat.purchases)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

@@ -119,10 +119,10 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
   work; an interrupted copy is shown as failed rather than decoded as complete audio. Each finished
   Whisper chunk atomically saves `speech-chunk` with its next sample, language, and segments before
   updating the database, so a restart restores the snapshot and skips finished chunks. Explicit
-  transcription resets this snapshot; startup recovery preserves it. After Whisper and speaker assignment finish, `Transcriptions` creates
+  uncapped transcription resets this snapshot; capped retries and startup recovery preserve it. After Whisper and speaker assignment finish, `Transcriptions` creates
   `recordings/<id>/speech-complete` before finalizing audio or awaiting analysis. If Android kills
   the process during that later work, WorkManager's restarted job skips Whisper and keeps the
-  saved transcript and speaker labels. An explicit transcription request removes the marker.
+  saved transcript and speaker labels. An explicit uncapped transcription request removes the marker; capped retries preserve it until a Pro continuation starts.
 - **Speed** (S24, Large V3 Turbo q5_0, measured 2026-11-03 with `whisper_print_timings` →
   logcat tag `whisper`, wall times under tag `Transcriptions`): the encoder is ~95% of the time,
   one pass per 30 s window, 33 s per pass at full clock. Decoding text is cheap. Samsung caps every
@@ -287,7 +287,7 @@ analyzing, solid bronze once `analyzedAt` is set, clay on failure. ··· opens 
 Delete. Long-pressing a card starts **multi-select** (Notes only): taps then toggle, the top bar
 becomes "N selected" with Move to folder and Delete (`BulkActionSheets`), back or ✕ leaves.
 `FolderScreen` uses the same cards without the folder label; Calendar keeps its rows.
-Header is the mascot + "Echo"; the "Pro" badge in the design waits for billing.
+Header is the mascot + "Echo", with a "Pro" badge when the billing entitlement is active.
 Notes is the one list of everything; Folders lists folders, each opening its notes (no folder
 filter on Notes); Calendar is `HistoryScreen` (month heat grid, the picked day's notes open on
 tap). Settings opens directly from the fourth tab. A note is moved from its own screen (folder icon in
@@ -300,7 +300,7 @@ screen changes read as jank on device, so switching is a hard cut. Tab switches 
 to the start tab, so tapping it restored the stack and landed on the last tab. Cost: tab scroll position is not kept.
 `EchoApp` gates on `AppContainer.onboardingDone` outside the NavHost (see Onboarding below).
 
-Settings groups Models, Transcription, New notes, Appearance, and Storage & data. Speech and
+Settings starts with Echo Pro, followed by Transcription, Notes, Appearance, and Storage & data. Speech and
 notes AI models use matching rows; their sheets expose selection and download actions.
 Haptics and reduced motion still follow Android, without inactive Settings switches.
 
@@ -312,10 +312,11 @@ Haptics and reduced motion still follow Android, without inactive Settings switc
   Android 12+ extraction exclusions because some manufacturers transfer data despite that flag.
   Notes and audio leave through explicit Share/export only; there is no automatic restore on a new phone.
   Rules follow https://developer.android.com/identity/data/autobackup.
-- **Fully offline, no account.** Google sign-in, Supabase auth and sync were removed
-  (2026-10-29). The only network traffic left is the LLM weights download (`HttpModelDownloader`,
-  hence `INTERNET`) and the system's own speech language-pack download. The remote Supabase
-  project was left as-is; nothing in the app talks to it.
+- **Offline-first, no account.** Recording, playback, transcription, speaker detection and analysis
+  run locally once their models are downloaded. Network traffic includes model downloads and
+  RevenueCat/Google Play purchase and entitlement requests. RevenueCat uses an anonymous app user
+  ID; audio, transcript text and tasks are not sent for billing. Google sign-in, Supabase auth and
+  sync were removed; nothing in the app talks to the old Supabase project.
 - `ui.notes.title()` derives a title from the opening of the text (first sentence, or
   six words) — the fallback for a transcript analysis has not named yet, not a permanent scheme.
   Note cards prefer `title`/`summary` when present. Since Phase 5 `summary` is the
@@ -526,6 +527,41 @@ Onboarding is ported from the separate "Echo Onboarding" Design artifact
   content, and a searchable one (`title`/`query`/`onQueryChange`/`searchPlaceholder`) that
   delegates to the other two depending on whether its search icon has been tapped. All three draw
   the same bar chrome, so every screen header keeps one surface, hairline and height.
+
+## Billing
+
+- RevenueCat uses an anonymous app user ID and the `pro` entitlement. Google Play products are
+  subscription `echo_pro` (base plans `monthly`, `yearly`) and in-app product `echo_lifetime`.
+  RevenueCat offering `default` supplies `$rc_monthly`, `$rc_annual`, `$rc_lifetime`; all displayed
+  prices and available trial details come from the offering, with Yearly selected by default.
+- Configure Play products and the RevenueCat project/service account outside the app. Put the
+  public Android SDK key in `local.properties` as `revenuecat.apiKey`. Missing-key and `uitest`
+  builds use fake billing and cannot make purchases. Never commit the key.
+- Free users transcribe the first two minutes of each recording or import; the entire original
+  audio stays available for playback. Speaker detection still reads the full audio. A recording
+  crossing two minutes opens the paywall once and continues while it is open or dismissed.
+  Imports do not prompt. Capped notes show an unlock banner. TXT export is free; Markdown, SRT
+  and original audio exports require Pro.
+- `transcript.transcribedUntilMs` marks a capped result. Pro activation queues capped notes,
+  resumes Whisper at that boundary with the existing segments, clears the cap on completion and
+  re-queues automatic analysis with a fresh attempt count. Continuation keeps saved prefix edits,
+  speaker names and assignments. Capped manual retries retain the boundary and latest chunk; free
+  retries can finish interrupted audio finalization. Chunk snapshots and the speech-complete marker preserve process
+  restart recovery during both the capped and unlocked runs.
+- Last known Pro status is cached in Settings before network requests, so offline cold starts
+  keep the entitlement. Successful RevenueCat CustomerInfo updates replace it; network failures
+  leave it intact. Purchases and restoration require internet. Settings exposes restore to
+  everyone and links Pro users to Google Play subscription management.
+- **Privacy/Data safety:** RevenueCat uses an anonymous app user ID and collects purchase history.
+  Its [Google Play disclosure guide](https://www.revenuecat.com/docs/platform-resources/google-platform-resources/google-plays-data-safety)
+  requires Purchase history for app functionality and analytics; this integration sets no customer
+  attributes or advertising identifiers. Review disclosures again if integrations are added.
+  Audio and note content stay local except an explicit user export. Andrej
+  updates the feature spec PDF's privacy row and export-limit question; the PDF is not edited here.
+  Terms and privacy URLs remain labeled placeholders until published.
+- Keep the README billing checklist open until verified through a Play internal-testing track
+  and license tester: recording/import caps, export locks, purchase/unlock, restore after clearing
+  app data, offline Pro cold start, and process death while unlocking.
 
 ## Notifications
 

@@ -1,5 +1,11 @@
 package dev.andrej.echo
 
+import android.content.Intent
+import android.net.Uri
+import androidx.lifecycle.ViewModel
+import dev.andrej.echo.billing.Billing
+import dev.andrej.echo.ui.billing.PaywallScreen
+import dev.andrej.echo.ui.billing.PaywallViewModel
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -81,6 +87,7 @@ import dev.andrej.echo.ui.theme.EchoTheme
 import kotlinx.coroutines.flow.StateFlow
 
 private object Routes {
+    const val PAYWALL = "paywall"
     const val NOTES = "notes"
     const val FOLDERS = "folders"
     const val CALENDAR = "calendar"
@@ -106,6 +113,7 @@ private val Tabs = listOf(
 @Composable
 fun EchoApp(
     viewModelFactory: ViewModelProvider.Factory,
+    billing: Billing,
     onboardingDone: StateFlow<Boolean>,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
@@ -134,6 +142,7 @@ fun EchoApp(
         } else {
             MainApp(
                 viewModelFactory = viewModelFactory,
+                billing = billing,
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 pendingOpenCapture = pendingOpenCapture || captureAfterOnboarding,
@@ -153,6 +162,7 @@ fun EchoApp(
 @Composable
 private fun MainApp(
     viewModelFactory: ViewModelProvider.Factory,
+    billing: Billing,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     pendingOpenCapture: Boolean = false,
@@ -166,6 +176,18 @@ private fun MainApp(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val route = backStackEntry?.destination?.route
 
+    val isPro by billing.isPro.collectAsStateWithLifecycle()
+    val billingFactory = remember(billing) {
+        object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T = PaywallViewModel(billing) as T
+        }
+    }
+    val paywallViewModel: PaywallViewModel = viewModel(factory = billingFactory)
+    val billingState by paywallViewModel.state.collectAsStateWithLifecycle()
+    val activePlan by billing.activePlan.collectAsStateWithLifecycle()
+    val onUpgrade = { navController.navigate(Routes.PAYWALL) { launchSingleTop = true } }
+
     val onTabs = route in Tabs.map { it.route }
     val onNote = route == Routes.DETAIL
     // Keep the source tab selected while a note or another child destination is open.
@@ -178,6 +200,13 @@ private fun MainApp(
 
     val recordViewModel: RecordViewModel = viewModel(factory = viewModelFactory)
     val recording by recordViewModel.uiState.collectAsStateWithLifecycle()
+    val upgradeRequested by recordViewModel.upgradeRequested.collectAsStateWithLifecycle()
+    LaunchedEffect(upgradeRequested) {
+        if (upgradeRequested) {
+            onUpgrade()
+            recordViewModel.consumeUpgrade()
+        }
+    }
     val context = LocalContext.current
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
         if (grants[Manifest.permission.RECORD_AUDIO] == true) recordViewModel.startRecording()
@@ -256,11 +285,16 @@ private fun MainApp(
                 popEnterTransition = { EnterTransition.None },
                 popExitTransition = { ExitTransition.None },
             ) {
+                composable(Routes.PAYWALL) {
+                    PaywallScreen(viewModel = paywallViewModel, onBack = { navController.popBackStack() })
+                }
+
                 composable(Routes.NOTES) {
                     NotesScreen(
                         viewModel = notesViewModel,
                         onOpen = { navController.navigate(Routes.detail(it)) },
                         onImport = openImport,
+                        isPro = isPro,
                     )
                 }
 
@@ -322,6 +356,15 @@ private fun MainApp(
                         onReplayOnboarding = settingsViewModel.onReplayOnboarding,
                         onOpenDictionary = { navController.navigate(Routes.DICTIONARY) },
                         onOpenStorage = { navController.navigate(Routes.STORAGE) },
+                        isPro = isPro,
+                        activePlan = activePlan,
+                        onUpgrade = onUpgrade,
+                        onManageSubscription = {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/account/subscriptions?package=${context.packageName}&sku=echo_pro")))
+                        },
+                        onRestorePurchases = paywallViewModel::restore,
+                        restoringPurchases = billingState.busy,
+                        billingMessage = billingState.message,
                     )
                 }
 
@@ -360,6 +403,8 @@ private fun MainApp(
                         onBack = { navController.popBackStack() },
                         onEditTask = { navController.navigate(Routes.editTask(it)) },
                         recording = recording.isRecording,
+                        isPro = isPro,
+                        onUpgrade = onUpgrade,
                     )
                     }
                 }
@@ -375,7 +420,7 @@ private fun MainApp(
                 }
             }
 
-            if (onTabs || onNote || recording.isRecording) {
+            if (route != Routes.PAYWALL && (onTabs || onNote || recording.isRecording)) {
                 AnimatedVisibility(
                     visible = openSheets.intValue == 0,
                     enter = fadeIn(),

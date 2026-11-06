@@ -22,6 +22,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.andrej.echo.R
 import dev.andrej.echo.export.ExportFormat
+import dev.andrej.echo.export.canExport
 import dev.andrej.echo.export.ExportOptions
 import dev.andrej.echo.ui.components.CardPadding
 import dev.andrej.echo.ui.components.EchoCard
@@ -41,6 +42,8 @@ internal fun ShareSheet(
     onOptions: (ExportOptions) -> Unit,
     onShare: (ExportFormat) -> Unit,
     onDismiss: () -> Unit,
+    isPro: Boolean = false,
+    onUpgrade: () -> Unit = {},
 ) {
     Sheet(visible = visible, onDismiss = onDismiss) {
         Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s2)) {
@@ -67,7 +70,8 @@ internal fun ShareSheet(
                             icon = icon,
                             label = labels.first,
                             detail = labels.second,
-                            onClick = { onShare(format) },
+                            locked = !format.canExport(isPro),
+                            onClick = { if (format.canExport(isPro)) onShare(format) else onUpgrade() },
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -92,7 +96,7 @@ internal fun ShareSheet(
 }
 
 @Composable
-private fun FormatTile(icon: Int, label: String, detail: String, onClick: () -> Unit, modifier: Modifier) {
+private fun FormatTile(icon: Int, label: String, detail: String, locked: Boolean, onClick: () -> Unit, modifier: Modifier) {
     val colors = EchoTheme.colors
     Column(
         modifier = modifier
@@ -115,7 +119,13 @@ private fun FormatTile(icon: Int, label: String, detail: String, onClick: () -> 
             style = EchoTheme.typography.bodySm.copy(fontWeight = FontWeight.SemiBold),
             color = colors.textPrimary,
         )
-        Text(text = detail, style = EchoTheme.typography.micro, color = colors.textTertiary)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(text = detail, style = EchoTheme.typography.micro, color = colors.textTertiary)
+            if (locked) {
+                Icon(painterResource(R.drawable.ic_lock), contentDescription = "Requires Pro", tint = colors.textAccent, modifier = Modifier.size(12.dp))
+                Text(text = "Pro", style = EchoTheme.typography.micro, color = colors.textAccent)
+            }
+        }
     }
 }
 

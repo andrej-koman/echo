@@ -105,6 +105,12 @@ class AppContainer(context: Context) {
     val settings: SettingsStore =
         SharedPreferencesSettingsStore(applicationContext)
 
+    val billing: dev.andrej.echo.billing.Billing = if (BuildConfig.REVENUECAT_API_KEY.isBlank()) {
+        dev.andrej.echo.billing.FakeBilling(settings)
+    } else {
+        dev.andrej.echo.billing.RevenueCatBilling(applicationContext, BuildConfig.REVENUECAT_API_KEY, settings)
+    }
+
     private val _themeMode = MutableStateFlow(settings.themeMode)
     val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
 
@@ -223,6 +229,7 @@ class AppContainer(context: Context) {
         modelSlot = modelSlot,
         diarizer = diarizer,
         scope = appScope,
+        isPro = billing.isPro,
     )
 
     val recordingController = RecordingController(
@@ -365,6 +372,7 @@ class AppContainer(context: Context) {
 
         recordingNotifier.postIdle()
         transcriptions.recoverInterruptedRecordings()
+        transcriptions.observeUnlocks()
     }
 
     /** Called from Activity.onStart — a capable backend may have appeared while backgrounded. */
@@ -446,6 +454,7 @@ class AppContainer(context: Context) {
             modelClass.isAssignableFrom(RecordViewModel::class.java) ->
                 RecordViewModel(
                     controller = recordingController,
+                    isPro = billing.isPro,
                     onStarted = { RecordingService.start(applicationContext) },
                     warmup = ::warmUpLlm,
                 ) as T

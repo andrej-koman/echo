@@ -75,6 +75,13 @@ fun SettingsScreen(
     onOpenDictionary: () -> Unit = {},
     onOpenStorage: () -> Unit = {},
     modifier: Modifier = Modifier,
+    isPro: Boolean = false,
+    activePlan: String? = null,
+    onUpgrade: () -> Unit = {},
+    onManageSubscription: () -> Unit = {},
+    onRestorePurchases: () -> Unit = {},
+    restoringPurchases: Boolean = false,
+    billingMessage: String? = null,
 ) {
     val context = LocalContext.current
     var pickingLanguage by remember { mutableStateOf(false) }
@@ -101,6 +108,33 @@ fun SettingsScreen(
                 .padding(bottom = 100.dp),
             verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.gapSection),
         ) {
+            Section(
+                title = "ECHO PRO",
+                rows = listOf(
+                    {
+                        DisclosureRow(
+                            iconRes = R.drawable.ic_sparkles,
+                            label = if (isPro) "Echo Pro" else "Free plan",
+                            subtitle = if (isPro) when {
+                                activePlan?.contains("lifetime") == true -> "Lifetime access"
+                                activePlan?.contains("yearly") == true -> "Yearly subscription"
+                                activePlan?.contains("monthly") == true -> "Monthly subscription"
+                                else -> "Pro is active"
+                            } else "First 2 minutes transcribed · TXT export",
+                            value = if (isPro) "Manage" else "Upgrade",
+                            onClick = if (isPro) onManageSubscription else onUpgrade,
+                        )
+                    },
+                    {
+                        DisclosureRow(
+                            iconRes = R.drawable.ic_refresh_cw,
+                            label = if (restoringPurchases) "Restoring purchases…" else "Restore purchases",
+                            subtitle = billingMessage,
+                            onClick = { if (!restoringPurchases) onRestorePurchases() },
+                        )
+                    },
+                ),
+            )
             Section(
                 title = "TRANSCRIPTION",
                 rows = listOf(

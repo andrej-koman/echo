@@ -50,12 +50,32 @@ class SqlTranscriptRepository(
         language: String,
         durationMs: Long,
         segments: List<Segment>,
+        preserveSpeakers: Boolean,
     ) = withContext(ioDispatcher) {
         database.transaction {
             queries.setTranscription(text, language, durationMs, id)
-            speakerQueries.deleteFor(id)
+            if (!preserveSpeakers) speakerQueries.deleteFor(id)
             replaceSegments(id, segments)
         }
+    }
+
+    override suspend fun completeTranscription(id: String, untilMs: Long?, analyze: Boolean, now: Long) = withContext(ioDispatcher) {
+        database.transaction {
+            val completingCap = untilMs == null && queries.selectCap(id).executeAsOneOrNull() != null
+            queries.setTranscribedUntil(untilMs, id)
+            if (completingCap) {
+                queries.invalidateAnalysis(id)
+                if (analyze) {
+                    database.analysisQueueQueries.enqueue(id, now)
+                    database.analysisQueueQueries.reset(now, id)
+                } else database.analysisQueueQueries.remove(id)
+            }
+        }
+    }
+
+    override suspend fun setTranscribedUntil(id: String, untilMs: Long?) = withContext(ioDispatcher) {
+        queries.setTranscribedUntil(untilMs, id)
+        Unit
     }
 
     override suspend fun editSegments(id: String, segments: List<Segment>) = withContext(ioDispatcher) {
@@ -77,10 +97,10 @@ class SqlTranscriptRepository(
     override fun segmentsFlow(id: String): Flow<List<Segment>> =
         segmentQueries.selectFor(id, ::segment).asFlow().mapToList(ioDispatcher)
 
-    override suspend fun setSpeakers(id: String, segments: List<Segment>, count: Int) = withContext(ioDispatcher) {
+    override suspend fun setSpeakers(id: String, segments: List<Segment>, count: Int, preserveExisting: Boolean) = withContext(ioDispatcher) {
         database.transaction {
-            speakerQueries.deleteFor(id)
-            repeat(count) { speakerQueries.insert(id, it.toLong()) }
+            if (!preserveExisting) speakerQueries.deleteFor(id)
+            repeat(count) { speakerQueries.ensure(id, it.toLong()) }
             replaceSegments(id, segments)
         }
     }

@@ -55,6 +55,7 @@ import dev.andrej.echo.data.Speaker
 import dev.andrej.echo.data.TodoItem
 import dev.andrej.echo.export.ExportFormat
 import dev.andrej.echo.export.ExportNote
+import dev.andrej.echo.export.canExport
 import dev.andrej.echo.export.ExportOptions
 import dev.andrej.echo.export.Exporter
 import dev.andrej.echo.transcribe.TranscriptionStatus
@@ -101,6 +102,8 @@ fun NoteDetailScreen(
     onDeleted: () -> Unit,
     onBack: () -> Unit,
     onEditTask: (String) -> Unit,
+    isPro: Boolean = false,
+    onUpgrade: () -> Unit = {},
     recording: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
@@ -366,6 +369,20 @@ fun NoteDetailScreen(
                         )
                     }
                 }
+                if (showingTranscript && transcript.transcribedUntilMs != null && !isPro) {
+                    item(key = "unlock-transcript") {
+                        EchoCard(
+                            modifier = Modifier.padding(horizontal = EchoTheme.spacing.gutterScreen)
+                                .fillMaxWidth().clickable(onClick = onUpgrade),
+                        ) {
+                            Text(
+                                "Transcribed first 2 min · Unlock the rest",
+                                style = EchoTheme.typography.bodySm,
+                                color = EchoTheme.colors.textAccent,
+                            )
+                        }
+                    }
+                }
             }
 
             val playable = player?.takeIf { status == null }
@@ -400,7 +417,14 @@ fun NoteDetailScreen(
                 timed = segments.isNotEmpty(),
                 exportOptions = exportOptions,
                 onExportOptions = { exportOptions = it },
+                isPro = isPro,
+                onUpgrade = { sheet = null; onUpgrade() },
                 onShare = { format ->
+                    if (!format.canExport(isPro)) {
+                        sheet = null
+                        onUpgrade()
+                        return@DetailSheets
+                    }
                     val note = ExportNote(
                         title = transcript.title ?: title(transcript.text),
                         date = exportDate.format(Date(transcript.createdAt)),
@@ -720,6 +744,8 @@ private fun DetailSheets(
     exportOptions: ExportOptions,
     onExportOptions: (ExportOptions) -> Unit,
     onShare: (ExportFormat) -> Unit,
+    isPro: Boolean,
+    onUpgrade: () -> Unit,
     onMove: (String?) -> Unit,
     onRename: (String) -> Unit,
     onAnalyze: () -> Unit,
@@ -800,6 +826,8 @@ private fun DetailSheets(
         timed = timed,
         options = exportOptions,
         onOptions = onExportOptions,
+        isPro = isPro,
+        onUpgrade = { dismiss(); onUpgrade() },
         onShare = {
             onShare(it)
             dismiss()

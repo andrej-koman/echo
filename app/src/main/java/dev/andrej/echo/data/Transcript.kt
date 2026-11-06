@@ -11,4 +11,5 @@ data class Transcript(
     val summary: String? = null,
     val analyzedAt: Long? = null,
     val folderId: String? = null,
+    val transcribedUntilMs: Long? = null,
 )

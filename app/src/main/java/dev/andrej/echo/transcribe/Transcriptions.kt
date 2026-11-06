@@ -97,6 +97,7 @@ class Transcriptions(
     private val modelSlot: ModelSlot,
     private val diarizer: Diarizer,
     private val scope: CoroutineScope,
+    private val isPro: StateFlow<Boolean> = MutableStateFlow(false),
 ) {
     private val workManager = WorkManager.getInstance(context)
     private val recordingsDir = File(context.filesDir, "recordings")
@@ -266,7 +267,10 @@ class Transcriptions(
     /** Queues [id] for transcription, or re-queues one that failed. */
     fun transcribe(id: String) {
         val dir = dirFor(id)
-        if (File(dir, SOURCE).isFile || File(dir, PCM).isFile) enqueue(id)
+        if (File(dir, SOURCE).isFile || File(dir, PCM).isFile) scope.launch {
+            val capped = repository.transcripts.first().any { it.id == id && it.transcribedUntilMs != null }
+            enqueue(id, restart = !capped, unlock = capped && isPro.value)
+        }
     }
 
     fun discard(id: String) {
@@ -283,15 +287,21 @@ class Transcriptions(
         scope.launch(Dispatchers.IO) { recordingsDir.deleteRecursively() }
     }
 
-    private fun enqueue(id: String, restart: Boolean = true) {
+    fun observeUnlocks() {
+        scope.launch { observeCappedUnlocks(isPro, repository.transcripts) { enqueue(it, restart = false, unlock = true) } }
+    }
+
+    private fun enqueue(id: String, restart: Boolean = true, unlock: Boolean = false) {
         val dir = dirFor(id).apply { mkdirs() }
         File(dir, PENDING).writeText("queued")
         if (restart) TranscriptionCheckpoint(File(dir, SPEECH_COMPLETE)).reset()
         interruptedImports.update { it - id }
-        stops.update { it - id }
-        analysis.allow(id)
+        if (!unlock) {
+            stops.update { it - id }
+            analysis.allow(id)
+        }
         val request = OneTimeWorkRequestBuilder<TranscriptionWorker>()
-            .setInputData(workDataOf(TranscriptionWorker.KEY_ID to id))
+            .setInputData(workDataOf(TranscriptionWorker.KEY_ID to id, TranscriptionWorker.KEY_UNLOCK to unlock))
             .addTag(TAG)
             .addTag(ID_TAG_PREFIX + id)
             .apply {
@@ -301,17 +311,30 @@ class Transcriptions(
                 }
             }
             .build()
-        workManager.enqueueUniqueWork(workName(id), if (restart) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP, request)
+        workManager.enqueueUniqueWork(workName(id), if (unlock) ExistingWorkPolicy.APPEND_OR_REPLACE else if (restart) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP, request)
     }
 
-    internal suspend fun run(id: String, report: (TranscriptionStatus) -> Unit) = lock.withLock {
+    internal suspend fun run(id: String, report: (TranscriptionStatus) -> Unit, unlock: Boolean = false) = lock.withLock {
         try {
-            val completed = runUntilStopped(stops.map { id in it }) { transcribeLocked(id, report) }
+            if (unlock) {
+                if (!isPro.value) return@withLock
+                val note = repository.transcripts.first().firstOrNull { it.id == id } ?: return@withLock
+                stops.update { it - id }
+                if (note.transcribedUntilMs != null) {
+                    // The predecessor must finish before its completion marker is reopened.
+                    TranscriptionCheckpoint(File(dirFor(id), SPEECH_COMPLETE)).reopen()
+                    File(dirFor(id), PENDING).writeText("unlock")
+                }
+            }
+            val continuingCap = repository.transcripts.first().any { it.id == id && it.transcribedUntilMs != null }
+            if (continuingCap) analysis.cancelAndAwait(id)
+            val completed = runUntilStopped(stops.map { id in it }) { transcribeLocked(id, report, unlock) }
             if (!completed) {
                 val transcript = repository.transcripts.first().firstOrNull { it.id == id }
                 val heard = _live.value?.takeIf { it.id == id }?.segments
                 if (transcript != null && heard != null) {
-                    repository.setTranscription(id, transcriptText(heard), transcript.language, transcript.durationMs, heard)
+                    repository.setTranscription(id, transcriptText(heard), transcript.language, transcript.durationMs, heard,
+                        preserveSpeakers = unlock || transcript.transcribedUntilMs != null)
                 }
                 File(dirFor(id), SPEECH_COMPLETE).createNewFile()
                 File(dirFor(id), PENDING).delete()
@@ -338,7 +361,8 @@ class Transcriptions(
         analysis.cancel(id)
     }
 
-    private suspend fun transcribeLocked(id: String, report: (TranscriptionStatus) -> Unit) {
+    private suspend fun transcribeLocked(id: String, report: (TranscriptionStatus) -> Unit, continuingUnlock: Boolean) {
+        val proForRun = isPro.value
         val began = SystemClock.elapsedRealtime()
         fun elapsed() = SystemClock.elapsedRealtime() - began
         val dir = dirFor(id)
@@ -386,10 +410,17 @@ class Transcriptions(
         }
 
         Log.i(LOG_TAG, "$id: ${durationMs / 1000} s of audio decoded at ${elapsed()} ms")
-        val resumed = checkpoint.chunk()
+        val note = repository.transcripts.first().firstOrNull { it.id == id }
+        val savedSegments = repository.segments(id)
+        val preservingPrefix = note?.transcribedUntilMs != null || continuingUnlock
+        val prefix = if (note?.transcribedUntilMs != null) savedSegments.takeWhile { it.startMs < note.transcribedUntilMs }
+            else if (continuingUnlock) savedSegments else emptyList()
+        val existingSpeakers = if (preservingPrefix) repository.speakers(id).first() else emptyList()
+        val resumed = resumeChunk(checkpoint.chunk(), note, savedSegments, preserveCompleted = continuingUnlock)
         val segments = resumed?.segments?.toMutableList() ?: mutableListOf()
         if (resumed != null) {
-            repository.setTranscription(id, transcriptText(segments), resumed.language, durationMs, segments)
+            repository.setTranscription(id, transcriptText(segments), resumed.language, durationMs, segments,
+                preserveSpeakers = preservingPrefix)
             _live.value = LiveTranscript(id, segments.toList())
         }
         var firstSegmentLogged = false
@@ -414,7 +445,7 @@ class Transcriptions(
                 Log.i(LOG_TAG, "$id: ${speechModel.name} loaded at ${elapsed()} ms")
                 speechModels.deleteAllBut(speechModel)
                 RandomAccessFile(pcm, "r").use { file ->
-                    val total = file.length() / 2
+                    val total = transcriptionSamples(file.length() / 2, proForRun)
                     var start = resumed?.nextSample ?: 0L
                     while (start < total) {
                         val samples = file.readFloats(start, minOf(CHUNK_SAMPLES.toLong(), total - start).toInt())
@@ -446,7 +477,8 @@ class Transcriptions(
                             .map { it.copy(startMs = it.startMs + offsetMs, endMs = it.endMs + offsetMs) }
                         start += length
                         checkpoint.saveChunk(start, language.orEmpty(), segments)
-                        repository.setTranscription(id, transcriptText(segments), language.orEmpty(), durationMs, segments)
+                        repository.setTranscription(id, transcriptText(segments), language.orEmpty(), durationMs, segments,
+                            preserveSpeakers = preservingPrefix)
                         Log.i(LOG_TAG, "$id: chunk to ${start / SAMPLE_RATE} s done at ${elapsed()} ms")
                     }
                 }
@@ -463,18 +495,30 @@ class Transcriptions(
                 }
                 val turns = speakers.await()
                 Log.i(LOG_TAG, "$id: speakers ready at ${elapsed()} ms")
-                val (assigned, count) = assignSpeakers(segments, turns)
+                val (detected, count) = assignSpeakers(segments, turns)
                 if (count > 0 && repository.transcripts.first().any { it.id == id }) {
-                    repository.setSpeakers(id, assigned, count)
+                    val assigned = if (preservingPrefix) preservePrefixSpeakers(
+                        detected, prefix, (existingSpeakers.maxOfOrNull { it.index } ?: -1) + 1,
+                    ) else detected
+                    val speakerCount = maxOf(count, (assigned.mapNotNull { it.speaker }.maxOrNull() ?: -1) + 1)
+                    repository.setSpeakers(id, assigned, speakerCount, preserveExisting = preservingPrefix)
                 }
             }
         } }
+        val totalSamples = pcm.length() / 2
+        val boundedSamples = transcriptionSamples(totalSamples, proForRun)
+        analysis.allow(id)
+        repository.completeTranscription(id,
+            if (boundedSamples < totalSamples) boundedSamples * 1000 / SAMPLE_RATE else null,
+            analyze = settings.autoAnalyze,
+        )
         Log.i(LOG_TAG, "$id: transcribed at ${elapsed()} ms")
         }, finalize = {
         finishAudio(id)
 
         val transcript = repository.transcripts.first().firstOrNull { it.id == id }
         if (transcript != null && id !in stops.value && settings.autoAnalyze && transcript.text.isNotBlank()) {
+            analysis.allow(id)
             analysisQueue.enqueue(id)
             // Stop can arrive while the queue write is suspended.
             if (id in stops.value) analysisQueue.remove(id)

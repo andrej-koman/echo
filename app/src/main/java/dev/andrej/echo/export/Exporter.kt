@@ -11,6 +11,8 @@ import kotlinx.coroutines.withContext
 
 enum class ExportFormat { Text, Markdown, Subtitles, Audio }
 
+fun ExportFormat.canExport(isPro: Boolean): Boolean = isPro || this == ExportFormat.Text
+
 /** Writes an export to the cache and hands it to the system share sheet. */
 class Exporter(private val context: Context) {
 

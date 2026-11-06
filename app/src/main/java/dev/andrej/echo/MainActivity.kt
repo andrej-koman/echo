@@ -63,6 +63,7 @@ class MainActivity : ComponentActivity() {
             EchoTheme(themeMode = themeMode) {
                 EchoApp(
                     viewModelFactory = container.viewModelFactory,
+                    billing = container.billing,
                     onboardingDone = container.onboardingDone,
                     themeMode = themeMode,
                     onThemeModeChange = container::setThemeMode,

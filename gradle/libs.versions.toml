@@ -1,4 +1,5 @@
 [versions]
+revenuecat = "10.30.1"
 work = "2.12.0"
 agp = "9.4.0"
 kotlin = "2.4.10"
@@ -18,6 +19,7 @@ media3 = "1.11.1"
 sherpaOnnx = "v1.13.8"
 
 [libraries]
+revenuecat-purchases = { module = "com.revenuecat.purchases:purchases", version.ref = "revenuecat" }
 sherpa-onnx = { group = "com.github.k2-fsa.sherpa-onnx", name = "sherpa-onnx", version.ref = "sherpaOnnx" }
 androidx-media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }
 androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }

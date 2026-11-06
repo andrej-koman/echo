@@ -6,6 +6,6 @@
 - [ ] Per-recording language selection: Override the global transcription language.
 - [ ] Automatic model updates.
 - [ ] Tablet/foldable layouts and broader device testing.
-- [ ] Billing: Purchases, restoration, paywall, and free-tier limits.
+- [ ] Billing (RevenueCat): Purchases, restoration, paywall, and free-tier limits; pending Play device verification.
 - [ ] Encrypted backups: Still an open product decision, separate from Android’s automatic backup.
 - [x] Onboarding: Improve to include model downloads, more transparency

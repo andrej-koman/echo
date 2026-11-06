@@ -31,6 +31,26 @@ class TranscriptionCheckpointTest {
         assertEquals(2, finalizations)
     }
 
+    @Test fun `free capped retry finishes playback after encoding failure without repeating speech`() = runTest {
+        val marker = folder.root.resolve("speech-complete")
+        val checkpoint = TranscriptionCheckpoint(marker)
+        val segments = listOf(dev.andrej.echo.data.Segment(0, 1000, "prefix"))
+        var speechRuns = 0
+        var playbackReady = false
+        try {
+            checkpoint.run(transcribe = {
+                speechRuns++
+                checkpoint.saveChunk(FREE_SAMPLES.toLong(), "en", segments)
+            }, finalize = { throw IOException("encoding failed") })
+        } catch (_: IOException) {}
+        // A free capped retry retains both files and runs normal finalization without Pro unlock.
+        TranscriptionCheckpoint(marker).run(transcribe = { speechRuns++ }, finalize = { playbackReady = true })
+        assertEquals(1, speechRuns)
+        assertEquals(true, playbackReady)
+        assertEquals(FREE_SAMPLES.toLong(), checkpoint.chunk()!!.nextSample)
+        assertEquals(segments, checkpoint.chunk()!!.segments)
+    }
+
     @Test fun `explicit retry transcribes again`() = runTest {
         val checkpoint = TranscriptionCheckpoint(folder.root.resolve("speech-complete"))
         var transcriptions = 0
@@ -51,6 +71,30 @@ class TranscriptionCheckpointTest {
         assertEquals(segments, restarted.chunk()!!.segments)
         restarted.reset()
         assertEquals(null, restarted.chunk())
+    }
+
+
+    @Test fun `unlock reopens speech without losing completed chunk and death resumes append`() = runTest {
+        val marker = folder.root.resolve("speech-complete")
+        val first = listOf(dev.andrej.echo.data.Segment(0, 1000, "first"))
+        val checkpoint = TranscriptionCheckpoint(marker)
+        checkpoint.saveChunk(FREE_SAMPLES.toLong(), "en", first)
+        checkpoint.run(transcribe = {}, finalize = {})
+        checkpoint.reopen()
+        val next = first + dev.andrej.echo.data.Segment(120000, 121000, "next")
+        try {
+            checkpoint.run(transcribe = {
+                checkpoint.saveChunk(FREE_SAMPLES + 16000L, "en", next)
+                throw IOException("unlock interrupted")
+            }, finalize = {})
+        } catch (_: IOException) {}
+        val restarted = TranscriptionCheckpoint(marker)
+        assertEquals(next, restarted.chunk()!!.segments)
+        assertEquals(FREE_SAMPLES + 16000L, restarted.chunk()!!.nextSample)
+        var heard = 0
+        restarted.run(transcribe = { heard++ }, finalize = {})
+        restarted.run(transcribe = { heard++ }, finalize = {})
+        assertEquals(1, heard)
     }
 
     @Test fun `unfinished import is failed and complete import is queued`() {

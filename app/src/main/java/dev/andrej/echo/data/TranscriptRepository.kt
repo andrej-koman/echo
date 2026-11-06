@@ -24,7 +24,12 @@ interface TranscriptRepository {
         language: String,
         durationMs: Long,
         segments: List<Segment>,
+        preserveSpeakers: Boolean = false,
     )
+
+    suspend fun completeTranscription(id: String, untilMs: Long?, analyze: Boolean, now: Long = System.currentTimeMillis())
+
+    suspend fun setTranscribedUntil(id: String, untilMs: Long?)
 
     suspend fun segments(id: String): List<Segment>
 
@@ -34,7 +39,7 @@ interface TranscriptRepository {
     suspend fun editSegments(id: String, segments: List<Segment>)
 
     /** Diarization's result: [segments] carry speakers numbered from 0 below [count]. */
-    suspend fun setSpeakers(id: String, segments: List<Segment>, count: Int)
+    suspend fun setSpeakers(id: String, segments: List<Segment>, count: Int, preserveExisting: Boolean = false)
 
     fun speakers(id: String): Flow<List<Speaker>>
 

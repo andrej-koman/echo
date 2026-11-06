@@ -9,7 +9,7 @@ import java.io.File
 class SpeechModels(directory: File, totalMemoryBytes: Long, private val settings: SettingsStore) {
 
     val choices = whisperChoicesFor(totalMemoryBytes)
-    private val default = whisperModelFor(totalMemoryBytes)
+    val default = whisperModelFor(totalMemoryBytes)
     private val stores = choices.associateWith { ModelStore(directory, it.spec, HttpModelDownloader()) }
 
     val current: WhisperModel get() = choices.find { it.id == settings.speechModel } ?: default

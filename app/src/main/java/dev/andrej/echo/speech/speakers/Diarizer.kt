@@ -14,6 +14,8 @@ class Diarizer(
     private val segmentation: ModelStore,
     private val embedding: ModelStore,
 ) {
+    val stores: List<ModelStore> get() = listOf(segmentation, embedding)
+
     val ready: Boolean
         get() = segmentation.state.value is ModelState.Ready && embedding.state.value is ModelState.Ready
 

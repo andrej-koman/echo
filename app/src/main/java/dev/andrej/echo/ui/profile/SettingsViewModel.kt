@@ -186,7 +186,7 @@ internal fun buildLanguageOptions(codes: List<String>, locale: java.util.Locale 
     return listOf(LanguageOption("", AUTO_DETECT_LABEL, "🌐")) + featured + remaining
 }
 
-private fun languageLabel(code: String): String = "${languageFlag(code)} ${displayLanguage(code)}"
+internal fun languageLabel(code: String): String = "${languageFlag(code)} ${displayLanguage(code)}"
 
 private val LANGUAGE_COUNTRIES = mapOf(
     "af" to "ZA", "am" to "ET", "ar" to "SA", "as" to "IN", "az" to "AZ", "ba" to "RU",

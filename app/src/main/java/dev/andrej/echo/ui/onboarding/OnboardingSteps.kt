@@ -34,6 +34,25 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.andrej.echo.R
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import dev.andrej.echo.data.TodoItem
+import dev.andrej.echo.ui.components.Waveform
+import dev.andrej.echo.ui.components.EchoBadge
+import dev.andrej.echo.ui.components.BadgeTone
+import dev.andrej.echo.ui.components.PickerSheet
+import dev.andrej.echo.ui.tasks.TaskRow
+import dev.andrej.echo.speech.whisper.WhisperModel
+import dev.andrej.echo.ui.profile.LanguageOption
+import java.util.Calendar
 import dev.andrej.echo.ui.components.ButtonSize
 import dev.andrej.echo.ui.components.ButtonVariant
 import dev.andrej.echo.ui.components.CardPadding
@@ -135,72 +154,88 @@ internal fun WelcomeStep(onGetStarted: () -> Unit) {
 }
 
 @Composable
-internal fun ColumnScope.VoiceToTasksStep(onContinue: () -> Unit) {
+internal fun ColumnScope.HowItWorksStep() {
     StepIntro(
-        title = "Speak once, get everything",
+        title = "Talk now, read it a moment later",
         body = "Echo writes down what you say, then pulls out the tasks and plans inside it.",
     )
 
-    Column(
-        modifier = Modifier.weight(1f),
-        verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5),
-    ) {
-        EchoCard(tone = CardTone.Raised, padding = CardPadding.Md, modifier = Modifier.fillMaxWidth()) {
-            Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_audio_waveform),
-                        contentDescription = null,
-                        tint = EchoTheme.colors.textSecondary,
-                        modifier = Modifier.size(15.dp),
-                    )
-                    Text(
-                        text = "You said",
-                        style = EchoTheme.typography.caption.copy(fontWeight = FontWeight.Medium),
-                        color = EchoTheme.colors.textSecondary,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Text(
-                        text = "0:14",
-                        style = EchoTheme.typography.caption.copy(fontWeight = FontWeight.Medium),
-                        color = EchoTheme.colors.textSecondary,
-                    )
-                }
-                DemoTranscript()
+    EchoCard(tone = CardTone.Raised, padding = CardPadding.Md, modifier = Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_audio_waveform),
+                    contentDescription = null,
+                    tint = EchoTheme.colors.textSecondary,
+                    modifier = Modifier.size(15.dp),
+                )
+                Text(
+                    text = "You said",
+                    style = EchoTheme.typography.caption.copy(fontWeight = FontWeight.Medium),
+                    color = EchoTheme.colors.textSecondary,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = "0:14",
+                    style = EchoTheme.typography.caption.copy(fontWeight = FontWeight.Medium),
+                    color = EchoTheme.colors.textSecondary,
+                )
             }
-        }
-
-        Row(
-            modifier = Modifier.padding(horizontal = EchoTheme.spacing.s2),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.ic_sparkles),
-                contentDescription = null,
-                tint = EchoTheme.colors.textSuccess,
-                modifier = Modifier.size(15.dp),
-            )
-            Text(
-                text = "3 items added",
-                style = EchoTheme.typography.caption.copy(fontWeight = FontWeight.Medium),
-                color = EchoTheme.colors.textSuccess,
-            )
-        }
-
-        EchoCard(tone = CardTone.Paper, padding = CardPadding.Sm, modifier = Modifier.fillMaxWidth()) {
-            Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s1)) {
-                DemoItemRow(R.drawable.ic_bell, "Call John about the client project", "9:00 AM tomorrow")
-                DemoItemRow(R.drawable.ic_list_checks, "Send notes before the FDC meeting", null)
-                DemoItemRow(R.drawable.ic_calendar, "Meeting with FDC", "Friday, 1:00 PM")
-            }
+            Waveform(modifier = Modifier.fillMaxWidth(), bars = 36)
+            DemoTranscript()
         }
     }
 
-    PrimaryContinue(onContinue)
+    Row(
+        modifier = Modifier.padding(horizontal = EchoTheme.spacing.s2),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_sparkles),
+            contentDescription = null,
+            tint = EchoTheme.colors.textSuccess,
+            modifier = Modifier.size(15.dp),
+        )
+        Text(
+            text = "A moment after you stop, tasks appear",
+            style = EchoTheme.typography.caption.copy(fontWeight = FontWeight.Medium),
+            color = EchoTheme.colors.textSuccess,
+        )
+    }
+
+    EchoCard(tone = CardTone.Paper, padding = CardPadding.Sm, modifier = Modifier.fillMaxWidth()) {
+        val tasks = remember { demoTasks() }
+        var done by remember { mutableStateOf(setOf<String>()) }
+        Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s1)) {
+            tasks.forEach { task ->
+                TaskRow(
+                    task = task.copy(done = task.id in done),
+                    onToggle = { done = if (task.id in done) done - task.id else done + task.id },
+                    onEdit = {},
+                    showDate = true,
+                )
+            }
+        }
+    }
+}
+
+/** Illustration only: never stored. Dates are relative so the example never looks stale. */
+private fun demoTasks(): List<TodoItem> {
+    val now = System.currentTimeMillis()
+    fun at(daysAhead: Int, hour: Int) = Calendar.getInstance().apply {
+        timeInMillis = now
+        add(Calendar.DAY_OF_YEAR, daysAhead)
+        set(Calendar.HOUR_OF_DAY, hour)
+        set(Calendar.MINUTE, 0)
+    }.timeInMillis
+    return listOf(
+        TodoItem("demo-1", "demo", "Call John about the client project", at(1, 9), hasTime = true, createdAt = now),
+        TodoItem("demo-2", "demo", "Send notes before the FDC meeting", at(3, 13), hasTime = true, createdAt = now),
+    )
 }
 
 private val DemoSegments = listOf(
@@ -231,216 +266,198 @@ private fun DemoTranscript() {
     )
 }
 
-/** Illustration only: the design's per-kind icons, which real [dev.andrej.echo.data.TodoItem] rows do not have. */
 @Composable
-private fun DemoItemRow(@DrawableRes icon: Int, label: String, meta: String?) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = EchoTheme.spacing.s2, vertical = EchoTheme.spacing.s4),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(26.dp)
-                .clip(EchoTheme.radii.sm)
-                .background(EchoTheme.colors.surfaceSageSoft),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                painter = painterResource(icon),
-                contentDescription = null,
-                tint = EchoTheme.colors.textSuccess,
-                modifier = Modifier.size(14.dp),
-            )
+internal fun ColumnScope.RecordStep(
+    uses: Set<RecordUse>,
+    languageLabel: String,
+    onToggle: (RecordUse) -> Unit,
+    onPickLanguage: () -> Unit,
+) {
+    StepIntro(
+        title = "What will you record?",
+        body = "Pick all that apply. It tunes the setup Echo suggests for your phone.",
+    )
+    RecordUse.entries.forEach { use ->
+        val (title, subtitle) = when (use) {
+            RecordUse.QuickThoughts -> "Quick thoughts" to "Reminders, ideas, to-dos"
+            RecordUse.Meetings -> "Meetings" to "Several people talking"
+            RecordUse.Lectures -> "Lectures" to "Long recordings, mostly one voice"
+            RecordUse.ExistingAudio -> "Existing audio" to "Files you already have"
         }
-        Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s1)) {
-            Text(
-                text = label,
-                style = EchoTheme.typography.bodySm.copy(fontWeight = FontWeight.Medium),
-                color = EchoTheme.colors.textPrimary,
-            )
-            if (meta != null) {
-                Text(text = meta, style = EchoTheme.typography.micro, color = EchoTheme.colors.textTertiary)
-            }
-        }
+        ChoiceCard(title, subtitle, selected = use in uses, onClick = { onToggle(use) })
     }
-}
-
-@Composable
-internal fun ColumnScope.PrivacyStep(onContinue: () -> Unit) {
-    Column(
-        modifier = Modifier.weight(1f).fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s9, Alignment.CenterVertically),
-    ) {
-        Box(
-            modifier = Modifier.fillMaxWidth(),
-            contentAlignment = Alignment.Center,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(112.dp)
-                    .echoShadow(EchoTheme.elevation.haloSage, cornerRadius = 56.dp)
-                    .echoShadow(EchoTheme.elevation.shadow2, cornerRadius = 56.dp)
-                    .clip(CircleShape)
-                    .background(EchoTheme.colors.surfaceSageSoft),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_shield_check),
-                    contentDescription = null,
-                    tint = EchoTheme.colors.statusSuccessFg,
-                    modifier = Modifier.size(44.dp),
-                )
-            }
-        }
-
-        CenteredIntro(
-            title = "Everything stays\non your phone",
-            body = "No account, no upload, no internet needed. What you say is yours.",
-        )
-
-        EchoCard(tone = CardTone.Paper, padding = CardPadding.Md, modifier = Modifier.fillMaxWidth()) {
-            Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s6)) {
-                PrivacyRow(R.drawable.ic_cpu, "Transcribed on this device")
-                PrivacyRow(R.drawable.ic_plane, "Works in airplane mode")
-                PrivacyRow(R.drawable.ic_lock, "Recordings stay here unless you share them")
-            }
-        }
-    }
-
-    PrimaryContinue(onContinue)
-}
-
-@Composable
-private fun PrivacyRow(@DrawableRes icon: Int, label: String) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(EchoTheme.radii.md)
-                .background(EchoTheme.colors.surfaceAccentSoft),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                painter = painterResource(icon),
-                contentDescription = null,
-                tint = EchoTheme.colors.textAccent,
-                modifier = Modifier.size(18.dp),
-            )
-        }
-        Text(
-            text = label,
-            style = EchoTheme.typography.body.copy(fontWeight = FontWeight.Medium),
-            color = EchoTheme.colors.textPrimary,
-        )
-    }
-}
-
-@Composable
-internal fun ColumnScope.MicrophoneStep(onAllow: () -> Unit, onNotNow: () -> Unit) {
-    Column(
-        modifier = Modifier.weight(1f).fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s9, Alignment.CenterVertically),
-    ) {
-        Box(modifier = Modifier.size(260.dp), contentAlignment = Alignment.Center) {
-            // The record button's own gradient, pinned in both themes like the button itself.
-            Box(
-                modifier = Modifier
-                    .size(120.dp)
-                    .echoShadow(EchoTheme.elevation.haloBronze, cornerRadius = 60.dp)
-                    .echoShadow(EchoTheme.elevation.shadow3, cornerRadius = 60.dp)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.linearGradient(
-                            colors = listOf(Bronze400, Bronze500),
-                            start = Offset.Zero,
-                            end = Offset.Infinite,
-                        ),
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_mic),
-                    contentDescription = null,
-                    tint = EchoTheme.colors.recordGlyph,
-                    modifier = Modifier.size(46.dp),
-                )
-            }
-            Mascot(
-                size = 64.dp,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .offset(x = (-18).dp, y = (-26).dp)
-                    .rotate(8f),
-            )
-        }
-
-        CenteredIntro(
-            title = "Let Echo hear you",
-            body = "Echo needs the microphone to record. Audio is processed on this phone and never uploaded.",
-        )
-
+    EchoCard(tone = CardTone.Paper, padding = CardPadding.Sm, onClick = onPickLanguage, modifier = Modifier.fillMaxWidth()) {
         Row(
-            modifier = Modifier
-                .clip(EchoTheme.radii.md)
-                .background(EchoTheme.colors.statusInfoBg)
-                .padding(horizontal = EchoTheme.spacing.s6, vertical = EchoTheme.spacing.s5),
+            modifier = Modifier.padding(horizontal = EchoTheme.spacing.s2, vertical = EchoTheme.spacing.s2),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5),
         ) {
-            Icon(
-                painter = painterResource(R.drawable.ic_settings),
-                contentDescription = null,
-                tint = EchoTheme.colors.statusInfoFg,
-                modifier = Modifier.size(15.dp),
-            )
             Text(
-                text = "You can change this anytime in Settings",
-                style = EchoTheme.typography.caption.copy(fontWeight = FontWeight.Medium),
-                color = EchoTheme.colors.statusInfoFg,
+                text = "Language",
+                style = EchoTheme.typography.body.copy(fontWeight = FontWeight.Medium),
+                color = EchoTheme.colors.textPrimary,
+                modifier = Modifier.weight(1f),
+            )
+            Text(text = languageLabel, style = EchoTheme.typography.bodySm, color = EchoTheme.colors.textSecondary)
+            Icon(
+                painter = painterResource(R.drawable.ic_chevron_right),
+                contentDescription = null,
+                tint = EchoTheme.colors.textTertiary,
+                modifier = Modifier.size(16.dp),
             )
         }
     }
+}
 
-    Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4)) {
-        EchoButton(
-            text = "Allow microphone",
-            onClick = onAllow,
-            size = ButtonSize.Lg,
-            fullWidth = true,
-            modifier = Modifier.fillMaxWidth(),
+@Composable
+internal fun ColumnScope.PriorityStep(
+    options: List<PriorityOption>,
+    selected: Priority,
+    onSelect: (Priority) -> Unit,
+) {
+    StepIntro(
+        title = "What matters most?",
+        body = "Echo picks the speech model that fits. You can change it any time in Settings.",
+    )
+    options.forEach { option ->
+        val (title, subtitle) = when (option.priority) {
+            Priority.Faster -> "Faster results" to "Notes ready sooner, a few more mistakes"
+            Priority.Accurate -> "More accurate" to "Best text, takes longer to process"
+            Priority.HelpMeChoose -> "Help me choose" to "Echo picks for your phone"
+        }
+        val size = if (option.ready) "No download" else formatSize(option.speech.spec.bytes)
+        ChoiceCard(
+            title = title,
+            subtitle = "$subtitle\n${option.speech.name} · $size",
+            selected = option.priority == selected,
+            onClick = { onSelect(option.priority) },
         )
-        EchoButton(
-            text = "Not now",
-            onClick = onNotNow,
-            variant = ButtonVariant.Ghost,
-            fullWidth = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
+    }
+}
+
+@Composable
+internal fun ColumnScope.SetupStep(
+    summary: SetupSummary?,
+    speech: WhisperModel,
+    speechChoices: List<WhisperModel>,
+    comparing: Boolean,
+    onCompare: () -> Unit,
+    onDismissCompare: () -> Unit,
+    onSelectSpeech: (WhisperModel) -> Unit,
+) {
+    StepIntro(
+        title = "Your setup",
+        body = "Recommended for your phone. ${speech.name} turns speech into text, and a small " +
+            "Notes AI model writes the note and finds tasks. Everything stays on this device.",
+    )
+    EchoCard(tone = CardTone.Paper, padding = CardPadding.Md, modifier = Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5)) {
+            summary?.rows?.forEach { row ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5),
+                ) {
+                    Text(
+                        text = row.label,
+                        style = EchoTheme.typography.body.copy(fontWeight = FontWeight.Medium),
+                        color = EchoTheme.colors.textPrimary,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (row.ready) {
+                        EchoBadge(text = "Ready", tone = BadgeTone.Success)
+                    } else {
+                        Text(
+                            text = formatSize(row.totalBytes),
+                            style = EchoTheme.typography.bodySm,
+                            color = EchoTheme.colors.textSecondary,
+                        )
+                    }
+                }
+            }
+            if (summary != null) {
+                Row(horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5)) {
+                    Text(
+                        text = if (summary.totalDownloadBytes == 0L) "Nothing to download" else "Total download",
+                        style = EchoTheme.typography.bodySm.copy(fontWeight = FontWeight.Medium),
+                        color = EchoTheme.colors.textPrimary,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (summary.totalDownloadBytes > 0) {
+                        Text(
+                            text = formatSize(summary.totalDownloadBytes),
+                            style = EchoTheme.typography.bodySm.copy(fontWeight = FontWeight.Medium),
+                            color = EchoTheme.colors.textPrimary,
+                        )
+                    }
+                }
+                Text(
+                    text = "${formatSize(summary.freeBytes)} free on this phone",
+                    style = EchoTheme.typography.micro,
+                    color = EchoTheme.colors.textTertiary,
+                )
+            }
+        }
+    }
+    EchoButton(
+        text = "Compare models",
+        onClick = onCompare,
+        variant = ButtonVariant.Ghost,
+        size = ButtonSize.Sm,
+        modifier = Modifier.align(Alignment.CenterHorizontally),
+    )
+    PickerSheet(
+        visible = comparing,
+        title = "Speech models",
+        options = speechChoices.map { it.name to it },
+        selected = speech,
+        onPick = { onSelectSpeech(it); onDismissCompare() },
+        onDismiss = onDismissCompare,
+        subtitle = { it.hint },
+    )
+}
+
+@Composable
+internal fun SetupActions(
+    onWifi: () -> Unit,
+    onMobileData: () -> Unit,
+    onLater: () -> Unit,
+    nothingToDownload: Boolean,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s2)) {
+        if (nothingToDownload) {
+            EchoButton(text = "Continue", onClick = onLater, size = ButtonSize.Lg, fullWidth = true, modifier = Modifier.fillMaxWidth())
+        } else {
+            EchoButton(text = "Download on Wi-Fi", onClick = onWifi, size = ButtonSize.Lg, fullWidth = true, modifier = Modifier.fillMaxWidth())
+            EchoButton(
+                text = "Download now with mobile data",
+                onClick = onMobileData,
+                variant = ButtonVariant.Soft,
+                fullWidth = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            EchoButton(text = "Set up later", onClick = onLater, variant = ButtonVariant.Ghost, fullWidth = true, modifier = Modifier.fillMaxWidth())
+        }
     }
 }
 
 @Composable
 internal fun ColumnScope.FirstNoteStep(
-    needsDownload: Boolean,
-    modelDownloadLabel: String,
-    onDownload: () -> Unit,
+    status: SetupStatus,
+    microphoneBlocked: Boolean,
     onRecord: () -> Unit,
-    onLater: () -> Unit,
+    onRetry: () -> Unit,
 ) {
     StepIntro(
         title = "Try your first note",
         body = "Tap the button and say what's on your mind. Echo turns it into a note when you stop.",
     )
 
+    DownloadStatus(status, onRetry)
+
     Column(
-        modifier = Modifier.weight(1f).fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().padding(vertical = EchoTheme.spacing.s6),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(22.dp, Alignment.CenterVertically),
+        verticalArrangement = Arrangement.spacedBy(22.dp),
     ) {
         RecordButton(state = RecordButtonState.Idle, onClick = onRecord, size = RecordButtonSize.Lg)
         Text(
@@ -448,23 +465,19 @@ internal fun ColumnScope.FirstNoteStep(
             style = EchoTheme.typography.bodySm.copy(fontWeight = FontWeight.Medium),
             color = EchoTheme.colors.textSecondary,
         )
-    }
-
-    // Not in the design: only shown off Wi-Fi, where Welcome deliberately did not start the
-    // download. Without it the first note would sit "waiting for model" with no way forward here.
-    if (needsDownload) {
-        EchoButton(
-            text = "Download AI · $modelDownloadLabel",
-            onClick = onDownload,
-            variant = ButtonVariant.Soft,
-            size = ButtonSize.Sm,
-            modifier = Modifier.align(Alignment.CenterHorizontally),
-        )
+        if (microphoneBlocked) {
+            Text(
+                text = "Microphone blocked. Allow it in system settings, or import audio instead.",
+                style = EchoTheme.typography.bodySm,
+                color = EchoTheme.colors.textDanger,
+                textAlign = TextAlign.Center,
+            )
+        }
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
-            text = "Not sure what to say? Try",
+            text = "Try saying",
             style = EchoTheme.typography.microCaps.copy(fontWeight = FontWeight.Medium),
             color = EchoTheme.colors.textSecondary,
         )
@@ -487,14 +500,89 @@ internal fun ColumnScope.FirstNoteStep(
             }
         }
     }
+}
 
-    EchoButton(
-        text = "I'll do it later",
-        onClick = onLater,
-        variant = ButtonVariant.Ghost,
-        fullWidth = true,
-        modifier = Modifier.fillMaxWidth(),
-    )
+@Composable
+private fun DownloadStatus(status: SetupStatus, onRetry: () -> Unit) {
+    if (status == SetupStatus.Idle) return
+    EchoCard(tone = CardTone.Paper, padding = CardPadding.Sm, modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(EchoTheme.spacing.s2),
+            verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
+        ) {
+            when (status) {
+                is SetupStatus.Downloading -> {
+                    Text(
+                        text = "Downloading models · ${(status.fraction * 100).toInt()}%",
+                        style = EchoTheme.typography.bodySm.copy(fontWeight = FontWeight.Medium),
+                        color = EchoTheme.colors.textPrimary,
+                    )
+                    LinearProgressIndicator(
+                        progress = { status.fraction },
+                        modifier = Modifier.fillMaxWidth().height(4.dp).clip(EchoTheme.radii.pill),
+                        color = EchoTheme.colors.actionPrimaryBg,
+                        trackColor = EchoTheme.colors.indicatorIdle,
+                    )
+                }
+
+                SetupStatus.WaitingForWifi -> Text(
+                    text = "Waiting for Wi-Fi. Downloads start by themselves once you connect.",
+                    style = EchoTheme.typography.bodySm.copy(fontWeight = FontWeight.Medium),
+                    color = EchoTheme.colors.textPrimary,
+                )
+
+                SetupStatus.Failed -> {
+                    Text(
+                        text = "The download did not finish.",
+                        style = EchoTheme.typography.bodySm.copy(fontWeight = FontWeight.Medium),
+                        color = EchoTheme.colors.textDanger,
+                    )
+                    EchoButton(text = "Retry", onClick = onRetry, variant = ButtonVariant.Soft, size = ButtonSize.Sm)
+                }
+
+                SetupStatus.Done -> Text(
+                    text = "Models ready. Everything works offline.",
+                    style = EchoTheme.typography.bodySm.copy(fontWeight = FontWeight.Medium),
+                    color = EchoTheme.colors.textSuccess,
+                )
+
+                SetupStatus.Idle -> Unit
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChoiceCard(title: String, subtitle: String, selected: Boolean, onClick: () -> Unit) {
+    EchoCard(
+        tone = if (selected) CardTone.Bronze else CardTone.Paper,
+        padding = CardPadding.Sm,
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().semantics { this.selected = selected },
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = EchoTheme.spacing.s2, vertical = EchoTheme.spacing.s2),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5),
+        ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s1)) {
+                Text(
+                    text = title,
+                    style = EchoTheme.typography.body.copy(fontWeight = FontWeight.Medium),
+                    color = EchoTheme.colors.textPrimary,
+                )
+                Text(text = subtitle, style = EchoTheme.typography.bodySm, color = EchoTheme.colors.textSecondary)
+            }
+            if (selected) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_check),
+                    contentDescription = "Selected",
+                    tint = EchoTheme.colors.textAccent,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -503,38 +591,4 @@ private fun StepIntro(title: String, body: String) {
         Text(text = title, style = EchoTheme.typography.title, color = EchoTheme.colors.textPrimary)
         Text(text = body, style = EchoTheme.typography.body, color = EchoTheme.colors.textSecondary)
     }
-}
-
-@Composable
-private fun CenteredIntro(title: String, body: String) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Text(
-            text = title,
-            style = EchoTheme.typography.title,
-            color = EchoTheme.colors.textPrimary,
-            textAlign = TextAlign.Center,
-        )
-        Text(
-            text = body,
-            style = EchoTheme.typography.body,
-            color = EchoTheme.colors.textSecondary,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.widthIn(max = 310.dp),
-        )
-    }
-}
-
-@Composable
-private fun PrimaryContinue(onContinue: () -> Unit) {
-    EchoButton(
-        text = "Continue",
-        onClick = onContinue,
-        size = ButtonSize.Lg,
-        fullWidth = true,
-        modifier = Modifier.fillMaxWidth(),
-    )
 }

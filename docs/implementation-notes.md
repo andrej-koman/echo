@@ -84,7 +84,7 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
   would be Large. The pick applies from the next job, which downloads it; once it loads, the
   other Whisper files are deleted so a switch doesn't keep two on disk. Ungated
   `ggerganov/whisper.cpp` on HuggingFace, through the same `ModelStore`/`HttpModelDownloader` as
-  the LLM. It downloads on the first import, not at onboarding.
+  the LLM. It downloads on the first import, or from onboarding's explicit download button.
 - **Import sheet** (`ui/notes/ImportSheet.kt`): every picked or shared file waits in
   `Transcriptions.offered` for the sheet: the file's name and details on top, then a title
   (placeholder is the file name, which the note keeps until analysis names it), then which day it
@@ -262,7 +262,8 @@ ui/tasks/     TaskRows (TaskGroupCard/TaskRow/TaskCheckbox for the note screen),
               TasksViewModel
 ui/capture/   RecordingRow — timer/pause controls above a full-width waveform; static record button below
 ui/record/    RecordViewModel + RecordUiState over RecordingController (still named for its old screen)
-ui/onboarding/ OnboardingScreen + OnboardingSteps (the 5 first-run screens), OnboardingViewModel
+ui/onboarding/ OnboardingScreen + OnboardingSteps (the 6 first-run screens), OnboardingViewModel,
+              OnboardingSetup (recommendation, setup summary, download status)
 ui/profile/   SettingsScreen + SettingsViewModel (the Settings tab), StorageScreen, HistoryScreen +
               HistoryViewModel (the Calendar tab), DictionaryScreen + DictionaryViewModel
 ui/notes/     NotesScreen + NotesViewModel (the Notes tab, search; NoteRow, NoteStage,
@@ -655,23 +656,42 @@ is the user's call), so a smaller per-tier model (Phase 2) slots in as one more 
 
 ## Onboarding
 
-Five screens (`ui/onboarding/`): Welcome, Voice to tasks (1/4), Private and offline (2/4),
-Microphone (3/4), First note (4/4). One composable switches on `OnboardingStep` — no NavHost,
-hard cuts like the rest of the app; system back steps back, and leaves the app on Welcome.
+Six screens (`ui/onboarding/`): Welcome, How it works, What will you record? (+ language), What
+matters most?, Your setup (downloads), First note. Progress shows five segments after Welcome. One
+composable switches on `OnboardingStep` — no NavHost, hard cuts like the rest of the app; the back
+arrow and system back step back (choices live in `OnboardingViewModel`, so they survive), and
+system back leaves the app on Welcome. Body content scrolls; actions stay pinned below it.
 
 - **Gate:** `AppContainer.onboardingDone` = `SettingsStore.onboardingDone`, or any transcript
   already on disk — an install that predates onboarding goes straight to Notes.
-- **Downloads start on "Get started", never block.** `startOnboardingDownloads()` starts the
-  Whisper model and (when `aiCardState` says `NeedsDownload`) the LLM, both only on Wi-Fi. On
-  mobile data nothing starts — the first recording's transcription job fetches Whisper itself; step 4 shows a "Download AI · 977 MB" button (not in
-  the design) so the first note isn't stuck "waiting for model" with no way forward. A note
-  recorded mid-download queues and auto-analyses when the model lands (existing drain trigger).
-- **Paths:** Skip (steps 1–2) → Microphone, never past it. Allow → system dialog; granted →
-  First note, denied → finish → Notes. Not now → finish → Notes (the record button asks again later). The
-  record button → finish, then `MainApp` starts recording on Notes through the same
-  pending-open-capture flag the recording notification uses. "I'll do it later" → finish → Notes.
-- Voice-to-tasks' three example rows are a static `DemoItemRow` with per-kind icons
-  (bell / list-checks / calendar), not `TaskRow` — real `TodoItem`s have no kind.
+- **Nothing downloads until a button says so.** Welcome starts nothing. The Setup screen's
+  "Download on Wi-Fi" and "Download now with mobile data" call `AppContainer.startSetupDownloads`,
+  which enqueues the unique `ModelDownloadWorker` (`onboarding-downloads`): `UNMETERED` for Wi-Fi
+  (KEEP), `CONNECTED` for mobile data (REPLACE, so it supersedes a job waiting for Wi-Fi). A job
+  survives the app being killed; partial files resume. The worker downloads Whisper, the VAD file,
+  the speaker models when speaker detection is on, then Notes AI through `downloadModelNow`
+  (the Wi-Fi-only *setting* is not consulted; the button or job constraint is the user's choice,
+  and `wifiOnlyDownload` is never changed). "Set up later" downloads nothing; the first recording's
+  transcription job still fetches Whisper itself. A note recorded mid-download queues and
+  auto-analyses when the model lands (existing drain trigger).
+- **Recommendation** (`OnboardingSetup.kt`, pure): Faster → Whisper Small; More accurate → Large
+  V3 Turbo, and that option is hidden when `SpeechModels.choices` lacks it (phones under ~7 GB);
+  Help me choose → `SpeechModels.default`. Speaker detection is on only when Meetings is selected.
+  Continuing from the priority screen applies language, speech model and speaker detection through
+  `SettingsStore`; Skip on the record/priority screens jumps to Setup and changes nothing. Compare
+  models on Setup picks from `SpeechModels.choices` and writes `speechModel` immediately.
+- **Sizes are real** (`ModelSpec.bytes`); "No download" / "Ready" appear only when the model is
+  already on disk. There is no bundled model and no Echo Pro copy.
+- **Download status** on First note is `AppContainer.setupStatus`: the needed stores' states plus
+  the worker's WorkManager state — Waiting for Wi-Fi (job queued, nothing downloading),
+  progress, Failed (+ Retry, mobile data), Done. Failure never blocks entering the app.
+- **Mic permission is asked at the record button**, not on its own screen. Granted → finish, then
+  `MainApp` starts recording through the pending-open-capture flag the recording notification
+  uses. Denied → stays on First note with a "Microphone blocked" note; Import audio and Explore
+  first remain. Import audio → finish, then `MainApp` opens the import picker through
+  `pendingOpenImport` in `EchoApp`.
+- How it works' demo rows are real `TaskRow`s over in-memory `TodoItem`s (never stored), with
+  dates relative to now.
 - Button labels follow the design system's bumped scale: Sm/Md/Lg = 14/15/17sp semibold (was
   13/14/15 medium). The same update made the record glyph (`recordGlyph`, mic and stop on the
   record gradients) dark ink instead of white, darkened `textTertiary`/`waveformIdle`/

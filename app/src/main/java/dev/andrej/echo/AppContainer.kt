@@ -9,6 +9,7 @@ import androidx.lifecycle.ViewModelProvider
 import dev.andrej.echo.ai.AiCardState
 import dev.andrej.echo.ai.HttpModelDownloader
 import dev.andrej.echo.ai.LiteRtLlmRunner
+import dev.andrej.echo.ai.ModelDownloadWorker
 import dev.andrej.echo.ai.ModelSlot
 import dev.andrej.echo.ai.ModelStore
 import dev.andrej.echo.ai.PendingAnalysisWorker
@@ -51,6 +52,20 @@ import dev.andrej.echo.ui.record.RecordViewModel
 import dev.andrej.echo.ui.tasks.TasksViewModel
 import dev.andrej.echo.ui.notes.NotesViewModel
 import dev.andrej.echo.ui.onboarding.OnboardingViewModel
+import dev.andrej.echo.ui.onboarding.SetupModelStates
+import dev.andrej.echo.ui.onboarding.SetupStatus
+import dev.andrej.echo.ui.onboarding.SetupSummary
+import dev.andrej.echo.ui.onboarding.SetupWork
+import dev.andrej.echo.ui.onboarding.buildSetupSummary
+import dev.andrej.echo.ui.onboarding.computeSetupStatus
+import dev.andrej.echo.ui.profile.buildLanguageOptions
+import dev.andrej.echo.speech.whisper.WhisperModel
+import androidx.work.Constraints
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -151,6 +166,8 @@ class AppContainer(context: Context) {
         settings = settings,
     )
 
+    private val vadStore = ModelStore(File(applicationContext.filesDir, "models"), WHISPER_VAD, HttpModelDownloader())
+
     private val diarizer = Diarizer(
         segmentation = ModelStore(File(applicationContext.filesDir, "models"), SPEAKER_SEGMENTATION, HttpModelDownloader()),
         embedding = ModelStore(File(applicationContext.filesDir, "models"), SPEAKER_EMBEDDING, HttpModelDownloader()),
@@ -198,7 +215,7 @@ class AppContainer(context: Context) {
         context = applicationContext,
         repository = repository,
         speechModels = speechModels,
-        vadStore = ModelStore(File(applicationContext.filesDir, "models"), WHISPER_VAD, HttpModelDownloader()),
+        vadStore = vadStore,
         settings = settings,
         dictionary = dictionary,
         analysisQueue = analysisQueue,
@@ -237,20 +254,73 @@ class AppContainer(context: Context) {
         _onboardingDone.value = false
     }
 
-    /** Both models start on Wi-Fi only; on mobile data the first recording fetches Whisper. */
-    fun startOnboardingDownloads() {
-        if (!onWifi()) return
-        appScope.launch {
-            speechModels.store().download()
-            if (settings.detectSpeakers) diarizer.download {}
-        }
-        appScope.launch {
-            if (llmNeedsDownload.first()) downloadModel(modelSelection.active.value)
-        }
+    private val workManager = WorkManager.getInstance(applicationContext)
+    /**
+     * Onboarding's download button. [requireWifi] queues the job until an unmetered network
+     * exists; the mobile-data button replaces any such waiting job. Neither touches
+     * [SettingsStore.wifiOnlyDownload], which stays the user's own preference.
+     */
+    fun startSetupDownloads(requireWifi: Boolean) {
+        val request = OneTimeWorkRequestBuilder<ModelDownloadWorker>()
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(if (requireWifi) NetworkType.UNMETERED else NetworkType.CONNECTED)
+                    .build(),
+            )
+            .build()
+        workManager.enqueueUniqueWork(
+            ModelDownloadWorker.WORK_NAME,
+            if (requireWifi) ExistingWorkPolicy.KEEP else ExistingWorkPolicy.REPLACE,
+            request,
+        )
     }
 
-    val llmNeedsDownload: Flow<Boolean> =
-        aiCardState.filter { it != AiCardState.Checking }.map { it is AiCardState.NeedsDownload }
+    /** The worker's body. True once every model the current settings need is on disk. */
+    suspend fun downloadSetupModels(): Boolean {
+        speechModels.store().download()
+        vadStore.download()
+        if (settings.detectSpeakers) diarizer.download {}
+        downloadModelNow(modelSelection.active.value)
+        return setupStores().all { it.state.value is ModelState.Ready }
+    }
+
+    private fun setupStores(): List<ModelStore> = buildList {
+        add(speechModels.store())
+        add(vadStore)
+        if (settings.detectSpeakers) addAll(diarizer.stores)
+        add(modelStores.getValue(modelSelection.active.value))
+    }
+
+    val setupStatus: Flow<SetupStatus> =
+        workManager.getWorkInfosForUniqueWorkFlow(ModelDownloadWorker.WORK_NAME).flatMapLatest { infos ->
+            val work = when (infos.lastOrNull()?.state) {
+                WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> SetupWork.Queued
+                WorkInfo.State.RUNNING -> SetupWork.Running
+                WorkInfo.State.FAILED -> SetupWork.Failed
+                else -> SetupWork.None
+            }
+            combine(setupStores().map { it.state }) { states -> computeSetupStatus(states.toList(), work) }
+        }
+
+    private fun setupSummary(speech: WhisperModel, detectSpeakers: Boolean): Flow<SetupSummary> {
+        val notes = modelSelection.active.value
+        val flows = listOf(
+            speechModels.store(speech).state,
+            vadStore.state,
+            notes.let { modelStores.getValue(it).state },
+        ) + diarizer.stores.map { it.state }
+        return combine(flows) { states ->
+            buildSetupSummary(
+                speech = speech,
+                vadBytes = WHISPER_VAD.bytes,
+                speakerBytes = diarizer.stores.sumOf { it.spec.bytes },
+                notesAi = notes,
+                detectSpeakers = detectSpeakers,
+                states = SetupModelStates(states[0], states[1], states.drop(3), states[2]),
+                freeBytes = applicationContext.filesDir.usableSpace,
+            )
+        }
+    }
 
     suspend fun deleteAllData() {
         transcriptions.discardAll()
@@ -323,16 +393,19 @@ class AppContainer(context: Context) {
     fun downloadModel(model: NotesAiModel = modelSelection.active.value) {
         if (downloadJob?.isActive == true) return
         if (settings.wifiOnlyDownload && !onWifi()) return
+        downloadJob = appScope.launch { downloadModelNow(model) }
+    }
+
+    /** Skips the Wi-Fi-only check: callers are an explicit user action or a job with its own constraint. */
+    private suspend fun downloadModelNow(model: NotesAiModel) {
         modelSelection.startDownload(model)
         downloadTarget.value = model
-        downloadJob = appScope.launch {
-            try {
-                modelStores.getValue(model).download()
-                modelSelection.modelStateChanged(model)
-            } finally {
-                modelSelection.downloadEnded(model)
-                downloadTarget.value = null
-            }
+        try {
+            modelStores.getValue(model).download()
+            modelSelection.modelStateChanged(model)
+        } finally {
+            modelSelection.downloadEnded(model)
+            downloadTarget.value = null
         }
     }
 
@@ -398,11 +471,16 @@ class AppContainer(context: Context) {
 
             modelClass.isAssignableFrom(OnboardingViewModel::class.java) ->
                 OnboardingViewModel(
-                    needsDownload = llmNeedsDownload,
-                    onStartDownloads = ::startOnboardingDownloads,
-                    onDownloadNow = { downloadModel() },
+                    settings = settings,
+                    speechChoices = speechModels.choices,
+                    defaultSpeech = speechModels.default,
+                    currentSpeech = speechModels.current,
+                    speechReady = { speechModels.store(it).state.value is ModelState.Ready },
+                    summaryFor = ::setupSummary,
+                    setupStatus = setupStatus,
+                    onStartDownloads = ::startSetupDownloads,
                     onFinish = ::finishOnboarding,
-                    modelDownloadBytes = modelSelection.active.value.spec.bytes,
+                    languageOptions = { buildLanguageOptions(WhisperNative.languages().toList()) },
                 ) as T
 
             modelClass.isAssignableFrom(FoldersViewModel::class.java) ->

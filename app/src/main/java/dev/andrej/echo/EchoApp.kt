@@ -117,6 +117,7 @@ fun EchoApp(
 ) {
     val done by onboardingDone.collectAsStateWithLifecycle()
     var captureAfterOnboarding by remember { mutableStateOf(false) }
+    var importAfterOnboarding by remember { mutableStateOf(false) }
 
     Box(
         modifier = modifier
@@ -128,6 +129,7 @@ fun EchoApp(
             OnboardingScreen(
                 viewModel = onboardingViewModel,
                 onRecordFirstNote = { captureAfterOnboarding = true },
+                onImportFirst = { importAfterOnboarding = true },
             )
         } else {
             MainApp(
@@ -135,6 +137,8 @@ fun EchoApp(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 pendingOpenCapture = pendingOpenCapture || captureAfterOnboarding,
+                pendingOpenImport = importAfterOnboarding,
+                onOpenImportHandled = { importAfterOnboarding = false },
                 pendingOpenTask = pendingOpenTask,
                 onOpenTaskHandled = onOpenTaskHandled,
                 onOpenCaptureHandled = {
@@ -153,6 +157,8 @@ private fun MainApp(
     onThemeModeChange: (ThemeMode) -> Unit,
     pendingOpenCapture: Boolean = false,
     onOpenCaptureHandled: () -> Unit = {},
+    pendingOpenImport: Boolean = false,
+    onOpenImportHandled: () -> Unit = {},
     pendingOpenTask: String? = null,
     onOpenTaskHandled: () -> Unit = {},
 ) {
@@ -207,6 +213,13 @@ private fun MainApp(
     }
     LaunchedEffect(Unit) {
         notesViewModel.importStarted.collect { id -> navController.navigate(Routes.detail(id)) }
+    }
+
+    LaunchedEffect(pendingOpenImport) {
+        if (pendingOpenImport) {
+            openImport()
+            onOpenImportHandled()
+        }
     }
 
     LaunchedEffect(pendingOpenCapture) {

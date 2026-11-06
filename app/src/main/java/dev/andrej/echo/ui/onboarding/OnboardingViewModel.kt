@@ -1,57 +1,150 @@
 package dev.andrej.echo.ui.onboarding
 
 import androidx.lifecycle.ViewModel
+import dev.andrej.echo.data.SettingsStore
+import dev.andrej.echo.speech.whisper.WhisperModel
+import dev.andrej.echo.ui.profile.LanguageOption
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 
-enum class OnboardingStep { Welcome, VoiceToTasks, Privacy, Microphone, FirstNote }
+enum class OnboardingStep { Welcome, HowItWorks, Record, Priority, Setup, FirstNote }
 
+data class OnboardingUiState(
+    val step: OnboardingStep = OnboardingStep.Welcome,
+    val uses: Set<RecordUse> = setOf(RecordUse.QuickThoughts),
+    /** A Whisper language code; empty auto-detects. */
+    val language: String = "",
+    val priority: Priority = Priority.HelpMeChoose,
+    val speech: WhisperModel,
+    val detectSpeakers: Boolean,
+    val microphoneBlocked: Boolean = false,
+)
+
+data class PriorityOption(val priority: Priority, val speech: WhisperModel, val ready: Boolean)
+
+@OptIn(ExperimentalCoroutinesApi::class)
 class OnboardingViewModel(
-    /** True while the LLM is neither on the device nor downloading — step 4 offers it then. */
-    val needsDownload: Flow<Boolean>,
-    private val onStartDownloads: () -> Unit,
-    private val onDownloadNow: () -> Unit,
+    private val settings: SettingsStore,
+    val speechChoices: List<WhisperModel>,
+    private val defaultSpeech: WhisperModel,
+    currentSpeech: WhisperModel,
+    private val speechReady: (WhisperModel) -> Boolean,
+    private val summaryFor: (speech: WhisperModel, detectSpeakers: Boolean) -> Flow<SetupSummary>,
+    val setupStatus: Flow<SetupStatus>,
+    private val onStartDownloads: (requireWifi: Boolean) -> Unit,
     private val onFinish: () -> Unit,
-    modelDownloadBytes: Long = 977_000_000L,
+    val languageOptions: () -> List<LanguageOption>,
 ) : ViewModel() {
 
-    val modelDownloadLabel: String = "${(modelDownloadBytes / 1_000_000.0).toInt()} MB"
+    private val _state = MutableStateFlow(
+        OnboardingUiState(
+            language = settings.transcriptionLanguage.orEmpty(),
+            speech = currentSpeech,
+            detectSpeakers = settings.detectSpeakers,
+        ),
+    )
+    val state: StateFlow<OnboardingUiState> = _state.asStateFlow()
 
-    private val _step = MutableStateFlow(OnboardingStep.Welcome)
-    val step: StateFlow<OnboardingStep> = _step.asStateFlow()
+    /** Follows the Setup screen's model and speaker choice. */
+    val summary: Flow<SetupSummary> = _state
+        .map { it.speech to it.detectSpeakers }
+        .distinctUntilChanged()
+        .flatMapLatest { (speech, speakers) -> summaryFor(speech, speakers) }
 
-    fun getStarted() {
-        onStartDownloads()
-        _step.value = OnboardingStep.VoiceToTasks
-    }
+    val accurateAvailable: Boolean = accurateAvailable(speechChoices)
+
+    private var usesTouched = false
+
+    fun priorityOptions(): List<PriorityOption> = Priority.entries
+        .filter { it != Priority.Accurate || accurateAvailable }
+        .map { priority ->
+            val speech = recommend(priority).speech
+            PriorityOption(priority, speech, speechReady(speech))
+        }
+
+    private fun recommend(priority: Priority = _state.value.priority) =
+        recommendSetup(_state.value.uses, priority, speechChoices, defaultSpeech)
+
+    fun getStarted() = go(OnboardingStep.HowItWorks)
 
     fun next() {
+        when (_state.value.step) {
+            OnboardingStep.Record -> usesTouched = true
+            OnboardingStep.Priority -> apply()
+            else -> Unit
+        }
         val steps = OnboardingStep.entries
-        _step.value = steps[(_step.value.ordinal + 1).coerceAtMost(steps.lastIndex)]
+        go(steps[(_state.value.step.ordinal + 1).coerceAtMost(steps.lastIndex)])
     }
 
-    fun skipToMicrophone() {
-        _step.value = OnboardingStep.Microphone
-    }
+    /** Leaves settings as they are; the Setup screen then shows what is currently configured. */
+    fun skip() = go(OnboardingStep.Setup)
 
     /** False on Welcome, so the system back can leave the app. */
     fun back(): Boolean {
-        if (_step.value == OnboardingStep.Welcome) return false
-        _step.value = OnboardingStep.entries[_step.value.ordinal - 1]
+        if (_state.value.step == OnboardingStep.Welcome) return false
+        go(OnboardingStep.entries[_state.value.step.ordinal - 1])
         return true
     }
 
-    fun onMicrophoneResult(granted: Boolean) {
-        if (granted) _step.value = OnboardingStep.FirstNote else finish()
+    fun toggleUse(use: RecordUse) {
+        usesTouched = true
+        _state.update { state ->
+            val uses = if (use in state.uses) state.uses - use else state.uses + use
+            state.copy(uses = uses)
+        }
     }
 
-    fun downloadNow() = onDownloadNow()
+    fun setLanguage(code: String) = _state.update { it.copy(language = code) }
+
+    fun setPriority(priority: Priority) = _state.update { it.copy(priority = priority) }
+
+    fun selectSpeech(model: WhisperModel) {
+        settings.speechModel = model.id
+        _state.update { it.copy(speech = model) }
+    }
+
+    fun downloadOnWifi() = startDownloads(requireWifi = true)
+
+    fun downloadWithMobileData() = startDownloads(requireWifi = false)
+
+    fun retryDownload() = startDownloads(requireWifi = false)
+
+    fun setUpLater() = go(OnboardingStep.FirstNote)
+
+    private fun startDownloads(requireWifi: Boolean) {
+        onStartDownloads(requireWifi)
+        go(OnboardingStep.FirstNote)
+    }
+
+    fun onMicrophoneResult(granted: Boolean): Boolean {
+        _state.update { it.copy(microphoneBlocked = !granted) }
+        if (granted) finish()
+        return granted
+    }
 
     /** Rewinds too: the ViewModel outlives the flow, so a debug replay must not resume on the last step. */
     fun finish() {
-        _step.value = OnboardingStep.Welcome
+        _state.update { it.copy(step = OnboardingStep.Welcome) }
         onFinish()
     }
+
+    private fun apply() {
+        val recommendation = recommend()
+        val detectSpeakers = if (usesTouched) recommendation.detectSpeakers else settings.detectSpeakers
+        val state = _state.value
+        settings.transcriptionLanguage = state.language.ifEmpty { null }
+        settings.speechModel = recommendation.speech.id
+        settings.detectSpeakers = detectSpeakers
+        _state.update { it.copy(speech = recommendation.speech, detectSpeakers = detectSpeakers) }
+    }
+
+    private fun go(step: OnboardingStep) = _state.update { it.copy(step = step) }
 }

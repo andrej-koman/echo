@@ -76,6 +76,41 @@ class PendingAnalysisWorkerTest {
     }
 
     @Test
+    fun `unlocked speech invalidates old analysis and exhausted queue before running full text`() = runTest {
+        val transcripts = transcripts()
+        val derived = derived()
+        val queue = queue()
+        val saved = transcripts.save(text = "buy a washer", language = "en", durationMs = 300000,
+            title = "My title", titleByUser = true)
+        transcripts.setTranscribedUntil(saved.id, 120000)
+        val first = worker(queue, transcripts, derived, FakeLlmRunner(listOf(good)))
+        queue.enqueue(saved.id)
+        first.requestDrainAndAwait()
+        val priorTask = derived.items.first().single()
+        derived.setDone(priorTask.id, true)
+        database.todoQueries.updateReminder(1234, null, true, priorTask.id)
+        queue.enqueue(saved.id)
+        repeat(3) { queue.recordBlock(saved.id, AnalysisBlock.EmptyResult, true) }
+        transcripts.setTranscription(saved.id, "buy a washer and paint the door", "en", 300000, emptyList())
+        transcripts.completeTranscription(saved.id, null, true, 100)
+        assertEquals(0, queue.pending.first().single().attempts)
+        val runner = FakeLlmRunner(listOf("""{"title":"New title","summary":"Full speech","items":[{"text":"Buy a washer","due":null},{"text":"Paint door","due":null}],"plans":true}"""))
+        worker(queue, transcripts, derived, runner).requestDrainAndAwait()
+        val note = transcripts.transcripts.first().single()
+        assertEquals("My title", note.title)
+        assertEquals("Full speech", note.summary)
+        assertEquals(42L, note.analyzedAt)
+        assertTrue(runner.prompts.any { it.contains("paint the door") })
+        val items = derived.items.first()
+        assertTrue(items.any { it.text == "Paint door" })
+        val retained = items.single { it.id == priorTask.id }
+        assertTrue(retained.done)
+        assertEquals(1234L, retained.reminderAt)
+        assertTrue(retained.reminderDelivered)
+        assertTrue(queue.pending.first().isEmpty())
+    }
+
+    @Test
     fun `a generation failure consumes an attempt`() = runTest {
         val transcripts = transcripts()
         val saved = transcripts.save(text = "hello", language = "en-GB", durationMs = 0)

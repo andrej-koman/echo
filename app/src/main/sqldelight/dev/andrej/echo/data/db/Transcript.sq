@@ -10,11 +10,12 @@ CREATE TABLE transcript (
     -- Unused: polishing was removed. Platform SQLite before 3.35 cannot DROP COLUMN.
     polishedText TEXT,
     folderId TEXT,
-    titleByUser INTEGER NOT NULL DEFAULT 0
+    titleByUser INTEGER NOT NULL DEFAULT 0,
+    transcribedUntilMs INTEGER
 );
 
 selectAll:
-SELECT id, text, language, createdAt, durationMs, title, summary, analyzedAt, folderId
+SELECT id, text, language, createdAt, durationMs, title, summary, analyzedAt, folderId, transcribedUntilMs
 FROM transcript ORDER BY createdAt DESC;
 
 existsById:
@@ -55,3 +56,12 @@ UPDATE transcript SET folderId = ? WHERE id = ?;
 
 unfile:
 UPDATE transcript SET folderId = NULL WHERE folderId = ?;
+
+setTranscribedUntil:
+UPDATE transcript SET transcribedUntilMs = ? WHERE id = ?;
+
+selectCap:
+SELECT transcribedUntilMs FROM transcript WHERE id = ?;
+
+invalidateAnalysis:
+UPDATE transcript SET analyzedAt = NULL WHERE id = ?;

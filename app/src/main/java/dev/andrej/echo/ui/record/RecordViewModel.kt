@@ -1,8 +1,15 @@
 package dev.andrej.echo.ui.record
 
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.ViewModel
 import dev.andrej.echo.RecordingController
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.launch
+import dev.andrej.echo.transcribe.FREE_SAMPLES
+import dev.andrej.echo.speech.SAMPLE_RATE
 
 data class RecordUiState(
     /** A take is open, recording or paused. */
@@ -26,9 +33,30 @@ class RecordViewModel(
     /** Puts the take under the foreground service, so it keeps the mic when the app is left. */
     private val onStarted: () -> Unit = {},
     private val warmup: () -> Unit = {},
+    isPro: StateFlow<Boolean> = MutableStateFlow(false),
 ) : ViewModel() {
 
     val uiState: StateFlow<RecordUiState> = controller.state
+
+    private val upgrade = MutableStateFlow(false)
+    val upgradeRequested = upgrade.asStateFlow()
+    private var prompted = false
+
+    init {
+        viewModelScope.launch {
+            combine(uiState, isPro) { recording, pro -> recording to pro }.collect { (recording, pro) ->
+                if (!recording.isRecording) {
+                    prompted = false
+                    upgrade.value = false
+                } else if (!pro && !prompted && recording.elapsedMs > FREE_SAMPLES * 1000L / SAMPLE_RATE) {
+                    prompted = true
+                    upgrade.value = true
+                }
+            }
+        }
+    }
+
+    fun consumeUpgrade() { upgrade.value = false }
 
     fun startRecording() {
         warmup()

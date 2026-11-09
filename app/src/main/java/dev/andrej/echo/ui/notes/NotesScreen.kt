@@ -43,6 +43,7 @@ fun NotesScreen(
     onOpen: (String) -> Unit,
     onImport: () -> Unit,
     modifier: Modifier = Modifier,
+    isPro: Boolean = false,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val folders by viewModel.folders.collectAsStateWithLifecycle()
@@ -75,6 +76,7 @@ fun NotesScreen(
                     searchPlaceholder = "Search all notes…",
                     leading = { Mascot(size = 30.dp) },
                     actions = {
+                        if (isPro) EchoBadge("Pro", tone = BadgeTone.Success)
                         EchoIconButton(
                             iconRes = R.drawable.ic_upload,
                             contentDescription = "Import audio",

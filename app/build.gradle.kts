@@ -1,9 +1,17 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.sqldelight)
 }
+
+val revenueCatKey = Properties().apply {
+    val local = rootProject.file("local.properties")
+    if (local.exists()) local.inputStream().use { load(it) }
+}.getProperty("revenuecat.apiKey", "")
+val quotedRevenueCatKey = "\"" + revenueCatKey.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
 android {
     namespace = "dev.andrej.echo"
@@ -14,7 +22,8 @@ android {
         applicationId = "dev.andrej.echo"
         minSdk = 29
         targetSdk = 36
-        versionCode = 1
+        buildConfigField("String", "REVENUECAT_API_KEY", quotedRevenueCatKey)
+        versionCode = 2
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -37,6 +46,7 @@ android {
     buildTypes {
         create("uitest") {
             initWith(getByName("debug"))
+            buildConfigField("String", "REVENUECAT_API_KEY", "\"\"")
             applicationIdSuffix = ".uitest"
             matchingFallbacks += "debug"
         }
@@ -79,6 +89,12 @@ sqldelight {
 }
 
 dependencies {
+    constraints {
+        implementation(libs.androidx.fragment) {
+            because("Google Play services pulls Fragment 1.1.0, which is incompatible with Activity Result APIs.")
+        }
+    }
+    implementation(libs.revenuecat.purchases)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

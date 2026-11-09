@@ -26,3 +26,6 @@ DELETE FROM speaker WHERE transcriptId = ?;
 
 clear:
 DELETE FROM speaker;
+
+ensure:
+INSERT OR IGNORE INTO speaker (transcriptId, idx, name) VALUES (?, ?, NULL);

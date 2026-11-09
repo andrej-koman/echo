@@ -1,6 +1,6 @@
 # Echo agent guide
 
-Echo is an offline-first Android voice-notes app. Kotlin, Compose, minSdk 29. It records or imports audio, transcribes on-device with Whisper, identifies speakers, and extracts a note and tasks with a local LLM.
+Echo is an offline-first Android voice-notes app. Kotlin, Compose, minSdk 29. It records or imports audio, transcribes on-device with Whisper, identifies speakers, and extracts a note and tasks with a local LLM. RevenueCat handles anonymous Google Play billing.
 
 ## Working rules
 
@@ -25,6 +25,7 @@ Read the matching section of [implementation notes](docs/implementation-notes.md
 - Recording, import, transcription, model selection, or recovery: **Recording** and **Import and Whisper**.
 - Diarization: **Speakers**. Database or search: **Storage**. Build and device checks: **Build**.
 - Navigation, notes, tasks, playback, export, or settings: **Layout** and **Notes**.
+- Billing, entitlements, paywall, or free-tier limits: **Billing**.
 - Theme or components: **Design system**. Notifications: **Notifications**.
 - Analysis, prompts, model downloads, or memory: **On-device AI**. First-run flow: **Onboarding**.
 - Product scope and phase history: **Rebuild in progress (v1 spec)** and the root feature spec.

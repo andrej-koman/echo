@@ -10,5 +10,6 @@ class FakeSettingsStore(initial: String? = null) : SettingsStore {
     override var notesAiModel: String = "qwen3_1_7b"
     override var pendingNotesAiModel: String? = null
     override var importDay: ImportDay? = null
+    override var cachedIsPro: Boolean = false
     override var themeMode: ThemeMode = ThemeMode.Dark
 }

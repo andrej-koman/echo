@@ -242,4 +242,35 @@ class RecordingControllerTest {
         assertTrue(started)
         viewModel.discard()
     }
+    @Test fun `free recording prompts once after two minutes and next take prompts again`() = runTest {
+        val controller = controller(FakeRecorder(perCall = 121))
+        val billing = dev.andrej.echo.billing.FakeBilling(dev.andrej.echo.data.FakeSettingsStore())
+        val vm = RecordViewModel(controller, isPro = billing.isPro)
+        vm.startRecording()
+        advanceUntilIdle()
+        assertTrue(vm.upgradeRequested.value)
+        vm.consumeUpgrade()
+        controller.pause()
+        advanceUntilIdle()
+        controller.resume()
+        advanceUntilIdle()
+        assertFalse(vm.upgradeRequested.value)
+        vm.discard()
+        advanceUntilIdle()
+        vm.startRecording()
+        advanceUntilIdle()
+        assertTrue(vm.upgradeRequested.value)
+        vm.discard()
+    }
+
+    @Test fun `pro recording passes two minutes without prompting`() = runTest {
+        val billing = dev.andrej.echo.billing.FakeBilling(dev.andrej.echo.data.FakeSettingsStore())
+        billing.setPro(true)
+        val vm = RecordViewModel(controller(FakeRecorder(perCall = 121)), isPro = billing.isPro)
+        vm.startRecording()
+        advanceUntilIdle()
+        assertFalse(vm.upgradeRequested.value)
+        vm.discard()
+    }
+
 }

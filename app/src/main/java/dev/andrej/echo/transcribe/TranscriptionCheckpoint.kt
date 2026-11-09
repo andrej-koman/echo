@@ -52,6 +52,10 @@ internal class TranscriptionCheckpoint(private val marker: File) {
         if (!partial.renameTo(chunks)) throw IOException("could not save chunk checkpoint")
     }
 
+    fun reopen() {
+        if (marker.exists() && !marker.delete()) throw IOException("could not reopen transcription checkpoint")
+    }
+
     fun reset() {
         if (chunks.exists() && !chunks.delete()) throw IOException("could not reset chunk checkpoint")
         if (marker.exists() && !marker.delete()) {

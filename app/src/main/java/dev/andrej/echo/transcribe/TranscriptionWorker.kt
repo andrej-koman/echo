@@ -35,7 +35,7 @@ class TranscriptionWorker(context: Context, params: WorkerParameters) : Coroutin
         }
 
         return try {
-            transcriptions.run(transcriptId, ::report)
+            transcriptions.run(transcriptId, ::report, inputData.getBoolean(KEY_UNLOCK, false))
             Result.success()
         } catch (e: CancellationException) {
             throw e
@@ -101,6 +101,7 @@ class TranscriptionWorker(context: Context, params: WorkerParameters) : Coroutin
     }
 
     companion object {
+        const val KEY_UNLOCK = "unlock"
         const val KEY_ID = "transcript_id"
         private const val TAG = "TranscriptionWorker"
         private const val CHANNEL_ID = "transcription"

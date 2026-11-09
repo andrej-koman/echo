@@ -34,6 +34,8 @@ interface SettingsStore {
     /** Null asks on every import. */
     var importDay: ImportDay?
 
+    var cachedIsPro: Boolean
+
     var themeMode: ThemeMode
 }
 
@@ -76,6 +78,10 @@ class SharedPreferencesSettingsStore(context: Context) : SettingsStore {
     override var importDay: ImportDay?
         get() = preferences.getString(KEY_IMPORT_DAY, null)?.let { name -> ImportDay.entries.find { it.name == name } }
         set(value) = preferences.edit().putString(KEY_IMPORT_DAY, value?.name).apply()
+
+    override var cachedIsPro: Boolean
+        get() = preferences.getBoolean("billing_is_pro", false)
+        set(value) = preferences.edit().putBoolean("billing_is_pro", value).apply()
 
     override var themeMode: ThemeMode
         get() = preferences.getString(KEY_THEME_MODE, null)

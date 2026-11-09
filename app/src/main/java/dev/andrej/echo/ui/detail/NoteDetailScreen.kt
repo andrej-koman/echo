@@ -67,7 +67,11 @@ import dev.andrej.echo.export.canExport
 import dev.andrej.echo.export.ExportOptions
 import dev.andrej.echo.export.Exporter
 import dev.andrej.echo.transcribe.TranscriptionStatus
+import dev.andrej.echo.ui.components.ActionDivider
+import dev.andrej.echo.ui.components.ActionRow
+import dev.andrej.echo.ui.components.ActionSheet
 import dev.andrej.echo.ui.components.BarCenter
+import dev.andrej.echo.ui.folders.FolderPickerSheet
 import dev.andrej.echo.ui.components.ButtonSize
 import dev.andrej.echo.ui.components.ButtonVariant
 import dev.andrej.echo.ui.components.ConfirmSheet
@@ -76,8 +80,6 @@ import dev.andrej.echo.ui.components.EchoCard
 import dev.andrej.echo.ui.components.EchoIconButton
 import dev.andrej.echo.ui.components.IconButtonSize
 import dev.andrej.echo.ui.components.LocalBottomBarHeight
-import dev.andrej.echo.ui.components.PickerSheet
-import dev.andrej.echo.ui.components.Sheet
 import dev.andrej.echo.ui.folders.FolderIcon
 import dev.andrej.echo.ui.folders.folderColor
 import dev.andrej.echo.ui.notes.NotesViewModel
@@ -479,6 +481,13 @@ fun NoteDetailScreen(
                 sheet = sheet,
                 onSheet = { sheet = it },
                 title = transcript.title ?: title(transcript.text),
+                subtitle = listOfNotNull(
+                    dateLabel(transcript.createdAt, System.currentTimeMillis()),
+                    clock(transcript.durationMs),
+                    tasks.count { it.sourceTranscriptId == noteId }
+                        .takeIf { it > 0 }
+                        ?.let { if (it == 1) "1 task" else "$it tasks" },
+                ).joinToString(" · "),
                 folderId = transcript.folderId,
                 folders = folders,
                 canAnalyze = pending[noteId]?.severity != PendingSeverity.Parked,
@@ -849,6 +858,7 @@ private fun DetailSheets(
     sheet: NoteSheet?,
     onSheet: (NoteSheet?) -> Unit,
     title: String,
+    subtitle: String,
     folderId: String?,
     folders: List<Folder>,
     canAnalyze: Boolean,
@@ -867,40 +877,48 @@ private fun DetailSheets(
     onDelete: () -> Unit,
 ) {
     val dismiss = { onSheet(null) }
-    Sheet(visible = sheet == NoteSheet.More, onDismiss = dismiss) {
-        Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3)) {
-            EchoButton(
-                text = "Rename note",
-                onClick = { onSheet(NoteSheet.Rename) },
-                variant = ButtonVariant.Secondary,
-                fullWidth = true,
-            )
-            EchoButton(
-                text = if (analyzing) "Analyzing…" else "Re-analyze",
-                onClick = {
-                    onAnalyze()
-                    dismiss()
-                },
-                variant = ButtonVariant.Secondary,
-                enabled = canAnalyze && !analyzing,
-                fullWidth = true,
-            )
-            EchoButton(
-                text = "Copy text",
-                onClick = {
-                    onCopy()
-                    dismiss()
-                },
-                variant = ButtonVariant.Secondary,
-                fullWidth = true,
-            )
-            EchoButton(
-                text = "Delete",
-                onClick = { onSheet(NoteSheet.Delete) },
-                variant = ButtonVariant.Danger,
-                fullWidth = true,
-            )
-        }
+    ActionSheet(visible = sheet == NoteSheet.More, title = title, subtitle = subtitle, onDismiss = dismiss) {
+        ActionRow(
+            icon = R.drawable.ic_pen_line,
+            label = "Rename",
+            onClick = { onSheet(NoteSheet.Rename) },
+        )
+        ActionRow(
+            icon = R.drawable.ic_folder,
+            label = "Move to folder",
+            trailing = folders.firstOrNull { it.id == folderId }?.name ?: "No folder",
+            onClick = { onSheet(NoteSheet.Folder) },
+        )
+        ActionRow(
+            icon = R.drawable.ic_copy,
+            label = "Copy text",
+            description = "Copies the full transcript",
+            onClick = {
+                onCopy()
+                dismiss()
+            },
+        )
+        ActionRow(
+            icon = R.drawable.ic_sparkles,
+            label = if (analyzing) "Analyzing…" else "Redo summary and tasks",
+            description = when {
+                analyzing -> "Echo is reading this note now"
+                !canAnalyze -> "Available once transcription finishes"
+                else -> "Replaces the current ones"
+            },
+            enabled = canAnalyze && !analyzing,
+            onClick = {
+                onAnalyze()
+                dismiss()
+            },
+        )
+        ActionDivider()
+        ActionRow(
+            icon = R.drawable.ic_trash,
+            label = "Delete note",
+            destructive = true,
+            onClick = { onSheet(NoteSheet.Delete) },
+        )
     }
     RenameNoteSheet(
         visible = sheet == NoteSheet.Rename,
@@ -915,17 +933,17 @@ private fun DetailSheets(
         visible = sheet == NoteSheet.Delete,
         title = "Delete this note?",
         message = "The recording, transcript and its tasks are removed. This can't be undone.",
-        confirmLabel = "Delete",
+        confirmLabel = "Delete note",
         onConfirm = {
             dismiss()
             onDelete()
         },
         onDismiss = dismiss,
     )
-    PickerSheet(
+    FolderPickerSheet(
         visible = sheet == NoteSheet.Folder,
         title = "Move to folder",
-        options = listOf("No folder" to null) + folders.map { it.name to it.id },
+        folders = folders,
         selected = folderId,
         onPick = {
             onMove(it)

@@ -484,11 +484,15 @@ analysed: **By speaker** (runs
   `EditTaskScreen.kt` to `ui/components/EchoSwitch.kt` now that Settings needs it too, gaining an
   `enabled` flag for the read-only FEEL rows. `ui/components/BottomSheet.kt` is new and generic:
   `ConfirmSheet` (destructive confirmation) and `PickerSheet` (single-choice list with a check
-  mark) are both hand-rolled `Box`/`AnimatedVisibility` scrim+sheet overlays, not Material's
+  mark, optional leading icon) are both hand-rolled `Box`/`AnimatedVisibility` scrim+sheet overlays, not Material's
   `ModalBottomSheet` — nothing else in the app uses one, and the design's plain white sheet with no
   system scrim animation is simpler to hand-roll consistently with `echoShadow`/`hairline`. A sheet draws inside its
   screen, under `EchoApp`'s tab bar, so every open `Sheet` counts itself in `LocalOpenSheets`
   and the bar fades out while any is open — otherwise the bar covers the sheet's buttons.
+  Menus (a note's ···) use `ActionSheet` + `ActionRow`: a title/meta header, icon rows with an
+  optional one-line consequence and trailing current value, and a divider before the destructive
+  row. Prefer rows over stacked buttons for any list of actions; `ConfirmSheet` stays for the
+  irreversible step after a menu row.
 
 ## Design system
 

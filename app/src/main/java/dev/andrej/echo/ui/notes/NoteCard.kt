@@ -37,17 +37,17 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.andrej.echo.R
 import dev.andrej.echo.data.Folder
-import dev.andrej.echo.ui.components.ButtonVariant
 import dev.andrej.echo.ui.components.CardPadding
 import dev.andrej.echo.ui.components.CardTone
 import dev.andrej.echo.ui.components.ConfirmSheet
-import dev.andrej.echo.ui.components.EchoButton
 import dev.andrej.echo.ui.components.EchoCard
 import dev.andrej.echo.ui.components.EchoIconButton
 import dev.andrej.echo.ui.components.IconButtonSize
-import dev.andrej.echo.ui.components.PickerSheet
-import dev.andrej.echo.ui.components.Sheet
+import dev.andrej.echo.ui.components.ActionDivider
+import dev.andrej.echo.ui.components.ActionRow
+import dev.andrej.echo.ui.components.ActionSheet
 import dev.andrej.echo.ui.folders.FolderIcon
+import dev.andrej.echo.ui.folders.FolderPickerSheet
 import dev.andrej.echo.ui.folders.folderColor
 import dev.andrej.echo.ui.theme.EchoTheme
 import dev.andrej.echo.ui.theme.LocalReducedMotion
@@ -236,33 +236,30 @@ internal fun NoteActionsSheets(
     onDismiss: () -> Unit,
 ) {
     var mode by remember(note?.id) { mutableStateOf(NoteAction.Menu) }
-    Sheet(visible = note != null && mode == NoteAction.Menu, onDismiss = onDismiss) {
-        Text(
-            text = note?.title.orEmpty(),
-            style = EchoTheme.typography.heading,
-            color = EchoTheme.colors.textPrimary,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
+    ActionSheet(
+        visible = note != null && mode == NoteAction.Menu,
+        title = note?.title.orEmpty(),
+        subtitle = note?.let { "${it.date} · ${it.duration}" },
+        onDismiss = onDismiss,
+    ) {
+        ActionRow(
+            icon = R.drawable.ic_folder,
+            label = "Move to folder",
+            trailing = note?.folder?.name ?: "No folder",
+            onClick = { mode = NoteAction.Move },
         )
-        Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3)) {
-            EchoButton(
-                text = "Move to folder",
-                onClick = { mode = NoteAction.Move },
-                variant = ButtonVariant.Secondary,
-                fullWidth = true,
-            )
-            EchoButton(
-                text = "Delete",
-                onClick = { mode = NoteAction.Delete },
-                variant = ButtonVariant.Danger,
-                fullWidth = true,
-            )
-        }
+        ActionDivider()
+        ActionRow(
+            icon = R.drawable.ic_trash,
+            label = "Delete note",
+            destructive = true,
+            onClick = { mode = NoteAction.Delete },
+        )
     }
-    PickerSheet(
+    FolderPickerSheet(
         visible = note != null && mode == NoteAction.Move,
         title = "Move to folder",
-        options = listOf("No folder" to null) + folders.map { it.name to it.id },
+        folders = folders,
         selected = note?.folder?.id,
         onPick = { folderId ->
             note?.let { onMove(it.id, folderId) }
@@ -274,7 +271,7 @@ internal fun NoteActionsSheets(
         visible = note != null && mode == NoteAction.Delete,
         title = "Delete this note?",
         message = "The recording, transcript and its tasks are removed. This can't be undone.",
-        confirmLabel = "Delete",
+        confirmLabel = "Delete note",
         onConfirm = {
             note?.let { onDelete(it.id) }
             onDismiss()
@@ -298,10 +295,10 @@ internal fun BulkActionSheets(
 ) {
     val count = if (notes.size == 1) "1 note" else "${notes.size} notes"
     val places = notes.map { it.folder?.id }.distinct()
-    PickerSheet(
+    FolderPickerSheet(
         visible = action == BulkAction.Move,
         title = "Move $count to",
-        options = listOf("No folder" to null) + folders.map { it.name to it.id },
+        folders = folders,
         // Checked only when every note is already in the same place.
         selected = if (places.size == 1) places.single() else MIXED,
         onPick = { folderId ->
@@ -314,7 +311,7 @@ internal fun BulkActionSheets(
         visible = action == BulkAction.Delete,
         title = "Delete $count?",
         message = "Their recordings, transcripts and tasks are removed. This can't be undone.",
-        confirmLabel = "Delete",
+        confirmLabel = "Delete $count",
         onConfirm = {
             onDelete()
             onDismiss()

@@ -2,6 +2,7 @@
 #include <jni.h>
 #include <sched.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <vector>
@@ -44,12 +45,14 @@ const Api *api() {
 }
 
 /** Read here, not passed in from Kotlin: an hour of float samples is past the Java heap limit. */
-bool readPcm16(const char *path, std::vector<float> &out) {
+bool readPcm16(const char *path, std::vector<float> &out, int64_t maxSamples) {
     FILE *file = fopen(path, "rb");
     if (file == nullptr) return false;
     int16_t block[32768];
     size_t read;
-    while ((read = fread(block, sizeof(int16_t), 32768, file)) > 0) {
+    while ((maxSamples <= 0 || static_cast<int64_t>(out.size()) < maxSamples) &&
+           (read = fread(block, sizeof(int16_t), 32768, file)) > 0) {
+        if (maxSamples > 0) read = std::min<int64_t>(read, maxSamples - static_cast<int64_t>(out.size()));
         for (size_t i = 0; i < read; i++) out.push_back(block[i] / 32768.0f);
     }
     fclose(file);
@@ -68,7 +71,7 @@ struct Progress {
 extern "C" JNIEXPORT jfloatArray JNICALL
 Java_dev_andrej_echo_speech_speakers_SpeakerNative_diarize(
         JNIEnv *env, jobject, jstring segmentationModel, jstring embeddingModel, jstring pcmPath,
-        jint threads, jintArray cpus, jobject listener) {
+        jlong maxSamples, jint threads, jintArray cpus, jobject listener) {
     const Api *a = api();
     if (a == nullptr) return nullptr;
 
@@ -98,7 +101,7 @@ Java_dev_andrej_echo_speech_speakers_SpeakerNative_diarize(
     jfloatArray turns = nullptr;
     std::vector<float> samples;
     const SherpaOnnxOfflineSpeakerDiarization *sd = a->create(&config);
-    if (sd != nullptr && readPcm16(pcm, samples) && !samples.empty()) {
+    if (sd != nullptr && readPcm16(pcm, samples, maxSamples) && !samples.empty()) {
         Progress progress{
                 env,
                 listener,

@@ -564,9 +564,11 @@ Onboarding is ported from the separate "Echo Onboarding" Design artifact
   public Android SDK key in `local.properties` as `revenuecat.apiKey`. Missing-key and `uitest`
   builds use fake billing and cannot make purchases. Never commit the key.
 - Free users transcribe the first two minutes of each recording or import; the entire original
-  audio stays available for playback. Speaker detection still reads the full audio. A recording
+  audio stays available for playback. Speaker detection reads only the same two minutes, so a long free
+  import does not spend minutes finding speakers in audio that has no text; the unlock run
+  diarizes the whole file and maps its speakers onto the prefix's by overlap. A recording
   crossing two minutes opens the paywall once and continues while it is open or dismissed.
-  Imports do not prompt. Capped notes show an unlock banner. TXT export is free; Markdown, SRT
+  Imports do not prompt. Capped notes end with a cap card (minutes left, "Transcribe the rest with Pro"). After purchase or restore the paywall route becomes a Pro welcome screen showing the capped note's unlock progress; the note is captured at paywall entry because Pro clears the cap immediately. The renewal date comes from the RevenueCat entitlement `expirationDate` (null for lifetime or a cancelled plan) and is not cached offline. TXT export is free; Markdown, SRT
   and original audio exports require Pro.
 - `transcript.transcribedUntilMs` marks a capped result. Pro activation queues capped notes,
   resumes Whisper at that boundary with the existing segments, clears the cap on completion and

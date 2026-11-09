@@ -12,12 +12,14 @@ object SpeakerNative {
     /**
      * Diarizes a 16 kHz PCM16 file. Returns start and end in seconds and a speaker number per
      * turn, flattened, sorted by start; null when the models or the file couldn't be read.
+     * Only the first [maxSamples] are read; zero or less reads the whole file.
      * Non-empty [cpus] pins the run, onnxruntime's worker threads included, to those cores.
      */
     external fun diarize(
         segmentationModel: String,
         embeddingModel: String,
         pcmPath: String,
+        maxSamples: Long,
         threads: Int,
         cpus: IntArray,
         progress: WhisperProgress,

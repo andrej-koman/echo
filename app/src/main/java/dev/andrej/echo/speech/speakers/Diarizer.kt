@@ -27,7 +27,7 @@ class Diarizer(
     }
 
     /** Not cancellable part way: sherpa-onnx offers no abort, so a cancelled caller waits for it. */
-    suspend fun diarize(pcm: File, onProgress: (Int) -> Unit): List<SpeakerTurn> {
+    suspend fun diarize(pcm: File, maxSamples: Long, onProgress: (Int) -> Unit): List<SpeakerTurn> {
         val segmentationModel = segmentation.fileOrNull() ?: throw IOException("no segmentation model")
         val embeddingModel = embedding.fileOrNull() ?: throw IOException("no embedding model")
         val cpus = littleCores()
@@ -36,6 +36,7 @@ class Diarizer(
                 segmentationModel.absolutePath,
                 embeddingModel.absolutePath,
                 pcm.absolutePath,
+                maxSamples,
                 if (cpus.isEmpty()) 2 else cpus.size,
                 cpus,
                 onProgress::invoke,

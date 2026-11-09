@@ -433,7 +433,7 @@ class Transcriptions(
             val speakerPercent = AtomicInteger(0)
             val speakers = if (settings.detectSpeakers) {
                 async {
-                    findSpeakers(id, pcm) { percent ->
+                    findSpeakers(id, pcm, transcriptionSamples(pcm.length() / 2, proForRun)) { percent ->
                         speakerPercent.set(percent)
                         if (whisperDone.get()) report(TranscriptionStatus.FindingSpeakers(percent / 100f))
                     }
@@ -558,10 +558,10 @@ class Transcriptions(
     }
 
     /** Speakers are a bonus on top of the transcript: failing to find them never fails the job. */
-    private suspend fun findSpeakers(id: String, pcm: File, onProgress: (Int) -> Unit): List<SpeakerTurn> =
+    private suspend fun findSpeakers(id: String, pcm: File, samples: Long, onProgress: (Int) -> Unit): List<SpeakerTurn> =
         try {
             if (!diarizer.ready) diarizer.download {}
-            diarizer.diarize(pcm, onProgress)
+            diarizer.diarize(pcm, samples, onProgress)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

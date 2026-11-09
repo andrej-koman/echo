@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import dev.andrej.echo.billing.Billing
 import dev.andrej.echo.ui.billing.PaywallScreen
 import dev.andrej.echo.ui.billing.PaywallViewModel
+import dev.andrej.echo.ui.billing.UnlockNote
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -50,7 +51,9 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
+import androidx.navigation.navArgument
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
@@ -87,7 +90,8 @@ import dev.andrej.echo.ui.theme.EchoTheme
 import kotlinx.coroutines.flow.StateFlow
 
 private object Routes {
-    const val PAYWALL = "paywall"
+    const val PAYWALL = "paywall?note={note}"
+    const val PAYWALL_BASE = "paywall"
     const val NOTES = "notes"
     const val FOLDERS = "folders"
     const val CALENDAR = "calendar"
@@ -98,6 +102,7 @@ private object Routes {
     const val FOLDER = "folders/{id}"
     const val EDIT_TASK = "tasks/{id}/edit"
 
+    fun paywall(note: String? = null) = if (note == null) PAYWALL_BASE else "$PAYWALL_BASE?note=$note"
     fun detail(id: String) = "detail/$id"
     fun folder(id: String) = "folders/$id"
     fun editTask(id: String) = "tasks/$id/edit"
@@ -186,7 +191,8 @@ private fun MainApp(
     val paywallViewModel: PaywallViewModel = viewModel(factory = billingFactory)
     val billingState by paywallViewModel.state.collectAsStateWithLifecycle()
     val activePlan by billing.activePlan.collectAsStateWithLifecycle()
-    val onUpgrade = { navController.navigate(Routes.PAYWALL) { launchSingleTop = true } }
+    val renewsAt by billing.renewsAt.collectAsStateWithLifecycle()
+    val onUpgrade = { note: String? -> navController.navigate(Routes.paywall(note)) { launchSingleTop = true } }
 
     val onTabs = route in Tabs.map { it.route }
     val onNote = route == Routes.DETAIL
@@ -203,7 +209,7 @@ private fun MainApp(
     val upgradeRequested by recordViewModel.upgradeRequested.collectAsStateWithLifecycle()
     LaunchedEffect(upgradeRequested) {
         if (upgradeRequested) {
-            onUpgrade()
+            onUpgrade(null)
             recordViewModel.consumeUpgrade()
         }
     }
@@ -285,8 +291,37 @@ private fun MainApp(
                 popEnterTransition = { EnterTransition.None },
                 popExitTransition = { ExitTransition.None },
             ) {
-                composable(Routes.PAYWALL) {
-                    PaywallScreen(viewModel = paywallViewModel, onBack = { navController.popBackStack() })
+                composable(
+                    Routes.PAYWALL,
+                    arguments = listOf(navArgument("note") { type = NavType.StringType; nullable = true; defaultValue = null }),
+                ) { entry ->
+                    val noteArg = entry.arguments?.getString("note")
+                    val transcripts by notesViewModel.transcripts.collectAsStateWithLifecycle()
+                    val statuses by notesViewModel.transcription.collectAsStateWithLifecycle()
+                    // Captured while the note is still capped: Pro clears the cap the moment it activates.
+                    var captured by remember(entry) { mutableStateOf<UnlockNote?>(null) }
+                    LaunchedEffect(transcripts, isPro) {
+                        if (captured == null && !isPro) {
+                            val capped = transcripts.filter { it.transcribedUntilMs != null }
+                            (capped.firstOrNull { it.id == noteArg } ?: capped.maxByOrNull { it.createdAt })?.let {
+                                captured = UnlockNote(it.id, it.title?.takeIf(String::isNotBlank) ?: "Voice note", it.transcribedUntilMs!!, it.durationMs)
+                            }
+                        }
+                    }
+                    PaywallScreen(
+                        viewModel = paywallViewModel,
+                        onBack = { navController.popBackStack() },
+                        unlockNote = captured?.copy(status = statuses[captured?.id]),
+                        renewsAt = renewsAt,
+                        onOpenNote = { id ->
+                            val previous = navController.previousBackStackEntry
+                            if (previous?.destination?.route == Routes.DETAIL && previous.arguments?.getString("id") == id) {
+                                navController.popBackStack()
+                            } else {
+                                navController.navigate(Routes.detail(id)) { popUpTo(Routes.PAYWALL) { inclusive = true } }
+                            }
+                        },
+                    )
                 }
 
                 composable(Routes.NOTES) {
@@ -358,7 +393,7 @@ private fun MainApp(
                         onOpenStorage = { navController.navigate(Routes.STORAGE) },
                         isPro = isPro,
                         activePlan = activePlan,
-                        onUpgrade = onUpgrade,
+                        onUpgrade = { onUpgrade(null) },
                         onManageSubscription = {
                             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/account/subscriptions?package=${context.packageName}&sku=echo_pro")))
                         },
@@ -404,7 +439,7 @@ private fun MainApp(
                         onEditTask = { navController.navigate(Routes.editTask(it)) },
                         recording = recording.isRecording,
                         isPro = isPro,
-                        onUpgrade = onUpgrade,
+                        onUpgrade = { onUpgrade(entry.arguments?.getString("id")) },
                     )
                     }
                 }
@@ -420,7 +455,7 @@ private fun MainApp(
                 }
             }
 
-            if (route != Routes.PAYWALL && (onTabs || onNote || recording.isRecording)) {
+            if (route?.startsWith(Routes.PAYWALL_BASE) != true && (onTabs || onNote || recording.isRecording)) {
                 AnimatedVisibility(
                     visible = openSheets.intValue == 0,
                     enter = fadeIn(),

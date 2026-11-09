@@ -450,16 +450,7 @@ fun NoteDetailScreen(
                 }
                 if (showingTranscript && transcript.transcribedUntilMs != null && !isPro) {
                     item(key = "unlock-transcript") {
-                        EchoCard(
-                            modifier = Modifier.padding(horizontal = EchoTheme.spacing.gutterScreen)
-                                .fillMaxWidth().clickable(onClick = onUpgrade),
-                        ) {
-                            Text(
-                                "Transcribed first 2 min · Unlock the rest",
-                                style = EchoTheme.typography.bodySm,
-                                color = EchoTheme.colors.textAccent,
-                            )
-                        }
+                        FreeCapCard(transcript.transcribedUntilMs, transcript.durationMs, onUpgrade)
                     }
                 }
             }

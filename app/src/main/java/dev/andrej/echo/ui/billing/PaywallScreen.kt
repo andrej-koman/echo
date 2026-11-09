@@ -8,14 +8,23 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.andrej.echo.R
@@ -24,106 +33,198 @@ import dev.andrej.echo.billing.PlanPeriod
 import dev.andrej.echo.ui.components.*
 import dev.andrej.echo.ui.theme.EchoTheme
 import dev.andrej.echo.ui.theme.hairline
+import java.text.NumberFormat
 import java.time.Period
+import java.util.Currency
+import kotlin.math.roundToInt
 
 @Composable
-fun PaywallScreen(viewModel: PaywallViewModel, onBack: () -> Unit) {
+fun PaywallScreen(
+    viewModel: PaywallViewModel,
+    onBack: () -> Unit,
+    unlockNote: UnlockNote? = null,
+    renewsAt: Long? = null,
+    onOpenNote: (String) -> Unit = {},
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val isPro by viewModel.isPro.collectAsStateWithLifecycle()
+    val activePlan by viewModel.activePlan.collectAsStateWithLifecycle()
     val context = LocalContext.current
     LaunchedEffect(viewModel) { viewModel.load() }
-    LaunchedEffect(isPro) { if (isPro) onBack() }
-    Column(Modifier.fillMaxSize().background(EchoTheme.colors.surfacePage)) {
-        EchoTopBar(title = "Echo Pro", leading = {
-            EchoIconButton(iconRes = R.drawable.ic_chevron_left, contentDescription = "Back", onClick = onBack)
-        })
+    if (isPro) {
+        ProWelcome(unlockNote, activePlan, renewsAt, onOpenNote, onBack)
+        return
+    }
+    val colors = EchoTheme.colors
+    val plans = state.plans.sortedBy { when (it.period) { PlanPeriod.Yearly -> 0; PlanPeriod.Monthly -> 1; PlanPeriod.Lifetime -> 2 } }
+    val monthly = plans.firstOrNull { it.period == PlanPeriod.Monthly }
+    val selected = state.selected
+    Column(
+        Modifier.fillMaxSize().background(colors.surfacePage).glow(colors.surfaceAccentSoft)
+            .statusBarsPadding().navigationBarsPadding(),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = EchoTheme.spacing.s4),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            EchoButton("Restore purchase", viewModel::restore, variant = ButtonVariant.Ghost, enabled = !state.loading && !state.busy)
+            EchoIconButton(iconRes = R.drawable.ic_x, contentDescription = "Close", onClick = onBack)
+        }
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-                .padding(EchoTheme.spacing.gutterScreen).navigationBarsPadding(),
+            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = EchoTheme.spacing.gutterScreen),
+            horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s6),
         ) {
-            Mascot(size = 52.dp)
-            Text("Keep the whole conversation.", style = EchoTheme.typography.display, color = EchoTheme.colors.textPrimary)
-            Text("Transcribe full recordings and imports. Unlock the rest of your existing notes.", style = EchoTheme.typography.body, color = EchoTheme.colors.textSecondary)
-            EchoCard(Modifier.fillMaxWidth()) {
-                Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4)) {
-                    Text("Full-length transcription", style = EchoTheme.typography.heading, color = EchoTheme.colors.textPrimary)
-                    Text("Export Markdown, subtitles and original audio", style = EchoTheme.typography.bodySm, color = EchoTheme.colors.textSecondary)
-                    Text("Your audio and notes stay on your device", style = EchoTheme.typography.bodySm, color = EchoTheme.colors.textSecondary)
-                }
+            Mascot(size = 44.dp)
+            EchoBadge("PRO", tone = BadgeTone.Info)
+            Text("Transcribe every minute", style = EchoTheme.typography.display, color = colors.textPrimary, textAlign = TextAlign.Center)
+            Text(
+                "Free notes stop at 2 minutes. Pro turns the whole recording into text, a summary and tasks.",
+                style = EchoTheme.typography.body, color = colors.textSecondary, textAlign = TextAlign.Center,
+            )
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5)) {
+                Feature(R.drawable.ic_infinity, "No time limit", "Meetings, lectures, hours-long recordings")
+                Feature(R.drawable.ic_sparkles, "Summary and tasks from all of it", "Not just the first 2 minutes")
+                Feature(R.drawable.ic_upload, "Full-length imports", "Turn audio you already have into complete notes")
+                Feature(R.drawable.ic_wifi_off, "Still fully offline", "Your audio never leaves your phone", sage = true)
             }
-            if (isPro) {
-                Text("Echo Pro unlocked", style = EchoTheme.typography.heading, color = EchoTheme.colors.textAccent)
-            } else if (state.loading) {
-                CircularProgressIndicator(color = EchoTheme.colors.textAccent)
+            if (state.loading) {
+                CircularProgressIndicator(color = colors.textAccent)
             } else {
-                Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4)) {
-                    state.plans.sortedBy { when (it.period) { PlanPeriod.Yearly -> 0; PlanPeriod.Monthly -> 1; PlanPeriod.Lifetime -> 2 } }.forEach { plan ->
-                        PlanCard(plan, selected = plan.id == state.selected?.id, enabled = !state.busy, onSelect = { viewModel.select(plan) })
+                Column(Modifier.fillMaxWidth().selectableGroup(), verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4)) {
+                    plans.forEach { plan ->
+                        PlanCard(plan, monthly, selected = plan.id == selected?.id, enabled = !state.busy, onSelect = { viewModel.select(plan) })
                     }
                 }
             }
             state.message?.let {
-                Text(it, style = EchoTheme.typography.bodySm, color = EchoTheme.colors.textSecondary)
-                if (state.plans.isEmpty()) EchoButton("Try again", viewModel::load, variant = ButtonVariant.Secondary, enabled = !state.busy && !state.loading)
+                Text(it, style = EchoTheme.typography.bodySm, color = colors.textSecondary, textAlign = TextAlign.Center)
+                if (plans.isEmpty()) EchoButton("Try again", viewModel::load, variant = ButtonVariant.Secondary, enabled = !state.busy && !state.loading)
             }
+        }
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = EchoTheme.spacing.gutterScreen, vertical = EchoTheme.spacing.s5),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
+        ) {
             EchoButton(
-                text = state.selected?.let { "Get Pro · ${it.localizedPrice}" } ?: "Get Echo Pro",
+                text = selected?.let(::ctaText) ?: "Get Echo Pro",
                 onClick = { context.findActivity()?.let(viewModel::purchase) },
-                enabled = !state.loading && state.selected != null && context.findActivity() != null,
+                enabled = !state.loading && selected != null && context.findActivity() != null,
                 loading = state.busy,
                 fullWidth = true,
                 size = ButtonSize.Lg,
             )
-            state.selected?.let { plan ->
-                Text(
-                    text = when (plan.period) {
-                        PlanPeriod.Monthly -> "${plan.localizedPrice} per month. Renews automatically; cancel in Google Play."
-                        PlanPeriod.Yearly -> "${plan.localizedPrice} per year. Renews automatically; cancel in Google Play."
-                        PlanPeriod.Lifetime -> "${plan.localizedPrice} once. No subscription."
-                    },
-                    style = EchoTheme.typography.caption,
-                    color = EchoTheme.colors.textSecondary,
-                )
+            selected?.let {
+                Text(captionText(it), style = EchoTheme.typography.caption, color = colors.textSecondary, textAlign = TextAlign.Center)
             }
-            EchoButton("Restore purchases", viewModel::restore, variant = ButtonVariant.Ghost, enabled = !state.loading && !state.busy, fullWidth = true)
-            Text("Purchases use Google Play. No Echo account needed.", style = EchoTheme.typography.caption, color = EchoTheme.colors.textTertiary)
-            Text("Terms of service · Link coming soon", style = EchoTheme.typography.caption, color = EchoTheme.colors.textTertiary)
-            Text("Privacy policy · Link coming soon", style = EchoTheme.typography.caption, color = EchoTheme.colors.textTertiary)
+            // Placeholders until the legal URLs exist.
+            Row(horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s8)) {
+                Text("Terms", style = EchoTheme.typography.caption, color = colors.textTertiary)
+                Text("Privacy", style = EchoTheme.typography.caption, color = colors.textTertiary)
+            }
         }
     }
 }
 
+private fun ctaText(plan: Plan) = when (plan.period) {
+    PlanPeriod.Yearly -> "Start Pro for ${plan.localizedPrice} a year"
+    PlanPeriod.Monthly -> "Start Pro for ${plan.localizedPrice} a month"
+    PlanPeriod.Lifetime -> "Get Pro for ${plan.localizedPrice} once"
+}
+
+private fun captionText(plan: Plan) = when (plan.period) {
+    PlanPeriod.Yearly -> "Renews yearly at ${plan.localizedPrice} until you cancel in Google Play."
+    PlanPeriod.Monthly -> "Renews monthly at ${plan.localizedPrice} until you cancel in Google Play."
+    PlanPeriod.Lifetime -> "One payment. No subscription."
+}
+
 @Composable
-private fun PlanCard(plan: Plan, selected: Boolean, enabled: Boolean, onSelect: () -> Unit) {
+private fun Feature(icon: Int, title: String, caption: String, sage: Boolean = false) {
     val colors = EchoTheme.colors
-    Column(
-        Modifier.fillMaxWidth().clip(EchoTheme.radii.md)
-            .background(if (selected) colors.surfaceAccentSoft else colors.surfaceCard)
-            .hairline(if (selected) colors.textAccent else colors.borderSubtle, cornerRadius = 12.dp)
-            .selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onSelect)
-            .padding(EchoTheme.spacing.s6),
-        verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3),
-    ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(plan.period.name, style = EchoTheme.typography.heading, color = colors.textPrimary)
-            if (plan.period == PlanPeriod.Yearly) EchoBadge("Recommended", tone = BadgeTone.Success)
+    Row(horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s6), verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(if (sage) colors.surfaceSageSoft else colors.surfaceAccentSoft),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(painterResource(icon), null, tint = if (sage) colors.textSuccess else colors.textAccent, modifier = Modifier.size(22.dp))
         }
-        Text(plan.localizedPrice, style = EchoTheme.typography.titleSm, color = colors.textPrimary)
-        plan.localizedPricePerMonth?.let { Text("$it per month, billed yearly", style = EchoTheme.typography.caption, color = colors.textSecondary) }
-        plan.trial?.let { trial ->
-            val length = runCatching {
-                val period = Period.parse(trial.period).multipliedBy(trial.cycles)
-                listOfNotNull(
-                    period.years.takeIf { it > 0 }?.let { "$it year${if (it == 1) "" else "s"}" },
-                    period.months.takeIf { it > 0 }?.let { "$it month${if (it == 1) "" else "s"}" },
-                    period.days.takeIf { it > 0 }?.let { "$it day${if (it == 1) "" else "s"}" },
-                ).joinToString(" ")
-            }.getOrDefault(trial.period)
-            Text("$length free trial, then ${plan.localizedPrice}", style = EchoTheme.typography.caption, color = colors.textAccent)
+        Column {
+            Text(title, style = EchoTheme.typography.heading, color = colors.textPrimary)
+            Text(caption, style = EchoTheme.typography.caption, color = colors.textSecondary)
         }
     }
 }
+
+private fun formatMicros(micros: Long, currencyCode: String): String? = runCatching {
+    val value = micros / 1_000_000.0
+    NumberFormat.getCurrencyInstance().apply {
+        currency = Currency.getInstance(currencyCode)
+        if (value % 1.0 == 0.0) maximumFractionDigits = 0
+    }.format(value)
+}.getOrNull()
+
+@Composable
+private fun PlanCard(plan: Plan, monthly: Plan?, selected: Boolean, enabled: Boolean, onSelect: () -> Unit) {
+    val colors = EchoTheme.colors
+    val yearly = plan.period == PlanPeriod.Yearly
+    val saving = if (yearly && monthly != null && plan.priceMicros > 0 && monthly.priceMicros > 0) {
+        (100 * (1 - plan.priceMicros.toDouble() / (12 * monthly.priceMicros))).roundToInt().takeIf { it > 0 }
+    } else null
+    val struck = if (yearly && saving != null && monthly != null) formatMicros(12 * monthly.priceMicros, monthly.currencyCode) else null
+    val title = when (plan.period) { PlanPeriod.Yearly -> "Pro yearly"; PlanPeriod.Monthly -> "Pro monthly"; PlanPeriod.Lifetime -> "Pro lifetime" }
+    val unit = when (plan.period) { PlanPeriod.Yearly -> "/ year"; PlanPeriod.Monthly -> "/ month"; PlanPeriod.Lifetime -> "once" }
+    val sub = plan.trial?.takeIf { !plan.period.isLifetime() }?.let { "${trialLength(it.period, it.cycles)} free trial, then ${plan.localizedPrice}" }
+        ?: when (plan.period) {
+            PlanPeriod.Yearly -> plan.localizedPricePerMonth?.let { "$it a month, billed yearly" } ?: "Billed yearly"
+            PlanPeriod.Monthly -> "Cancel anytime"
+            PlanPeriod.Lifetime -> "Pay once, keep Pro forever"
+        }
+    Row(
+        Modifier.fillMaxWidth().clip(EchoTheme.radii.lg)
+            .background(if (selected) colors.surfaceRaised else colors.surfaceCard)
+            .hairline(if (selected) colors.textAccent else colors.borderSubtle, cornerRadius = 18.dp, width = if (selected) 2.dp else 1.dp)
+            .selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onSelect)
+            .padding(EchoTheme.spacing.s6),
+        horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(22.dp).clip(CircleShape).hairline(if (selected) colors.textAccent else colors.borderStrong, cornerRadius = 11.dp, width = 2.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (selected) Box(Modifier.size(10.dp).clip(CircleShape).background(colors.textAccent))
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s2)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4), verticalAlignment = Alignment.CenterVertically) {
+                Text(title, style = EchoTheme.typography.heading, color = colors.textPrimary)
+                saving?.let { EchoBadge("Save $it%", tone = BadgeTone.Success) }
+            }
+            Text(sub, style = EchoTheme.typography.caption, color = if (plan.trial != null && !plan.period.isLifetime()) colors.textAccent else colors.textSecondary)
+        }
+        Column(horizontalAlignment = Alignment.End) {
+            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s2)) {
+                Text(plan.localizedPrice, style = EchoTheme.typography.heading.copy(fontWeight = FontWeight.Bold), color = colors.textPrimary)
+                Text(unit, style = EchoTheme.typography.caption, color = colors.textSecondary)
+            }
+            struck?.let {
+                Text(it, style = EchoTheme.typography.caption.copy(textDecoration = TextDecoration.LineThrough), color = colors.textTertiary)
+            }
+        }
+    }
+}
+
+private fun PlanPeriod.isLifetime() = this == PlanPeriod.Lifetime
+
+private fun trialLength(iso: String, cycles: Int): String = runCatching {
+    val period = Period.parse(iso).multipliedBy(cycles)
+    listOfNotNull(
+        period.years.takeIf { it > 0 }?.let { "$it-year" },
+        period.months.takeIf { it > 0 }?.let { "$it-month" },
+        period.days.takeIf { it > 0 }?.let { "$it-day" },
+    ).joinToString(" ")
+}.getOrDefault(iso)
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this

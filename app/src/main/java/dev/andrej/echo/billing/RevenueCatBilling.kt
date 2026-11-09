@@ -25,6 +25,7 @@ class RevenueCatBilling(
     private val state = EntitlementState(settings)
     override val isPro = state.isPro
     override val activePlan = state.activePlan
+    override val renewsAt = state.renewsAt
     override val isConfigured = true
     private var initialized = false
     private var packages: Map<String, Package> = emptyMap()
@@ -45,7 +46,8 @@ class RevenueCatBilling(
         val plan = entitlement?.let {
             listOfNotNull(it.productIdentifier, it.productPlanIdentifier).joinToString(":")
         }
-        state.update(active, plan)
+        val renews = entitlement?.takeIf { it.willRenew }?.expirationDate?.time
+        state.update(active, plan, renews)
     }
 
     override suspend fun offerings(): List<Plan> = suspendCancellableCoroutine { continuation ->
@@ -69,7 +71,7 @@ class RevenueCatBilling(
                     val trial = product.defaultOption?.freePhase?.let {
                         Trial(it.billingPeriod.iso8601, it.billingCycleCount ?: 1)
                     }
-                    Plan(item.identifier, period, product.price.formatted, trial, perMonth)
+                    Plan(item.identifier, period, product.price.formatted, trial, perMonth, product.price.amountMicros, product.price.currencyCode)
                 })
             },
         )

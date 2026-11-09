@@ -28,6 +28,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
@@ -41,6 +46,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.andrej.echo.R
 import dev.andrej.echo.data.TaskTextLink
 import dev.andrej.echo.data.Segment
@@ -263,7 +269,6 @@ private fun LineText(
             currentRange?.let { addStyle(SpanStyle(background = colors.surfaceCard), it.first, it.last + 1) }
             taskLinks.forEach { link ->
                 if (link.start >= 0 && link.end <= text.length && link.start < link.end) {
-                    addStyle(SpanStyle(background = taskColors[link.taskId] ?: colors.transcriptHighlight), link.start, link.end)
                     addLink(
                         LinkAnnotation.Clickable(
                             tag = link.taskId,
@@ -280,10 +285,27 @@ private fun LineText(
             }
             if (live) withStyle(SpanStyle(color = colors.textAccent.copy(alpha = caretAlpha))) { append(" ▍") }
         },
-        style = EchoTheme.typography.body,
+        style = EchoTheme.typography.body.copy(lineHeight = 26.sp),
         color = colors.textPrimary,
         onTextLayout = { layout = it },
-        modifier = modifier.then(reading?.highlight(readingIndex) ?: Modifier).then(
+        modifier = modifier.then(reading?.highlight(readingIndex) ?: Modifier).drawBehind {
+            val measured = layout ?: return@drawBehind
+            taskLinks.forEach { link ->
+                if (link.start < 0 || link.end > measured.layoutInput.text.length || link.start >= link.end) return@forEach
+                val color = taskColors[link.taskId] ?: colors.transcriptHighlight
+                (link.start until link.end).groupBy { measured.getLineForOffset(it) }.values.forEach { offsets ->
+                    val first = measured.getBoundingBox(offsets.first())
+                    val last = measured.getBoundingBox(offsets.last())
+                    val left = (first.left - 1.dp.toPx()).coerceAtLeast(0f)
+                    val right = (last.right + 1.dp.toPx()).coerceAtMost(size.width)
+                    val top = first.top + 2.5.dp.toPx()
+                    val box = Size(right - left, last.bottom - first.top - 5.dp.toPx())
+                    val radius = CornerRadius(6.dp.toPx())
+                    drawRoundRect(color, Offset(left, top), box, radius)
+                    drawRoundRect(color.copy(alpha = 0.55f), Offset(left, top), box, radius, style = Stroke(0.8.dp.toPx()))
+                }
+            }
+        }.then(
             if (onTextClick == null) Modifier else Modifier.pointerInput(text, taskLinks, onTextClick, onTextLongClick) {
                 detectTapGestures(
                     onTap = { position ->

@@ -18,6 +18,17 @@ class TaskReminderRepositoryTest {
     private fun undated() = NewTodo("Call mum", 0, false, false)
     private suspend fun task() = repository.items.first().single()
 
+    @Test fun `verified source quote persists through task edits and reanalysis`() = runTest {
+        val extracted = undated().copy(sourceQuote = "I need to call mum.", sourceOffsetMs = 9000)
+        repository.replaceFor("note", listOf(extracted))
+        assertEquals(extracted.sourceQuote, task().sourceQuote)
+        repository.setDone(task().id, true)
+        repository.replaceFor("note", listOf(extracted))
+        assertTrue(task().done)
+        repository.update(task().id, "Phone mum", 0, false, false)
+        assertEquals(extracted.sourceQuote, task().sourceQuote)
+    }
+
     @Test fun `undated reminder starts an hour after save not recording`() = runTest {
         repository.replaceFor("note", listOf(undated()), createdAt = 1)
         assertEquals(now + 3_600_000, task().reminderAt)

@@ -17,6 +17,7 @@ data class TodoItem(
     val reminderAt: Long? = null,
     val reminderDate: String? = null,
     val reminderDelivered: Boolean = false,
+    val sourceQuote: String? = null,
 )
 
 /** What the analyzer produces, before the repository gives it an id. */
@@ -26,4 +27,5 @@ data class NewTodo(
     val hasTime: Boolean,
     val hasDate: Boolean,
     val sourceOffsetMs: Long? = null,
+    val sourceQuote: String? = null,
 )

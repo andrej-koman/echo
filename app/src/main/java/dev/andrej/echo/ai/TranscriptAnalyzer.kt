@@ -88,7 +88,8 @@ class TranscriptAnalyzer(
                 }.also { completed() }
             }
 
-            AnalysisOutcome.Success(Analysis(summary.title, summary.summary, items))
+            val grounded = groundTasks(items, lines, timed.map { it.startMs }, recordedAt, zone)
+            AnalysisOutcome.Success(Analysis(summary.title, summary.summary, grounded))
         } catch (e: StepFailed) {
             AnalysisOutcome.Blocked(e.reason)
         }

@@ -13,7 +13,8 @@ CREATE TABLE todo (
     sourceOffsetMs INTEGER,
     reminderAt INTEGER,
     reminderDate TEXT,
-    reminderDelivered INTEGER AS Boolean NOT NULL DEFAULT 0
+    reminderDelivered INTEGER AS Boolean NOT NULL DEFAULT 0,
+    sourceQuote TEXT
 );
 
 CREATE INDEX todo_source ON todo(sourceTranscriptId);

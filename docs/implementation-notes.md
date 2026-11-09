@@ -196,7 +196,9 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
   numbered `.sqm` migration beside the `.sq` files. `1.sqm` (Phase 5) added
   `transcript.polishedText` and `todo.sourceOffsetMs`; `2.sqm` (Phase 7) added `segment_fts` and
   `dictionary_term`; `3.sqm` (Phase 6) added `speaker` and `segment.speaker`; `4.sqm` (Phase 8) added `folder` and
-  `transcript.folderId`; `5.sqm` added `transcript.titleByUser`; `6.sqm` adds task reminder time, local date, and delivery state; schema is version 7. Deleting a folder un-files its notes in the same
+  `transcript.folderId`; `5.sqm` added `transcript.titleByUser`; `6.sqm` adds task reminder time, local date, and delivery state;
+  `7.sqm` adds `transcript.transcribedUntilMs`; `8.sqm` adds `todo.sourceQuote`; schema is version 9.
+  Deleting a folder un-files its notes in the same
   transaction. A folder's `color` indexes `EchoColors.palette` (shared with speakers), its `icon`
   is a `FolderIcon` name.
 - **Search** (`TranscriptRepository.search`, Notes' search field): `segment_fts` (FTS4,
@@ -334,8 +336,9 @@ Haptics and reduced motion still follow Android, without inactive Settings switc
   the draft. Renaming sets `transcript.titleByUser`, so re-analysis can refresh the summary and
   tasks without replacing the user's title, including when analysis was already running.
 - Task and Reminder unified into one `TodoItem` (`text`, `dueAt` — never null, `hasTime`,
-  `done`). A speaker who names no date at all still gets an item due **today**; `hasTime`
-  records only whether a clock time was stated. `resolveDue` (in `ai/AnalysisPrompt.kt`)
+  `hasDate`, `done`). Without a stated date, `dueAt` is a placeholder and `hasDate=false`;
+  the UI leaves the deadline unset. `hasTime` records whether a clock time was stated.
+  `resolveDue` (in `ai/AnalysisPrompt.kt`)
   resolves this: `LocalDateTime.parse` succeeding means a timed item, `LocalDate.parse`
   succeeding means a date-only item, and anything else — an unresolved relative phrase, a
   malformed stamp, absent entirely — falls back to today's start of day, untimed. That fallback
@@ -690,10 +693,26 @@ is the user's call), so a smaller per-tier model (Phase 2) slots in as one more 
 - Task text uses sentence case and final punctuation in the extraction prompt. `formatTaskText`
   also formats task rows and the initial edit text so older lowercase model output reads correctly
   without re-analysis; it preserves existing punctuation and capitalization within the sentence.
-- **Tasks point into the recording.** The tasks prompt numbers its lines with their index in the
-  whole transcript (Whisper's segments, or sentences for a transcript without them) and asks for
-  each task's `line`; `parseTasks` turns that into `TodoItem.sourceOffsetMs`, the segment's
-  start. Phase 7's player will seek to it.
+- **Task schedules are grounded in source text.** `TaskSchedule.kt` checks extracted tasks
+  against the transcript before saving. Explicit English relative dates, weekdays, ISO dates,
+  am/pm and 24-hour clocks, noon/midnight, all-day wording and numeric durations override model
+  arithmetic. Shared dates carry forward; durations use recording time. Unsupported expressions
+  retain the model result. The prompt must not tell the model to use today's date for every
+  clock: this caused all four tasks in a tomorrow itinerary to land today or lose their time.
+- **Tasks link text and audio.** The prompt requests a verbatim `source` quotation. `TaskSource.kt`
+  validates it against the transcript and conservatively matches action words when an extraction
+  omitted or paraphrased its quote. Migration `8.sqm` adds nullable `todo.sourceQuote`; legacy
+  rows remain usable through action matching. Sentences can cross Whisper segments, and `a.m.` /
+  `p.m.` do not split a sentence. The saved offset and task playback use the segment containing
+  the action words rather than trusting the model's line number. No word timing is available.
+  Verified source spans have muted colors assigned in transcript order in Full text and By speaker;
+  tapping opens Tasks and briefly emphasizes the entire matching row with the same color.
+  Read-only text flows continuously across Whisper segment boundaries (within each speaker run
+  in By speaker); offsets still map taps and long presses to the original segments. Editing and
+  selection retain segment fields and suppress links. Stored quotations removed by transcript
+  edits produce no link or playback jump. Compact task rows share a grouped outline while remaining
+  individual lazy items, so destinations outside the viewport remain reachable; sticky tab height
+  is reserved on scroll.
 - **Polishing was removed** (2026-11-02, Andrej's call): a note is By speaker and Full text,
   nothing more. `transcript.polishedText` stays in the schema unread — platform SQLite before
   3.35 can't `DROP COLUMN` and a table rebuild wasn't worth it; `selectAll` names its columns so

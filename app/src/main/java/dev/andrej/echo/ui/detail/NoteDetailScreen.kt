@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +25,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,6 +34,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -43,16 +46,21 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.andrej.echo.R
 import dev.andrej.echo.data.Folder
 import dev.andrej.echo.data.Segment
 import dev.andrej.echo.data.Speaker
 import dev.andrej.echo.data.TodoItem
+import dev.andrej.echo.data.TaskTextLink
+import dev.andrej.echo.data.taskLinks
+import dev.andrej.echo.data.taskPlaybackOffset
 import dev.andrej.echo.export.ExportFormat
 import dev.andrej.echo.export.ExportNote
 import dev.andrej.echo.export.canExport
@@ -78,13 +86,16 @@ import dev.andrej.echo.ui.notes.PendingSeverity
 import dev.andrej.echo.ui.notes.clock
 import dev.andrej.echo.ui.notes.dateLabel
 import dev.andrej.echo.ui.notes.title
-import dev.andrej.echo.ui.tasks.TaskGroupCard
+import dev.andrej.echo.ui.tasks.TaskRow
+import dev.andrej.echo.ui.tasks.isOverdue
 import dev.andrej.echo.ui.theme.EchoTheme
 import dev.andrej.echo.ui.theme.hairline
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import java.time.ZoneId
 
 private enum class NoteTab(val label: String, val icon: Int) {
     BySpeaker("By speaker", R.drawable.ic_users),
@@ -141,6 +152,35 @@ fun NoteDetailScreen(
     var speakerTarget by remember { mutableStateOf<SpeakerTarget?>(null) }
     var exportOptions by remember { mutableStateOf(ExportOptions()) }
     val listState = rememberLazyListState()
+    var focusedTaskId by remember(noteId) { mutableStateOf<String?>(null) }
+    var tabsHeight by remember { mutableIntStateOf(0) }
+    val noteTasks = remember(tasks, noteId) { tasks.filter { it.sourceTranscriptId == noteId } }
+    val sourceLinks = remember(segments, noteTasks, transcript?.text) {
+        taskLinks(if (segments.isEmpty()) listOf(transcript?.text.orEmpty()) else segments.map { it.text }, noteTasks)
+    }
+    val referenceColors = EchoTheme.colors.palette.take(4)
+    val taskColors = remember(sourceLinks, referenceColors) {
+        sourceLinks.flatMap { links -> links.sortedBy { it.start } }
+            .map { it.taskId }.distinct().mapIndexed { index, id ->
+                id to referenceColors[index % referenceColors.size].copy(alpha = 0.24f)
+            }.toMap()
+    }
+    val openSourceTask: (String) -> Unit = { id ->
+        focusedTaskId = id
+        tab = NoteTab.Tasks
+    }
+    LaunchedEffect(focusedTaskId, tab, noteTasks) {
+        val id = focusedTaskId ?: return@LaunchedEffect
+        if (tab == NoteTab.Tasks) {
+            val index = noteTasks.indexOfFirst { it.id == id }
+            if (index >= 0) {
+                // Title and sticky tabs precede the individual task rows.
+                listState.animateScrollToItem(index + 2, -tabsHeight)
+                delay(1800)
+            }
+            focusedTaskId = null
+        } else focusedTaskId = null
+    }
 
     Box(modifier = modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -258,6 +298,7 @@ fun NoteDetailScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .background(EchoTheme.colors.surfacePage)
+                                .onSizeChanged { tabsHeight = it.height }
                                 .padding(horizontal = EchoTheme.spacing.gutterScreen, vertical = EchoTheme.spacing.s4),
                         ) {
                             Tabs(tabs = visibleTabs, selected = shown, onSelect = { tab = it })
@@ -316,23 +357,43 @@ fun NoteDetailScreen(
 
                 when {
                     shown == NoteTab.Tasks -> tasksTab(
-                        tasks = tasks.filter { it.sourceTranscriptId == noteId },
+                        tasks = noteTasks,
                         analyzed = transcript.analyzedAt != null,
                         onToggle = { viewModel.setTaskDone(it.id, !it.done) },
-                        onPlay = { task -> task.sourceOffsetMs?.let { player?.playFrom(it) } },
+                        onPlay = { task ->
+                            taskPlaybackOffset(task, segments)?.let { player?.playFrom(it) }
+                        },
                         onEdit = { onEditTask(it.id) },
+                        focusedTaskId = focusedTaskId,
+                        taskColors = taskColors,
                     )
                     typed.isEmpty() -> item(key = "plain") {
                         Paragraph(
                             text = when {
                                 status != null -> "Listening…"
-                                else -> transcript.text.ifBlank { "Nothing transcribed yet." }
+                                else -> transcript.text.trim().ifBlank { "Nothing transcribed yet." }
                             },
                             current = false,
                             highlight = highlight,
                             onClick = {},
                             modifier = Modifier.padding(horizontal = EchoTheme.spacing.gutterScreen),
                             live = typing,
+                            taskLinks = taskLinks(listOf(transcript.text), noteTasks).single(),
+                            onTaskClick = openSourceTask,
+                            taskColors = taskColors,
+                        )
+                    }
+                    shown == NoteTab.FullText && !editing -> item(key = "fullText") {
+                        ContinuousTranscript(
+                            segments = typed,
+                            taskLinks = if (selected.isEmpty()) sourceLinks else emptyList(),
+                            current = current,
+                            highlight = highlight,
+                            live = typing,
+                            taskColors = taskColors,
+                            onTaskClick = openSourceTask,
+                            onSegmentClick = { player?.playFrom(segments[it].startMs) },
+                            modifier = Modifier.padding(horizontal = EchoTheme.spacing.gutterScreen),
                         )
                     }
                     shown == NoteTab.FullText -> items(typed.indices.toList(), key = { "p$it" }) { i ->
@@ -344,6 +405,7 @@ fun NoteDetailScreen(
                             highlight = highlight,
                             onClick = { player?.playFrom(segments[i].startMs) },
                             live = i == liveLine,
+                            taskLinks = emptyList(),
                         )
                     }
                     else -> items(runs(typed), key = { "run${it.first}" }) { run ->
@@ -357,6 +419,9 @@ fun NoteDetailScreen(
                             selected = selected,
                             highlight = highlight,
                             edits = edits,
+                            taskLinks = sourceLinks,
+                            onTaskClick = openSourceTask,
+                            taskColors = taskColors,
                             onHeaderClick = { if (editable) speakerTarget = SpeakerTarget.Segments(run.toSet()) },
                             onLineClick = { i ->
                                 when {
@@ -548,6 +613,9 @@ private fun SpeakerRun(
     onHeaderClick: () -> Unit,
     onLineClick: (Int) -> Unit,
     onLineLongClick: (Int) -> Unit,
+    taskLinks: List<List<TaskTextLink>> = emptyList(),
+    onTaskClick: (String) -> Unit = {},
+    taskColors: Map<String, Color> = emptyMap(),
 ) {
     val first = segments[run.first]
     val playing = current in run && !editing
@@ -567,7 +635,19 @@ private fun SpeakerRun(
             playing = playing,
             onClick = onHeaderClick,
         )
-        run.forEach { i ->
+        if (!editing && selected.isEmpty()) {
+            ContinuousTranscript(
+                segments = run.map { segments[it] },
+                taskLinks = run.map { taskLinks.getOrNull(it).orEmpty() },
+                current = if (current in run) current - run.first else -1,
+                highlight = highlight,
+                live = liveLine in run,
+                taskColors = taskColors,
+                onTaskClick = onTaskClick,
+                onSegmentClick = { onLineClick(run.first + it) },
+                onSegmentLongClick = { onLineLongClick(run.first + it) },
+            )
+        } else run.forEach { i ->
             SegmentLine(
                 value = edits[i] ?: TextFieldValue(segments[i].text.trim()),
                 current = false,
@@ -589,28 +669,57 @@ private fun LazyListScope.tasksTab(
     onToggle: (TodoItem) -> Unit,
     onPlay: (TodoItem) -> Unit,
     onEdit: (TodoItem) -> Unit,
+    focusedTaskId: String?,
+    taskColors: Map<String, Color>,
 ) {
-    item(key = "tasks") {
-        Column(
-            modifier = Modifier.padding(horizontal = EchoTheme.spacing.gutterScreen),
-            verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5),
-        ) {
-            if (tasks.isNotEmpty()) {
-                TaskGroupCard(
-                    items = tasks,
-                    showDate = false,
-                    sourceTitleFor = { null },
-                    onToggle = onToggle,
-                    onEdit = onPlay,
-                    onLongPress = onEdit,
+    if (tasks.isNotEmpty()) {
+        items(tasks.size, key = { "task:${tasks[it].id}" }) { index ->
+            val task = tasks[index]
+            val first = index == 0
+            val last = index == tasks.lastIndex
+            val corners = EchoTheme.radii.lg
+            val square = CornerSize(0.dp)
+            val shape = corners.copy(
+                topStart = if (first) corners.topStart else square,
+                topEnd = if (first) corners.topEnd else square,
+                bottomStart = if (last) corners.bottomStart else square,
+                bottomEnd = if (last) corners.bottomEnd else square,
+            )
+            Box(
+                modifier = Modifier
+                    .padding(horizontal = EchoTheme.spacing.gutterScreen)
+                    .clip(shape)
+                    .background(EchoTheme.colors.surfaceCard)
+                    .background(
+                        if (task.id == focusedTaskId) taskColors[task.id] ?: EchoTheme.colors.transcriptHighlight
+                        else Color.Transparent,
+                    )
+                    .border(Dp.Hairline, EchoTheme.colors.borderSubtle, shape)
+                    .padding(
+                        start = EchoTheme.spacing.s4,
+                        end = EchoTheme.spacing.s4,
+                        top = if (first) EchoTheme.spacing.s2 else 0.dp,
+                        bottom = if (last) EchoTheme.spacing.s2 else 0.dp,
+                    ),
+            ) {
+                TaskRow(
+                    task = task,
+                    onToggle = { onToggle(task) },
+                    onEdit = { onPlay(task) },
+                    onLongPress = { onEdit(task) },
+                    showDate = task.hasDate,
+                    overdue = isOverdue(task, System.currentTimeMillis(), ZoneId.systemDefault()),
                 )
-            } else if (analyzed) {
+            }
+        }
+    } else if (analyzed) {
+        item(key = "tasks") {
                 Text(
                     text = "No tasks in this note.",
                     style = EchoTheme.typography.bodySm,
                     color = EchoTheme.colors.textTertiary,
+                    modifier = Modifier.padding(horizontal = EchoTheme.spacing.gutterScreen),
                 )
-            }
         }
     }
 }
@@ -907,12 +1016,14 @@ internal fun FullTextLine(
     highlight: String = "",
     onClick: () -> Unit = {},
     live: Boolean = false,
+    taskLinks: List<TaskTextLink> = emptyList(),
+    onTaskClick: (String) -> Unit = {},
 ) {
     Box(Modifier.padding(horizontal = EchoTheme.spacing.gutterScreen)) {
         if (editing) {
             SegmentLine(value, current, true, false, highlight, onValueChange, onClick, {}, live)
         } else {
-            Paragraph(value.text, current, highlight, onClick, live = live)
+            Paragraph(value.text, current, highlight, onClick, live = live, taskLinks = taskLinks, onTaskClick = onTaskClick)
         }
     }
 }

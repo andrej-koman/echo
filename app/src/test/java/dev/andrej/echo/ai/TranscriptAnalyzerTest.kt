@@ -13,6 +13,33 @@ private val UTC = ZoneId.of("UTC")
 
 class TranscriptAnalyzerTest {
 
+    @Test
+    fun `dentist itinerary keeps tomorrow times and all day assignment despite incorrect model output`() = runTest {
+        val lines = listOf(
+            Segment(1190, 9060, "Hi. Okay. So I'm thinking about what I should do tomorrow. I think that tomorrow at 10 a.m."),
+            Segment(9060, 18600, "I have to go to the dentist. Then at 12 a.m. tomorrow I have to go to the shop. Then after"),
+            Segment(18600, 30640, "everything at around, I don't know, 6 p.m. I have drinks with my girlfriend. Oh, and also"),
+            Segment(30640, 38140, "remind me to for tomorrow all day to turn in an assignment."),
+        )
+        val raw = """{"items":[
+            {"text":"Go to the dentist.","due":"2026-11-09T10:00:00","line":0},
+            {"text":"Go to the shop.","due":"2026-11-09T00:00:00","line":1},
+            {"text":"Make drinks with my girlfriend.","due":null,"line":2},
+            {"text":"Turn in an assignment.","due":"2026-11-09T00:00:00","line":3}
+        ]}"""
+        val recorded = LocalDate.of(2026, 11, 9).atTime(8, 58)
+        val note = transcript(lines.joinToString(" ") { it.text }).copy(
+            createdAt = recorded.atZone(UTC).toInstant().toEpochMilli(),
+        )
+        val result = (analyzer(FakeLlmRunner(listOf(summary, plans, raw)), lines)
+            .analyze(note) as AnalysisOutcome.Success).analysis.items
+        val tomorrow = recorded.toLocalDate().plusDays(1)
+        assertEquals(listOf(10, 0, 18, 0).map { tomorrow.atTime(it, 0).atZone(UTC).toInstant().toEpochMilli() }, result.map { it.dueAt })
+        assertEquals(listOf(true, true, true, false), result.map { it.hasTime })
+        assertTrue(result.all { it.hasDate })
+        assertEquals(listOf(9060L, 9060L, 18600L, 30640L), result.map { it.sourceOffsetMs })
+    }
+
     private val summary = """{"title":"Fix the tap","summary":"It drips."}"""
     private val tasks = """{"items":[{"text":"Buy a washer","due":null,"line":1}]}"""
     private val plans = """{"plans":true}"""

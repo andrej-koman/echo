@@ -119,6 +119,7 @@ dependencies {
 
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
+    "uitestImplementation"(libs.androidx.ui.test.manifest)
 
     testImplementation(libs.junit)
     testImplementation(libs.sqldelight.sqlite.driver)

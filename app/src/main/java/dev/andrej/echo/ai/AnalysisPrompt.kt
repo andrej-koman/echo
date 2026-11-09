@@ -107,14 +107,19 @@ fun buildTasksPrompt(lines: List<IndexedValue<String>>, now: LocalDateTime): Str
     List each task once. A shared date such as "tomorrow" applies to all the following actions
     in the same plan unless the speaker states a different date. Reply with JSON only:
 
-    {"items":[{"text":"...","due":"ISO date, ISO datetime, or null","due_relative_minutes":123 or null,"line":0}]}
+    {"items":[{"text":"...","source":"exact words from the note","due":"ISO date, ISO datetime, or null","due_relative_minutes":123 or null,"line":0}]}
 
     text: the action itself, imperative, no time attached, in the language the speaker used.
     Use sentence case: start with a capital letter, preserve proper names, and use correct
     punctuation including a final period. Example: "Go to the barber shop."
     due: if an explicit clock time or date was stated ("at 10am", "tomorrow at 3", "tomorrow",
-    "on Friday") resolve it — a clock time to a full ISO8601 timestamp using today's date above,
-    a date alone to a bare ISO date; for anything else use null. due_relative_minutes: if the
+    "on Friday") resolve it — use the stated or shared date, using today ONLY if no date was
+    stated. Tomorrow means ${promptDate.format(now.plusDays(1))}. A clock time becomes a full
+    ISO8601 timestamp; a date alone or "all day" becomes a bare ISO date, NEVER midnight.
+    12 a.m. is 00:00; 12 p.m. is 12:00; 6 p.m. is 18:00. "Around" still names a time.
+    source: copy the task's complete source sentence, including its date/time, verbatim from
+    the note. It may span numbered lines. Do not paraphrase it. line: the line containing the
+    action words, not an earlier introduction or date. due_relative_minutes: if the
     speaker instead stated a duration from now ("in 20 minutes" -> 20, "in an hour" -> 60), the
     number of minutes from now — and leave due null in that case, don't resolve it yourself. If
     no date, time, or duration was stated at all, leave both null. line: the number of the line
@@ -124,7 +129,7 @@ fun buildTasksPrompt(lines: List<IndexedValue<String>>, now: LocalDateTime): Str
     [0] Remind me to call the dentist tomorrow at 9am.
     [1] Also water the plants in 20 minutes.
     [2] Oh and I need to buy milk.
-    {"items":[{"text":"Call the dentist.","due":"2026-01-02T09:00:00","due_relative_minutes":null,"line":0},{"text":"Water the plants.","due":null,"due_relative_minutes":20,"line":1},{"text":"Buy milk.","due":null,"due_relative_minutes":null,"line":2}]}
+    {"items":[{"text":"Call the dentist.","source":"Remind me to call the dentist tomorrow at 9am.","due":"2026-01-02T09:00:00","due_relative_minutes":null,"line":0},{"text":"Water the plants.","source":"Also water the plants in 20 minutes.","due":null,"due_relative_minutes":20,"line":1},{"text":"Buy milk.","source":"Oh and I need to buy milk.","due":null,"due_relative_minutes":null,"line":2}]}
 
     Example. Today is 2026-01-01, the current time is 08:00.
     [0] I think I should start a podcast, I'm thinking about names.
@@ -154,6 +159,7 @@ private data class RawTasks(
 @Serializable
 private data class RawItem(
     val text: String = "",
+    val source: String? = null,
     @SerialName("due") val due: String? = null,
     @SerialName("due_relative_minutes") val dueRelativeMinutes: Int? = null,
     val line: Int? = null,
@@ -194,7 +200,7 @@ fun parseTasks(
         .filter { it.text.isNotBlank() }
         .map { item ->
             val due = resolveDue(item.due, item.dueRelativeMinutes, zone, today, recordedAt)
-            NewTodo(item.text.trim(), due.at, due.hasTime, due.hasDate, item.line?.let(lineOffsetMs))
+            NewTodo(item.text.trim(), due.at, due.hasTime, due.hasDate, item.line?.let(lineOffsetMs), item.source)
         }
 }
 

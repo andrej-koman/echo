@@ -9,6 +9,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,20 +20,29 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import dev.andrej.echo.R
+import dev.andrej.echo.data.TaskTextLink
+import dev.andrej.echo.data.Segment
 import dev.andrej.echo.ui.components.ButtonSize
 import dev.andrej.echo.ui.components.ButtonVariant
 import dev.andrej.echo.ui.components.EchoButton
@@ -96,6 +106,8 @@ internal fun SegmentLine(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     live: Boolean = false,
+    taskLinks: List<TaskTextLink> = emptyList(),
+    onTaskClick: (String) -> Unit = {},
 ) {
     val colors = EchoTheme.colors
     val modifier = Modifier
@@ -122,11 +134,61 @@ internal fun SegmentLine(
                 .padding(horizontal = 6.dp, vertical = 2.dp),
         )
     } else {
-        LineText(value.text, highlight, live, modifier)
+        LineText(value.text, highlight, live, modifier, taskLinks, onTaskClick)
     }
 }
 
-/** Full text: the same segments without speakers, one paragraph each. */
+@Composable
+internal fun ContinuousTranscript(
+    segments: List<Segment>,
+    taskLinks: List<List<TaskTextLink>>,
+    current: Int,
+    highlight: String,
+    live: Boolean,
+    taskColors: Map<String, Color>,
+    onTaskClick: (String) -> Unit,
+    onSegmentClick: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    onSegmentLongClick: ((Int) -> Unit)? = null,
+) {
+    val lines = remember(segments) { segments.map { it.text.trim() } }
+    val text = remember(lines) { lines.joinToString(" ") }
+    val starts = remember(lines) { lines.runningFold(0) { start, line -> start + line.length + 1 } }
+    fun segmentAtOffset(offset: Int) = lines.indices.lastOrNull { starts[it] <= offset } ?: 0
+    val links = remember(lines, taskLinks) {
+        lines.indices.flatMap { index ->
+            taskLinks.getOrNull(index).orEmpty().mapNotNull { link ->
+                val end = minOf(link.end, lines[index].length)
+                if (link.start >= end) null
+                else link.copy(start = starts[index] + link.start, end = starts[index] + end)
+            }
+        }.groupBy { it.taskId }.flatMap { (_, spans) ->
+            val merged = mutableListOf<TaskTextLink>()
+            spans.sortedBy { it.start }.forEach { span ->
+                val previous = merged.lastOrNull()
+                if (previous != null && span.start <= previous.end + 1) {
+                    merged[merged.lastIndex] = previous.copy(end = maxOf(previous.end, span.end))
+                } else merged += span
+            }
+            merged
+        }.sortedBy { it.start }
+    }
+    LineText(
+        text = text,
+        highlight = highlight,
+        live = live,
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = EchoTheme.spacing.s3, vertical = EchoTheme.spacing.s2),
+        taskLinks = links,
+        onTaskClick = onTaskClick,
+        taskColors = taskColors,
+        currentRange = current.takeIf { it in lines.indices }?.let { starts[it] until starts[it] + lines[it].length },
+        onTextClick = { onSegmentClick(segmentAtOffset(it)) },
+        onTextLongClick = onSegmentLongClick?.let { click -> { offset -> click(segmentAtOffset(offset)) } },
+    )
+}
+
 @Composable
 internal fun Paragraph(
     text: String,
@@ -135,12 +197,18 @@ internal fun Paragraph(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     live: Boolean = false,
+    taskLinks: List<TaskTextLink> = emptyList(),
+    onTaskClick: (String) -> Unit = {},
+    taskColors: Map<String, Color> = emptyMap(),
 ) {
     val colors = EchoTheme.colors
     LineText(
         text = text,
         highlight = highlight,
         live = live,
+        taskLinks = taskLinks,
+        onTaskClick = onTaskClick,
+        taskColors = taskColors,
         modifier = modifier
             .fillMaxWidth()
             .clip(EchoTheme.radii.md)
@@ -152,8 +220,20 @@ internal fun Paragraph(
 
 /** The [live] line is the one being typed in as Whisper hears it, with a blinking caret. */
 @Composable
-private fun LineText(text: String, highlight: String, live: Boolean, modifier: Modifier) {
+private fun LineText(
+    text: String,
+    highlight: String,
+    live: Boolean,
+    modifier: Modifier,
+    taskLinks: List<TaskTextLink> = emptyList(),
+    onTaskClick: (String) -> Unit = {},
+    taskColors: Map<String, Color> = emptyMap(),
+    currentRange: IntRange? = null,
+    onTextClick: ((Int) -> Unit)? = null,
+    onTextLongClick: ((Int) -> Unit)? = null,
+) {
     val colors = EchoTheme.colors
+    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     val caretAlpha = if (live && !LocalReducedMotion.current) {
         rememberInfiniteTransition(label = "caret").animateFloat(
             initialValue = 1f,
@@ -166,12 +246,45 @@ private fun LineText(text: String, highlight: String, live: Boolean, modifier: M
     }
     Text(
         text = buildAnnotatedString {
-            append(highlighted(text, highlight, colors.surfaceAccentSoft))
+            append(text)
+            currentRange?.let { addStyle(SpanStyle(background = colors.surfaceCard), it.first, it.last + 1) }
+            taskLinks.forEach { link ->
+                if (link.start >= 0 && link.end <= text.length && link.start < link.end) {
+                    addStyle(SpanStyle(background = taskColors[link.taskId] ?: colors.transcriptHighlight), link.start, link.end)
+                    addLink(
+                        LinkAnnotation.Clickable(
+                            tag = link.taskId,
+                            styles = TextLinkStyles(style = SpanStyle()),
+                            linkInteractionListener = { onTaskClick(link.taskId) },
+                        ),
+                        link.start,
+                        link.end,
+                    )
+                }
+            }
+            matchRanges(text, highlight).forEach { range ->
+                addStyle(SpanStyle(background = colors.surfaceAccentSoft), range.first, range.last + 1)
+            }
             if (live) withStyle(SpanStyle(color = colors.textAccent.copy(alpha = caretAlpha))) { append(" ▍") }
         },
         style = EchoTheme.typography.body,
         color = colors.textPrimary,
-        modifier = modifier,
+        onTextLayout = { layout = it },
+        modifier = modifier.then(
+            if (onTextClick == null) Modifier else Modifier.pointerInput(text, taskLinks, onTextClick, onTextLongClick) {
+                detectTapGestures(
+                    onTap = { position ->
+                        layout?.getOffsetForPosition(position)?.let { offset ->
+                            val link = taskLinks.firstOrNull { offset >= it.start && offset < it.end }
+                            if (link != null) onTaskClick(link.taskId) else onTextClick(offset)
+                        }
+                    },
+                    onLongPress = onTextLongClick?.let { click ->
+                        { position -> layout?.getOffsetForPosition(position)?.let(click) }
+                    },
+                )
+            },
+        ),
     )
 }
 
@@ -258,11 +371,3 @@ internal fun FindReplaceBar(
         }
     }
 }
-
-private fun highlighted(text: String, query: String, background: Color): AnnotatedString =
-    buildAnnotatedString {
-        append(text)
-        matchRanges(text, query).forEach { range ->
-            addStyle(SpanStyle(background = background), range.first, range.last + 1)
-        }
-    }

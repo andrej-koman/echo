@@ -20,6 +20,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -150,6 +151,7 @@ internal fun ContinuousTranscript(
     onSegmentClick: (Int) -> Unit,
     modifier: Modifier = Modifier,
     onSegmentLongClick: ((Int) -> Unit)? = null,
+    reading: AnalysisReading? = null,
 ) {
     val lines = remember(segments) { segments.map { it.text.trim() } }
     val text = remember(lines) { lines.joinToString(" ") }
@@ -186,6 +188,8 @@ internal fun ContinuousTranscript(
         currentRange = current.takeIf { it in lines.indices }?.let { starts[it] until starts[it] + lines[it].length },
         onTextClick = { onSegmentClick(segmentAtOffset(it)) },
         onTextLongClick = onSegmentLongClick?.let { click -> { offset -> click(segmentAtOffset(offset)) } },
+        reading = reading,
+        readingIndex = 0,
     )
 }
 
@@ -200,6 +204,8 @@ internal fun Paragraph(
     taskLinks: List<TaskTextLink> = emptyList(),
     onTaskClick: (String) -> Unit = {},
     taskColors: Map<String, Color> = emptyMap(),
+    reading: AnalysisReading? = null,
+    readingIndex: Int = -1,
 ) {
     val colors = EchoTheme.colors
     LineText(
@@ -209,6 +215,8 @@ internal fun Paragraph(
         taskLinks = taskLinks,
         onTaskClick = onTaskClick,
         taskColors = taskColors,
+        reading = reading,
+        readingIndex = readingIndex,
         modifier = modifier
             .fillMaxWidth()
             .clip(EchoTheme.radii.md)
@@ -231,9 +239,14 @@ private fun LineText(
     currentRange: IntRange? = null,
     onTextClick: ((Int) -> Unit)? = null,
     onTextLongClick: ((Int) -> Unit)? = null,
+    reading: AnalysisReading? = null,
+    readingIndex: Int = -1,
 ) {
     val colors = EchoTheme.colors
-    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    var layout by remember(text) { mutableStateOf<TextLayoutResult?>(null) }
+    LaunchedEffect(reading?.session, layout) {
+        layout?.let { reading?.onTextLayout(readingIndex, it) }
+    }
     val caretAlpha = if (live && !LocalReducedMotion.current) {
         rememberInfiniteTransition(label = "caret").animateFloat(
             initialValue = 1f,
@@ -270,7 +283,7 @@ private fun LineText(
         style = EchoTheme.typography.body,
         color = colors.textPrimary,
         onTextLayout = { layout = it },
-        modifier = modifier.then(
+        modifier = modifier.then(reading?.highlight(readingIndex) ?: Modifier).then(
             if (onTextClick == null) Modifier else Modifier.pointerInput(text, taskLinks, onTextClick, onTextLongClick) {
                 detectTapGestures(
                     onTap = { position ->

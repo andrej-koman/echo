@@ -239,8 +239,10 @@ API compatibility check. Upgrade the transitive library rather than suppressing 
 Wireless debugging drops often: `adb connect <ip:port>` from Settings → Developer options → Wireless debugging.
 Instrumented tests use the separate `uitest` application (`dev.andrej.echo.uitest`) so they
 never install over the user's notes. `testUitestUnitTest` runs JVM tests; `assembleUitestAndroidTest`
-builds device tests, including task reminder delivery/navigation and Compose gesture checks. Grant
-the mic without the dialog: `adb shell pm grant dev.andrej.echo android.permission.RECORD_AUDIO`.
+builds device tests, including task reminder delivery/navigation and Compose gesture checks.
+The `uitest` variant also needs `ui-test-manifest` on its own implementation classpath: a
+`debugImplementation` dependency alone does not supply Compose's host activity to this build type.
+Grant the mic without the dialog: `adb shell pm grant dev.andrej.echo android.permission.RECORD_AUDIO`.
 Recording starts behind a locked keyguard (`am start -n dev.andrej.echo/.MainActivity --ez
 open_capture true`) and records, but Stop can't be tapped — `am force-stop` then leaves the take
 for startup recovery.
@@ -405,7 +407,21 @@ analysed: **By speaker** (runs
   **Edit** turns lines into text fields, saved on Done; **Find** highlights and replaces all
   (case-insensitive literal). Both go through `TranscriptRepository.editSegments`, which rejoins
   `transcript.text`; a segment emptied is dropped. Not offered while still transcribing (each
-  chunk rewrites the segments). Pure logic in `TranscriptEdits.kt`. No auto-scroll.
+  chunk rewrites the segments). Pure logic in `TranscriptEdits.kt`.
+- **Analysis reading sweep** (`ui/detail/AnalysisReading.kt`): active analysis waits for the
+  remaining transcription typing, selects Full text once, and returns to the beginning. A soft
+  rounded semantic accent marker advances through actual rendered word bounds at roughly 5 words
+  per second, gliding between words on the same line and crossfading at line or paragraph breaks.
+  A stronger translucent fill and fine outline keep it visible in both themes; eased scrolling
+  keeps the word visible. At the end it returns
+  to the beginning and loops while analysis is active. This is ambient activity, not
+  sentence-level model progress; the processing row retains real completed-step progress. Dragging,
+  changing tabs, tapping a paragraph, finding, editing, or selecting stops the presentation until
+  a fresh analysis attempt or screen entry, so it cannot pull the reader away from their work.
+  Reduced motion uses a static highlight on the first visible passage without resetting or
+  scrolling. Typing-follow and analysis-follow scrolling never run concurrently.
+  Full text supplies the joined transcript as one measured reading layout, matching its continuous
+  text rendering; tapping text or a task-source link stops the sweep before playback or navigation.
 - **Share = export** (Phase 9, pulled in with the note screen): Text `.txt`, Markdown `.md`
   (title, date, summary, tasks as a checklist, transcript), Subtitles `.srt` (only with
   segments), Audio (the `source` file, its MIME read with `MediaMetadataRetriever` since `source`

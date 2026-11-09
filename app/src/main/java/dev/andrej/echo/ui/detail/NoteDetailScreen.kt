@@ -216,12 +216,23 @@ fun NoteDetailScreen(
             }
             val shown = tab.takeIf { it in visibleTabs } ?: NoteTab.FullText
             val showingTranscript = shown == NoteTab.BySpeaker || shown == NoteTab.FullText
-            FollowLiveText(listState, following = status != null && showingTranscript, typedChars)
+            FollowLiveText(listState, following = status != null && typing && showingTranscript, typedChars)
             val editable = segments.isNotEmpty() && noteId !in transcribing
             val textSelection = edits.entries.firstOrNull { !it.value.selection.collapsed }
             val current = player?.takeIf { it.playing || it.positionMs > 0 }
                 ?.let { segmentAt(segments, it.positionMs) } ?: -1
             val highlight = if (finding) findQuery else ""
+            val reading = rememberAnalysisReading(
+                noteId = noteId,
+                analyzing = status is TranscriptionStatus.Analyzing && analyzingId == noteId,
+                ready = loaded && !typing,
+                showingFullText = shown == NoteTab.FullText,
+                interacting = finding || editing || selected.isNotEmpty(),
+                paragraphs = listOf(typed.joinToString(" ") { it.text.trim() }),
+                listState = listState,
+                firstParagraphIndex = 2 + if (visibleTabs.isNotEmpty()) 1 else 0,
+                onStart = { tab = NoteTab.FullText },
+            )
 
             DetailHeader(onBack = onBack) {
                 HeaderAction(R.drawable.ic_search, "Find", active = finding) {
@@ -301,7 +312,7 @@ fun NoteDetailScreen(
                                 .onSizeChanged { tabsHeight = it.height }
                                 .padding(horizontal = EchoTheme.spacing.gutterScreen, vertical = EchoTheme.spacing.s4),
                         ) {
-                            Tabs(tabs = visibleTabs, selected = shown, onSelect = { tab = it })
+                            Tabs(tabs = visibleTabs, selected = shown, onSelect = { reading.stop(); tab = it })
                         }
                     }
                 }
@@ -383,7 +394,7 @@ fun NoteDetailScreen(
                             taskColors = taskColors,
                         )
                     }
-                    shown == NoteTab.FullText && !editing -> item(key = "fullText") {
+                    shown == NoteTab.FullText && !editing -> item(key = "p0") {
                         ContinuousTranscript(
                             segments = typed,
                             taskLinks = if (selected.isEmpty()) sourceLinks else emptyList(),
@@ -391,9 +402,10 @@ fun NoteDetailScreen(
                             highlight = highlight,
                             live = typing,
                             taskColors = taskColors,
-                            onTaskClick = openSourceTask,
-                            onSegmentClick = { player?.playFrom(segments[it].startMs) },
+                            onTaskClick = { reading.stop(); openSourceTask(it) },
+                            onSegmentClick = { reading.stop(); player?.playFrom(segments[it].startMs) },
                             modifier = Modifier.padding(horizontal = EchoTheme.spacing.gutterScreen),
+                            reading = reading,
                         )
                     }
                     shown == NoteTab.FullText -> items(typed.indices.toList(), key = { "p$it" }) { i ->
@@ -403,9 +415,11 @@ fun NoteDetailScreen(
                             onValueChange = { edits[i] = it },
                             current = i == current,
                             highlight = highlight,
-                            onClick = { player?.playFrom(segments[i].startMs) },
+                            onClick = { reading.stop(); player?.playFrom(segments[i].startMs) },
                             live = i == liveLine,
                             taskLinks = emptyList(),
+                            reading = reading,
+                            readingIndex = i,
                         )
                     }
                     else -> items(runs(typed), key = { "run${it.first}" }) { run ->
@@ -1018,12 +1032,18 @@ internal fun FullTextLine(
     live: Boolean = false,
     taskLinks: List<TaskTextLink> = emptyList(),
     onTaskClick: (String) -> Unit = {},
+    reading: AnalysisReading? = null,
+    readingIndex: Int = -1,
 ) {
     Box(Modifier.padding(horizontal = EchoTheme.spacing.gutterScreen)) {
         if (editing) {
             SegmentLine(value, current, true, false, highlight, onValueChange, onClick, {}, live)
         } else {
-            Paragraph(value.text, current, highlight, onClick, live = live, taskLinks = taskLinks, onTaskClick = onTaskClick)
+            Paragraph(
+                value.text, current, highlight, onClick, live = live,
+                taskLinks = taskLinks, onTaskClick = onTaskClick,
+                reading = reading, readingIndex = readingIndex,
+            )
         }
     }
 }

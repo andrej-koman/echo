@@ -77,7 +77,7 @@ class SqlDerivedRepository(
                     reminderAt = if (changed) reminder?.at else old.reminderAt,
                     reminderDate = if (changed) reminder?.date else old.reminderDate,
                     reminderDelivered = if (changed) false else old.reminderDelivered,
-                    sourceQuote = newTodo.sourceQuote,
+                    sourceQuote = newTodo.sourceQuote ?: old?.sourceQuote,
                 ),
             )
         }

@@ -14,6 +14,24 @@ class SqlDerivedRepositoryTest {
         NewTodo(text, dueAt, hasTime, hasDate)
 
     @Test
+    fun `existing source quotes survive reading updating and re-analysis`() = runTest {
+        val database = testDatabase()
+        val repository = SqlDerivedRepository(database)
+        repository.replaceFor("t1", listOf(item("Buy milk")))
+        val existing = database.todoQueries.selectFor("t1").executeAsOne()
+        database.todoQueries.delete(existing.id)
+        database.todoQueries.insert(existing.copy(sourceQuote = "I need to buy milk"))
+
+        assertEquals("I need to buy milk", repository.items.first().single().sourceQuote)
+        repository.setDone(existing.id, true)
+        repository.replaceFor("t1", listOf(item("Buy milk")))
+
+        val stored = repository.items.first().single()
+        assertEquals("I need to buy milk", stored.sourceQuote)
+        assertTrue(stored.done)
+    }
+
+    @Test
     fun `analysis for a missing transcript creates no tasks or queue writes`() = runTest {
         val database = testDatabase()
         val repository = SqlDerivedRepository(database)

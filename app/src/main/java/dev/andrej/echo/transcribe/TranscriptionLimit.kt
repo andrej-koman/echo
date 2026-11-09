@@ -31,15 +31,15 @@ internal fun resumeChunk(
     segments: List<Segment>,
     preserveCompleted: Boolean = false,
 ): TranscriptionCheckpoint.Chunk? {
-    val seed = transcript?.transcribedUntilMs?.let {
-        TranscriptionCheckpoint.Chunk(it * SAMPLE_RATE / 1000, transcript.language, segments)
+    val seed = transcript?.transcribedUntilMs?.let { untilMs ->
+        TranscriptionCheckpoint.Chunk(untilMs * SAMPLE_RATE / 1000, transcript.language,
+            segments.takeWhile { it.startMs < untilMs })
     }
     if (seed == null) return if (preserveCompleted && chunk != null) {
         chunk.copy(segments = segments + chunk.segments.drop(segments.size))
     } else chunk
     if (chunk == null || chunk.nextSample <= seed.nextSample) return seed
-    val prefix = segments.takeWhile { it.startMs < transcript.transcribedUntilMs }
-    return chunk.copy(segments = prefix + chunk.segments.drop(prefix.size))
+    return chunk.copy(segments = seed.segments + chunk.segments.dropWhile { it.startMs < transcript.transcribedUntilMs })
 }
 
 internal fun preservePrefixSpeakers(assigned: List<Segment>, prefix: List<Segment>, existingCount: Int): List<Segment> {

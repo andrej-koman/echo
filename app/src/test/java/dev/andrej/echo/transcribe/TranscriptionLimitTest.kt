@@ -52,5 +52,41 @@ class TranscriptionLimitTest {
         assertNull(resumeChunk(null, note.copy(transcribedUntilMs = null), stored))
     }
 
+    @Test fun `stopped first unlock chunk resumes without keeping partial suffix text`() {
+        val prefix = Segment(0, 1000, "edited prefix", 1)
+        val partial = Segment(120_000, 121_000, "partial suffix")
+        val checkpoint = TranscriptionCheckpoint.Chunk(FREE_SAMPLES.toLong(), "en", listOf(prefix))
+
+        for (chunk in listOf(null, checkpoint, checkpoint.copy(nextSample = FREE_SAMPLES - 1L))) {
+            val resumed = resumeChunk(chunk, note("capped", 120_000), listOf(prefix, partial))!!
+
+            assertEquals(FREE_SAMPLES.toLong(), resumed.nextSample)
+            assertEquals(listOf(prefix), resumed.segments)
+        }
+    }
+
+    @Test fun `unlock retry preserves suffix after splitting a saved prefix segment`() {
+        val original = Segment(0, 1000, "original prefix", 0)
+        val suffix = Segment(120_000, 121_000, "completed suffix")
+        val checkpoint = TranscriptionCheckpoint.Chunk(FREE_SAMPLES + 16_000L, "en", listOf(original, suffix))
+        val edited = listOf(Segment(0, 500, "original", 0), Segment(500, 1000, "prefix", 1))
+
+        val resumed = resumeChunk(checkpoint, note("capped", 120_000), edited + suffix)!!
+
+        assertEquals(checkpoint.nextSample, resumed.nextSample)
+        assertEquals(edited + suffix, resumed.segments)
+    }
+
+    @Test fun `unlock retry does not restore deleted prefix segments`() {
+        val deleted = Segment(0, 1000, "deleted prefix")
+        val suffix = Segment(120_000, 121_000, "completed suffix")
+        val checkpoint = TranscriptionCheckpoint.Chunk(FREE_SAMPLES + 16_000L, "en", listOf(deleted, suffix))
+
+        val resumed = resumeChunk(checkpoint, note("capped", 120_000), listOf(suffix))!!
+
+        assertEquals(checkpoint.nextSample, resumed.nextSample)
+        assertEquals(listOf(suffix), resumed.segments)
+    }
+
     private fun note(id: String, cap: Long? = null) = Transcript(id, "", "en", 0, 300_000, transcribedUntilMs = cap)
 }

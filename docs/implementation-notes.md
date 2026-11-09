@@ -552,7 +552,9 @@ Onboarding is ported from the separate "Echo Onboarding" Design artifact
 - `transcript.transcribedUntilMs` marks a capped result. Pro activation queues capped notes,
   resumes Whisper at that boundary with the existing segments, clears the cap on completion and
   re-queues automatic analysis with a fresh attempt count. Continuation keeps saved prefix edits,
-  speaker names and assignments. Capped manual retries retain the boundary and latest chunk; free
+  speaker names and assignments. Recovery joins the saved prefix and checkpoint suffix at the cap's
+  timestamp: edits can split or delete segments, and stopped runs can save partial text beyond the
+  checkpoint that must be transcribed again. Capped manual retries retain the boundary and latest chunk; free
   retries can finish interrupted audio finalization. Chunk snapshots and the speech-complete marker preserve process
   restart recovery during both the capped and unlocked runs.
 - Last known Pro status is cached in Settings before network requests, so offline cold starts

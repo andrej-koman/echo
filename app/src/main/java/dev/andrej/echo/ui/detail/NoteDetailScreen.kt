@@ -176,12 +176,23 @@ fun NoteDetailScreen(
             }
             val shown = tab.takeIf { it in visibleTabs } ?: NoteTab.FullText
             val showingTranscript = shown == NoteTab.BySpeaker || shown == NoteTab.FullText
-            FollowLiveText(listState, following = status != null && showingTranscript, typedChars)
+            FollowLiveText(listState, following = status != null && typing && showingTranscript, typedChars)
             val editable = segments.isNotEmpty() && noteId !in transcribing
             val textSelection = edits.entries.firstOrNull { !it.value.selection.collapsed }
             val current = player?.takeIf { it.playing || it.positionMs > 0 }
                 ?.let { segmentAt(segments, it.positionMs) } ?: -1
             val highlight = if (finding) findQuery else ""
+            val reading = rememberAnalysisReading(
+                noteId = noteId,
+                analyzing = status is TranscriptionStatus.Analyzing && analyzingId == noteId,
+                ready = loaded && !typing,
+                showingFullText = shown == NoteTab.FullText,
+                interacting = finding || editing || selected.isNotEmpty(),
+                paragraphs = typed.map { it.text.trim() },
+                listState = listState,
+                firstParagraphIndex = 2 + if (visibleTabs.isNotEmpty()) 1 else 0,
+                onStart = { tab = NoteTab.FullText },
+            )
 
             DetailHeader(onBack = onBack) {
                 HeaderAction(R.drawable.ic_search, "Find", active = finding) {
@@ -260,7 +271,7 @@ fun NoteDetailScreen(
                                 .background(EchoTheme.colors.surfacePage)
                                 .padding(horizontal = EchoTheme.spacing.gutterScreen, vertical = EchoTheme.spacing.s4),
                         ) {
-                            Tabs(tabs = visibleTabs, selected = shown, onSelect = { tab = it })
+                            Tabs(tabs = visibleTabs, selected = shown, onSelect = { reading.stop(); tab = it })
                         }
                     }
                 }
@@ -342,8 +353,10 @@ fun NoteDetailScreen(
                             onValueChange = { edits[i] = it },
                             current = i == current,
                             highlight = highlight,
-                            onClick = { player?.playFrom(segments[i].startMs) },
+                            onClick = { reading.stop(); player?.playFrom(segments[i].startMs) },
                             live = i == liveLine,
+                            reading = reading,
+                            readingIndex = i,
                         )
                     }
                     else -> items(runs(typed), key = { "run${it.first}" }) { run ->
@@ -907,12 +920,14 @@ internal fun FullTextLine(
     highlight: String = "",
     onClick: () -> Unit = {},
     live: Boolean = false,
+    reading: AnalysisReading? = null,
+    readingIndex: Int = -1,
 ) {
     Box(Modifier.padding(horizontal = EchoTheme.spacing.gutterScreen)) {
         if (editing) {
             SegmentLine(value, current, true, false, highlight, onValueChange, onClick, {}, live)
         } else {
-            Paragraph(value.text, current, highlight, onClick, live = live)
+            Paragraph(value.text, current, highlight, onClick, live = live, reading = reading, readingIndex = readingIndex)
         }
     }
 }

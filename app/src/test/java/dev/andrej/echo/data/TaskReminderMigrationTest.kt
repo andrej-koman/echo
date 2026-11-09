@@ -18,11 +18,14 @@ class TaskReminderMigrationTest {
             """.trimIndent(), 0)
             driver.execute(null, "INSERT INTO todo VALUES ('old', 'note', 'Old task', 0, 0, 1, 0, 0, 0, NULL)", 0)
             EchoDatabase.Schema.migrate(driver, 6, 7)
+            // This fixture has only todo; migration 7 changes transcript.
+            EchoDatabase.Schema.migrate(driver, 8, 9)
             val task = EchoDatabase(driver).todoQueries.selectAll(::TodoItem).executeAsOne()
             assertEquals("Old task", task.text)
             assertNull(task.reminderAt)
             assertNull(task.reminderDate)
             assertFalse(task.reminderDelivered)
+            assertNull(task.sourceQuote)
         }
     }
 }

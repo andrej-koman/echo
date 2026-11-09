@@ -19,6 +19,11 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -27,6 +32,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
@@ -135,12 +141,16 @@ internal fun Paragraph(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     live: Boolean = false,
+    reading: AnalysisReading? = null,
+    readingIndex: Int = -1,
 ) {
     val colors = EchoTheme.colors
     LineText(
         text = text,
         highlight = highlight,
         live = live,
+        reading = reading,
+        readingIndex = readingIndex,
         modifier = modifier
             .fillMaxWidth()
             .clip(EchoTheme.radii.md)
@@ -152,8 +162,19 @@ internal fun Paragraph(
 
 /** The [live] line is the one being typed in as Whisper hears it, with a blinking caret. */
 @Composable
-private fun LineText(text: String, highlight: String, live: Boolean, modifier: Modifier) {
+private fun LineText(
+    text: String,
+    highlight: String,
+    live: Boolean,
+    modifier: Modifier,
+    reading: AnalysisReading? = null,
+    readingIndex: Int = -1,
+) {
     val colors = EchoTheme.colors
+    var layout by remember(text) { mutableStateOf<TextLayoutResult?>(null) }
+    LaunchedEffect(reading?.session, layout) {
+        layout?.let { reading?.onTextLayout(readingIndex, it) }
+    }
     val caretAlpha = if (live && !LocalReducedMotion.current) {
         rememberInfiniteTransition(label = "caret").animateFloat(
             initialValue = 1f,
@@ -171,7 +192,8 @@ private fun LineText(text: String, highlight: String, live: Boolean, modifier: M
         },
         style = EchoTheme.typography.body,
         color = colors.textPrimary,
-        modifier = modifier,
+        modifier = modifier.then(reading?.highlight(readingIndex) ?: Modifier),
+        onTextLayout = { layout = it },
     )
 }
 

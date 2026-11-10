@@ -3,7 +3,10 @@ package dev.andrej.echo.ui.billing
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
@@ -18,6 +21,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -64,31 +68,58 @@ fun PaywallScreen(
             .statusBarsPadding().navigationBarsPadding(),
     ) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = EchoTheme.spacing.s4),
+            Modifier.fillMaxWidth().padding(start = EchoTheme.spacing.gutterScreen, end = EchoTheme.spacing.s4, top = EchoTheme.spacing.s4),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            EchoButton("Restore purchase", viewModel::restore, variant = ButtonVariant.Ghost, enabled = !state.loading && !state.busy)
+            Text("Pro", style = EchoTheme.typography.heading, color = colors.textAccent)
             EchoIconButton(iconRes = R.drawable.ic_x, contentDescription = "Close", onClick = onBack)
         }
-        Column(
-            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = EchoTheme.spacing.gutterScreen),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s6),
-        ) {
-            Mascot(size = 44.dp)
-            EchoBadge("PRO", tone = BadgeTone.Info)
-            Text("Transcribe every minute", style = EchoTheme.typography.display, color = colors.textPrimary, textAlign = TextAlign.Center)
-            Text(
-                "Free notes stop at 2 minutes. Pro turns the whole recording into text, a summary and tasks.",
-                style = EchoTheme.typography.body, color = colors.textSecondary, textAlign = TextAlign.Center,
-            )
-            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5)) {
-                Feature(R.drawable.ic_infinity, "No time limit", "Meetings, lectures, hours-long recordings")
-                Feature(R.drawable.ic_sparkles, "Summary and tasks from all of it", "Not just the first 2 minutes")
-                Feature(R.drawable.ic_upload, "Full-length imports", "Turn audio you already have into complete notes")
-                Feature(R.drawable.ic_wifi_off, "Still fully offline", "Your audio never leaves your phone", sage = true)
+        val scroll = rememberScrollState()
+        BoxWithConstraints(Modifier.weight(1f)) {
+            Column(
+                Modifier.fillMaxWidth().verticalScroll(scroll).heightIn(min = maxHeight)
+                    .padding(horizontal = EchoTheme.spacing.gutterScreen, vertical = EchoTheme.spacing.s4),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s8, Alignment.CenterVertically),
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3)) {
+                    Text("Transcribe every minute", style = EchoTheme.typography.titleSm, color = colors.textPrimary, textAlign = TextAlign.Center)
+                    Text(
+                        "Free notes stop at 2 minutes. Pro turns the whole recording into text, a summary and tasks.",
+                        style = EchoTheme.typography.bodySm, color = colors.textSecondary, textAlign = TextAlign.Center,
+                    )
+                }
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s6)) {
+                    Feature(R.drawable.ic_infinity, "No time limit", "Meetings, lectures, hours-long recordings")
+                    Feature(R.drawable.ic_sparkles, "Summary and tasks from all of it", "Not just the first 2 minutes")
+                    Feature(R.drawable.ic_upload, "Full-length imports", "Turn audio you already have into complete notes")
+                    Feature(R.drawable.ic_wifi_off, "Still fully offline", "Your audio never leaves your phone", sage = true)
+                }
             }
+            androidx.compose.animation.AnimatedVisibility(
+                visible = scroll.canScrollForward,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.BottomCenter),
+            ) {
+                Box(
+                    Modifier.fillMaxWidth().height(56.dp)
+                        .background(Brush.verticalGradient(listOf(Color.Transparent, colors.surfacePage))),
+                    contentAlignment = Alignment.BottomCenter,
+                ) {
+                    Icon(
+                        painterResource(R.drawable.ic_chevron_down), "More below",
+                        tint = colors.textTertiary, modifier = Modifier.padding(bottom = EchoTheme.spacing.s2).size(20.dp),
+                    )
+                }
+            }
+        }
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = EchoTheme.spacing.gutterScreen, vertical = EchoTheme.spacing.s5),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5),
+        ) {
             if (state.loading) {
                 CircularProgressIndicator(color = colors.textAccent)
             } else {
@@ -102,25 +133,27 @@ fun PaywallScreen(
                 Text(it, style = EchoTheme.typography.bodySm, color = colors.textSecondary, textAlign = TextAlign.Center)
                 if (plans.isEmpty()) EchoButton("Try again", viewModel::load, variant = ButtonVariant.Secondary, enabled = !state.busy && !state.loading)
             }
-        }
-        Column(
-            Modifier.fillMaxWidth().padding(horizontal = EchoTheme.spacing.gutterScreen, vertical = EchoTheme.spacing.s5),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
-        ) {
             EchoButton(
                 text = selected?.let(::ctaText) ?: "Get Echo Pro",
                 onClick = { context.findActivity()?.let(viewModel::purchase) },
                 enabled = !state.loading && selected != null && context.findActivity() != null,
                 loading = state.busy,
                 fullWidth = true,
-                size = ButtonSize.Lg,
+                size = ButtonSize.Md,
             )
             selected?.let {
-                Text(captionText(it), style = EchoTheme.typography.caption, color = colors.textSecondary, textAlign = TextAlign.Center)
+                // Two lines reserved so switching plans doesn't shift the layout.
+                Text(captionText(it), style = EchoTheme.typography.caption, color = colors.textSecondary, textAlign = TextAlign.Center, minLines = 2)
             }
             // Placeholders until the legal URLs exist.
-            Row(horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s8)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s8), verticalAlignment = Alignment.CenterVertically) {
+                val canRestore = !state.loading && !state.busy
+                Text(
+                    "Restore purchase",
+                    style = EchoTheme.typography.caption.copy(fontWeight = FontWeight.SemiBold),
+                    color = if (canRestore) colors.textSecondary else colors.textTertiary,
+                    modifier = Modifier.clickable(enabled = canRestore, role = Role.Button, onClick = viewModel::restore),
+                )
                 Text("Terms", style = EchoTheme.typography.caption, color = colors.textTertiary)
                 Text("Privacy", style = EchoTheme.typography.caption, color = colors.textTertiary)
             }
@@ -143,15 +176,15 @@ private fun captionText(plan: Plan) = when (plan.period) {
 @Composable
 private fun Feature(icon: Int, title: String, caption: String, sage: Boolean = false) {
     val colors = EchoTheme.colors
-    Row(horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s6), verticalAlignment = Alignment.CenterVertically) {
+    Row(horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5), verticalAlignment = Alignment.CenterVertically) {
         Box(
-            Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(if (sage) colors.surfaceSageSoft else colors.surfaceAccentSoft),
+            Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(if (sage) colors.surfaceSageSoft else colors.surfaceAccentSoft),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(painterResource(icon), null, tint = if (sage) colors.textSuccess else colors.textAccent, modifier = Modifier.size(22.dp))
+            Icon(painterResource(icon), null, tint = if (sage) colors.textSuccess else colors.textAccent, modifier = Modifier.size(18.dp))
         }
         Column {
-            Text(title, style = EchoTheme.typography.heading, color = colors.textPrimary)
+            Text(title, style = EchoTheme.typography.bodySm.copy(fontWeight = FontWeight.SemiBold), color = colors.textPrimary)
             Text(caption, style = EchoTheme.typography.caption, color = colors.textSecondary)
         }
     }
@@ -186,26 +219,26 @@ private fun PlanCard(plan: Plan, monthly: Plan?, selected: Boolean, enabled: Boo
             .background(if (selected) colors.surfaceRaised else colors.surfaceCard)
             .hairline(if (selected) colors.textAccent else colors.borderSubtle, cornerRadius = 18.dp, width = if (selected) 2.dp else 1.dp)
             .selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onSelect)
-            .padding(EchoTheme.spacing.s6),
-        horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5),
+            .padding(horizontal = EchoTheme.spacing.s5, vertical = EchoTheme.spacing.s4),
+        horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            Modifier.size(22.dp).clip(CircleShape).hairline(if (selected) colors.textAccent else colors.borderStrong, cornerRadius = 11.dp, width = 2.dp),
+            Modifier.size(18.dp).clip(CircleShape).hairline(if (selected) colors.textAccent else colors.borderStrong, cornerRadius = 9.dp, width = 2.dp),
             contentAlignment = Alignment.Center,
         ) {
-            if (selected) Box(Modifier.size(10.dp).clip(CircleShape).background(colors.textAccent))
+            if (selected) Box(Modifier.size(8.dp).clip(CircleShape).background(colors.textAccent))
         }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s2)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4), verticalAlignment = Alignment.CenterVertically) {
-                Text(title, style = EchoTheme.typography.heading, color = colors.textPrimary)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s1)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3), verticalAlignment = Alignment.CenterVertically) {
+                Text(title, style = EchoTheme.typography.bodySm.copy(fontWeight = FontWeight.SemiBold), color = colors.textPrimary)
                 saving?.let { EchoBadge("Save $it%", tone = BadgeTone.Success) }
             }
             Text(sub, style = EchoTheme.typography.caption, color = if (plan.trial != null && !plan.period.isLifetime()) colors.textAccent else colors.textSecondary)
         }
         Column(horizontalAlignment = Alignment.End) {
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s2)) {
-                Text(plan.localizedPrice, style = EchoTheme.typography.heading.copy(fontWeight = FontWeight.Bold), color = colors.textPrimary)
+                Text(plan.localizedPrice, style = EchoTheme.typography.body.copy(fontWeight = FontWeight.Bold), color = colors.textPrimary)
                 Text(unit, style = EchoTheme.typography.caption, color = colors.textSecondary)
             }
             struck?.let {

@@ -311,8 +311,12 @@ screen changes read as jank on device, so switching is a hard cut. Tab switches 
 to the start tab, so tapping it restored the stack and landed on the last tab. Cost: tab scroll position is not kept.
 `EchoApp` gates on `AppContainer.onboardingDone` outside the NavHost (see Onboarding below).
 
-Settings starts with Echo Pro, followed by Transcription, Notes, Appearance, and Storage & data. Speech and
-notes AI models use matching rows; their sheets expose selection and download actions.
+Settings follows the "Echo Settings" design canvas (https://claude.ai/artifact/Bj7HiPxSm7RvZcwLizABhB):
+an Echo Pro card (upsell when free, plan and renewal when Pro), then Transcription, Notes AI, Recordings,
+Task reminders, Appearance, Storage and data, and About. Speech and notes AI models use matching rows;
+their sheets expose selection and download actions. The Notifications switch mirrors Android's state and
+only opens the permission prompt or channel settings. The feedback address and privacy URL in
+`SettingsScreen.kt` are placeholders until published.
 Haptics and reduced motion still follow Android, without inactive Settings switches.
 
 ## Notes
@@ -322,6 +326,12 @@ Haptics and reduced motion still follow Android, without inactive Settings switc
   including device-protected storage. `allowBackup=false` is paired with legacy full-backup and
   Android 12+ extraction exclusions because some manufacturers transfer data despite that flag.
   Notes and audio leave through explicit Share/export only; there is no automatic restore on a new phone.
+- **Manual backup** (`data/Backup.kt`, Settings → Back up notes): one zip with a manifest, `echo.db`
+  (+ `-wal`) and `recordings/`. Models and preferences are left out. The database files are copied
+  inside an open write transaction, so no commit or checkpoint can tear the copy. Restore only stages the
+  zip under `files/restore/` (it refuses a newer schema and entries that escape the folder), stops
+  transcription and analysis work, and restarts the process. `Backup.applyStaged()` swaps the files in
+  before the driver opens, because the live connection can't be replaced under the repositories.
   Rules follow https://developer.android.com/identity/data/autobackup.
 - **Offline-first, no account.** Recording, playback, transcription, speaker detection and analysis
   run locally once their models are downloaded. Network traffic includes model downloads and

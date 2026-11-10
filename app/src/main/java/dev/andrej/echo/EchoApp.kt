@@ -391,8 +391,12 @@ private fun MainApp(
                         onReplayOnboarding = settingsViewModel.onReplayOnboarding,
                         onOpenDictionary = { navController.navigate(Routes.DICTIONARY) },
                         onOpenStorage = { navController.navigate(Routes.STORAGE) },
+                        onSaveBackup = settingsViewModel::saveBackup,
+                        onRestoreBackup = settingsViewModel::restoreBackup,
+                        onBackupStatusSeen = settingsViewModel::clearBackupStatus,
                         isPro = isPro,
                         activePlan = activePlan,
+                        renewsAt = renewsAt,
                         onUpgrade = { onUpgrade(null) },
                         onManageSubscription = {
                             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/account/subscriptions?package=${context.packageName}&sku=echo_pro")))

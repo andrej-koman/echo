@@ -75,8 +75,8 @@ fun NotesScreen(
                     onQueryChange = viewModel::search,
                     searchPlaceholder = "Search all notes…",
                     leading = { Mascot(size = 30.dp) },
+                    titleBadge = if (isPro) { { EchoBadge("Pro", tone = BadgeTone.Success) } } else null,
                     actions = {
-                        if (isPro) EchoBadge("Pro", tone = BadgeTone.Success)
                         EchoIconButton(
                             iconRes = R.drawable.ic_upload,
                             contentDescription = "Import audio",

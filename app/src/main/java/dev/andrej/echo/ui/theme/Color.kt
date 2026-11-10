@@ -108,6 +108,7 @@ data class EchoColors(
     val indicatorIdle: Color = Ink400,
     val controlTrack: Color = Ink400,
     val transcriptHighlight: Color = Sage200,
+    val taskHighlight: Color = Bronze400.copy(alpha = 0.16f),
     val skeleton: Color = Ink100,
 
     val statusSuccessBg: Color = Sage100,

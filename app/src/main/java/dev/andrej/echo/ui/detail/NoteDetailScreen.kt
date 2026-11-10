@@ -160,13 +160,6 @@ fun NoteDetailScreen(
     val sourceLinks = remember(segments, noteTasks, transcript?.text) {
         taskLinks(if (segments.isEmpty()) listOf(transcript?.text.orEmpty()) else segments.map { it.text }, noteTasks)
     }
-    val referenceColors = EchoTheme.colors.palette.take(4)
-    val taskColors = remember(sourceLinks, referenceColors) {
-        sourceLinks.flatMap { links -> links.sortedBy { it.start } }
-            .map { it.taskId }.distinct().mapIndexed { index, id ->
-                id to referenceColors[index % referenceColors.size].copy(alpha = 0.24f)
-            }.toMap()
-    }
     val openSourceTask: (String) -> Unit = { id ->
         focusedTaskId = id
         tab = NoteTab.Tasks
@@ -378,7 +371,6 @@ fun NoteDetailScreen(
                         },
                         onEdit = { onEditTask(it.id) },
                         focusedTaskId = focusedTaskId,
-                        taskColors = taskColors,
                     )
                     typed.isEmpty() -> item(key = "plain") {
                         Paragraph(
@@ -393,7 +385,6 @@ fun NoteDetailScreen(
                             live = typing,
                             taskLinks = taskLinks(listOf(transcript.text), noteTasks).single(),
                             onTaskClick = openSourceTask,
-                            taskColors = taskColors,
                         )
                     }
                     shown == NoteTab.FullText && !editing -> item(key = "p0") {
@@ -403,7 +394,6 @@ fun NoteDetailScreen(
                             current = current,
                             highlight = highlight,
                             live = typing,
-                            taskColors = taskColors,
                             onTaskClick = { reading.stop(); openSourceTask(it) },
                             onSegmentClick = { reading.stop(); player?.playFrom(segments[it].startMs) },
                             modifier = Modifier.padding(horizontal = EchoTheme.spacing.gutterScreen),
@@ -437,7 +427,6 @@ fun NoteDetailScreen(
                             edits = edits,
                             taskLinks = sourceLinks,
                             onTaskClick = openSourceTask,
-                            taskColors = taskColors,
                             onHeaderClick = { if (editable) speakerTarget = SpeakerTarget.Segments(run.toSet()) },
                             onLineClick = { i ->
                                 when {
@@ -629,7 +618,6 @@ private fun SpeakerRun(
     onLineLongClick: (Int) -> Unit,
     taskLinks: List<List<TaskTextLink>> = emptyList(),
     onTaskClick: (String) -> Unit = {},
-    taskColors: Map<String, Color> = emptyMap(),
 ) {
     val first = segments[run.first]
     val playing = current in run && !editing
@@ -656,7 +644,6 @@ private fun SpeakerRun(
                 current = if (current in run) current - run.first else -1,
                 highlight = highlight,
                 live = liveLine in run,
-                taskColors = taskColors,
                 onTaskClick = onTaskClick,
                 onSegmentClick = { onLineClick(run.first + it) },
                 onSegmentLongClick = { onLineLongClick(run.first + it) },
@@ -684,7 +671,6 @@ private fun LazyListScope.tasksTab(
     onPlay: (TodoItem) -> Unit,
     onEdit: (TodoItem) -> Unit,
     focusedTaskId: String?,
-    taskColors: Map<String, Color>,
 ) {
     if (tasks.isNotEmpty()) {
         items(tasks.size, key = { "task:${tasks[it].id}" }) { index ->
@@ -705,7 +691,7 @@ private fun LazyListScope.tasksTab(
                     .clip(shape)
                     .background(EchoTheme.colors.surfaceCard)
                     .background(
-                        if (task.id == focusedTaskId) taskColors[task.id] ?: EchoTheme.colors.transcriptHighlight
+                        if (task.id == focusedTaskId) EchoTheme.colors.taskHighlight
                         else Color.Transparent,
                     )
                     .border(Dp.Hairline, EchoTheme.colors.borderSubtle, shape)

@@ -64,6 +64,26 @@ fun taskSource(text: String, action: String, quote: String? = null, near: Int? =
     return TaskSource(chosen.first.first, chosen.first.last + 1, chosen.third)
 }
 
+private val phraseTime = Regex(
+    "\\b(?:day after tomorrow|tomorrow|today|tonight|(?:next |this |on )?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)" +
+        "|at\\s+(?:\\d|noon|midnight)|\\d{1,2}(?::\\d{2})?\\s*[ap]\\.?m\\b|all[ -]day)",
+    RegexOption.IGNORE_CASE,
+)
+
+private val phraseLeadIn = setOf("i", "me", "my", "and", "remind", "please")
+
+/** Drops lead-in filler ("I think that", "Then") so only the when and the action stay marked. */
+fun taskPhrase(text: String, source: TaskSource): IntRange {
+    val time = phraseTime.find(text.substring(source.start, source.actionStart))?.let { source.start + it.range.first }
+    val start = time ?: sourceWords.findAll(text.substring(source.start, source.actionStart)).toList().asReversed()
+        .takeWhile { it.value.lowercase(Locale.ROOT) in sourceFiller - phraseLeadIn }
+        .lastOrNull()?.let { source.start + it.range.first } ?: source.actionStart
+    var end = source.end
+    while (end > start && (text[end - 1].isWhitespace() || text[end - 1] in ".,!?;:")) end--
+    if (Regex("\\b[ap]\\.m$", RegexOption.IGNORE_CASE).containsMatchIn(text.substring(start, end))) end++
+    return start until end
+}
+
 data class TaskTextLink(val taskId: String, val start: Int, val end: Int)
 
 fun taskPlaybackOffset(task: TodoItem, segments: List<Segment>): Long? {
@@ -80,12 +100,12 @@ fun taskLinks(texts: List<String>, tasks: List<TodoItem>): List<List<TaskTextLin
     val text = trimmed.joinToString(" ")
     val starts = trimmed.runningFold(0) { at, line -> at + line.length + 1 }
     val links = tasks.mapNotNull { task ->
-        taskSource(text, task.text, task.sourceQuote)?.let { task.id to it }
+        taskSource(text, task.text, task.sourceQuote)?.let { task.id to taskPhrase(text, it) }
     }
     return trimmed.mapIndexed { i, line ->
         links.mapNotNull { (id, source) ->
-            val start = maxOf(source.start, starts[i]) - starts[i]
-            val end = minOf(source.end, starts[i] + line.length) - starts[i]
+            val start = maxOf(source.first, starts[i]) - starts[i]
+            val end = minOf(source.last + 1, starts[i] + line.length) - starts[i]
             if (start < end) TaskTextLink(id, start, end) else null
         }
     }

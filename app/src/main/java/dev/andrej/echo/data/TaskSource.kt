@@ -86,14 +86,6 @@ fun taskPhrase(text: String, source: TaskSource): IntRange {
 
 data class TaskTextLink(val taskId: String, val start: Int, val end: Int)
 
-fun taskPlaybackOffset(task: TodoItem, segments: List<Segment>): Long? {
-    val lines = segments.map { it.text.trim() }
-    val starts = lines.runningFold(0) { at, line -> at + line.length + 1 }
-    val near = segments.indexOfFirst { it.startMs == task.sourceOffsetMs }.takeIf { it >= 0 }?.let { starts[it] }
-    val source = taskSource(lines.joinToString(" "), task.text, task.sourceQuote, near) ?: return null
-    return segments.indices.lastOrNull { starts[it] <= source.actionStart }?.let { segments[it].startMs }
-}
-
 /** Offsets are relative to the trimmed segment rendered by the UI. */
 fun taskLinks(texts: List<String>, tasks: List<TodoItem>): List<List<TaskTextLink>> {
     val trimmed = texts.map { it.trim() }

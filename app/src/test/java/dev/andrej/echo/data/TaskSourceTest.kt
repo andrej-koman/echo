@@ -51,11 +51,9 @@ class TaskSourceTest {
         assertEquals(2, source.start)
     }
 
-    @Test fun `renaming a task keeps its unchanged source quotation and audio reference`() {
+    @Test fun `renaming a task keeps its unchanged source quotation`() {
         val task = task().copy(text = "Discuss the budget.", sourceQuote = "Call Alex tomorrow.", sourceOffsetMs = 1000)
         assertEquals(1, taskLinks(listOf("Call Alex tomorrow."), listOf(task)).single().size)
-        assertEquals(1000L, taskPlaybackOffset(task, listOf(Segment(1000, 2000, "Call Alex tomorrow."))))
-        assertNull(taskPlaybackOffset(task, listOf(Segment(1000, 2000, "Different words."))))
     }
 
     private fun task() = TodoItem("task", "note", "Call Alex.", 0, false, createdAt = 0)

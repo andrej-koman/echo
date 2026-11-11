@@ -36,6 +36,7 @@ import dev.andrej.echo.ui.calendarDaysBetween
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.flow.first
 
 enum class PendingSeverity { Parked, Failed }
 
@@ -222,6 +223,12 @@ class NotesViewModel(
         viewModelScope.launch {
             val index = speaker ?: repository.addSpeaker(transcriptId)
             repository.editSegments(transcriptId, rewrite(index))
+        }
+    }
+
+    fun transcriptText(transcriptId: String, onText: (String) -> Unit) {
+        viewModelScope.launch {
+            repository.transcripts.first().firstOrNull { it.id == transcriptId }?.let { onText(it.text) }
         }
     }
 

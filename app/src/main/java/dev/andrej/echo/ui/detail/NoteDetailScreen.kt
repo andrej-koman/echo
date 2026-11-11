@@ -60,7 +60,6 @@ import dev.andrej.echo.data.Speaker
 import dev.andrej.echo.data.TodoItem
 import dev.andrej.echo.data.TaskTextLink
 import dev.andrej.echo.data.taskLinks
-import dev.andrej.echo.data.taskPlaybackOffset
 import dev.andrej.echo.export.ExportFormat
 import dev.andrej.echo.export.ExportNote
 import dev.andrej.echo.export.canExport
@@ -366,9 +365,6 @@ fun NoteDetailScreen(
                         tasks = noteTasks,
                         analyzed = transcript.analyzedAt != null,
                         onToggle = { viewModel.setTaskDone(it.id, !it.done) },
-                        onPlay = { task ->
-                            taskPlaybackOffset(task, segments)?.let { player?.playFrom(it) }
-                        },
                         onEdit = { onEditTask(it.id) },
                         focusedTaskId = focusedTaskId,
                     )
@@ -462,7 +458,12 @@ fun NoteDetailScreen(
             }
             val barHeight = LocalBottomBarHeight.current
             val onBar = playable != null || status != null
-            Spacer(Modifier.height(if (onBar && !recording) (barHeight - PlayRowOverlap).coerceAtLeast(0.dp) else barHeight))
+            Spacer(
+                Modifier
+                    .fillMaxWidth()
+                    .height(if (onBar && !recording) (barHeight - PlayRowOverlap).coerceAtLeast(0.dp) else barHeight)
+                    .then(if (onBar) Modifier.background(EchoTheme.colors.surfaceBar) else Modifier),
+            )
         }
 
         if (transcript != null) {
@@ -668,7 +669,6 @@ private fun LazyListScope.tasksTab(
     tasks: List<TodoItem>,
     analyzed: Boolean,
     onToggle: (TodoItem) -> Unit,
-    onPlay: (TodoItem) -> Unit,
     onEdit: (TodoItem) -> Unit,
     focusedTaskId: String?,
 ) {
@@ -705,8 +705,7 @@ private fun LazyListScope.tasksTab(
                 TaskRow(
                     task = task,
                     onToggle = { onToggle(task) },
-                    onEdit = { onPlay(task) },
-                    onLongPress = { onEdit(task) },
+                    onEdit = { onEdit(task) },
                     showDate = task.hasDate,
                     overdue = isOverdue(task, System.currentTimeMillis(), ZoneId.systemDefault()),
                 )
@@ -1009,7 +1008,7 @@ private val exportDate = SimpleDateFormat("d MMM yyyy, HH:mm", Locale.getDefault
 
 private fun megabytes(bytes: Long) = "%.1f MB".format(bytes / 1_000_000.0)
 
-private fun Context.copyToClipboard(text: String) {
+internal fun Context.copyToClipboard(text: String) {
     val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     clipboard.setPrimaryClip(ClipData.newPlainText("Echo transcript", text))
 }

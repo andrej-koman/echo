@@ -98,6 +98,12 @@ import java.util.Locale
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import java.time.ZoneId
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import dev.andrej.echo.ui.profile.displayLanguage
+import dev.andrej.echo.ui.profile.LanguageOption
+import dev.andrej.echo.ui.components.PickerSheet
+import androidx.compose.runtime.produceState
 
 private enum class NoteTab(val label: String, val icon: Int) {
     BySpeaker("By speaker", R.drawable.ic_users),
@@ -105,7 +111,7 @@ private enum class NoteTab(val label: String, val icon: Int) {
     Tasks("Tasks", R.drawable.ic_list_checks),
 }
 
-private enum class NoteSheet { More, Rename, Delete, Share, Folder }
+private enum class NoteSheet { More, Rename, Delete, Share, Folder, Language, ConfirmLanguage }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -147,6 +153,10 @@ fun NoteDetailScreen(
     // Null until the note has loaded; tells "Full text just appeared" from "was always there".
     var wasTranscribed by remember(noteId) { mutableStateOf<Boolean?>(null) }
     var sheet by remember { mutableStateOf<NoteSheet?>(null) }
+    var chosenLanguage by remember(noteId) { mutableStateOf("") }
+    val languages by produceState(emptyList<LanguageOption>(), sheet == NoteSheet.Language) {
+        if (sheet == NoteSheet.Language && value.isEmpty()) value = withContext(Dispatchers.Default) { viewModel.languageOptions() }
+    }
     var finding by remember { mutableStateOf(false) }
     var findQuery by remember { mutableStateOf("") }
     var replacement by remember { mutableStateOf("") }
@@ -272,7 +282,7 @@ fun NoteDetailScreen(
                         verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3),
                     ) {
                         Text(
-                            text = transcript.title ?: title(transcript.text),
+                            text = transcript.title ?: title(transcript.text, transcript.createdAt),
                             style = EchoTheme.typography.title,
                             color = EchoTheme.colors.textPrimary,
                         )
@@ -473,7 +483,7 @@ fun NoteDetailScreen(
             DetailSheets(
                 sheet = sheet,
                 onSheet = { sheet = it },
-                title = transcript.title ?: title(transcript.text),
+                title = transcript.title ?: title(transcript.text, transcript.createdAt),
                 subtitle = listOfNotNull(
                     dateLabel(transcript.createdAt, System.currentTimeMillis()),
                     clock(transcript.durationMs),
@@ -498,7 +508,7 @@ fun NoteDetailScreen(
                         return@DetailSheets
                     }
                     val note = ExportNote(
-                        title = transcript.title ?: title(transcript.text),
+                        title = transcript.title ?: title(transcript.text, transcript.createdAt),
                         date = exportDate.format(Date(transcript.createdAt)),
                         text = transcript.text,
                         segments = segments,
@@ -508,6 +518,16 @@ fun NoteDetailScreen(
                     )
                     scope.launch { Exporter(context).share(format, note, exportOptions, audio) }
                 },
+                language = transcript.languageOverride ?: transcript.language.ifEmpty { viewModel.defaultLanguage() },
+                languages = languages,
+                languageBlocked = when {
+                    noteId in transcribing -> "Available once transcription finishes"
+                    audio == null -> "This note has no audio to transcribe again"
+                    else -> null
+                },
+                chosenLanguage = chosenLanguage,
+                onChooseLanguage = { chosenLanguage = it },
+                onRetranscribe = { viewModel.retranscribe(noteId, chosenLanguage) },
                 onMove = { viewModel.moveToFolder(noteId, it) },
                 onRename = { viewModel.rename(noteId, it) },
                 onAnalyze = { viewModel.analyze(noteId) },
@@ -853,6 +873,12 @@ private fun DetailSheets(
     onShare: (ExportFormat) -> Unit,
     isPro: Boolean,
     onUpgrade: () -> Unit,
+    language: String,
+    languages: List<LanguageOption>,
+    languageBlocked: String?,
+    chosenLanguage: String,
+    onChooseLanguage: (String) -> Unit,
+    onRetranscribe: () -> Unit,
     onMove: (String?) -> Unit,
     onRename: (String) -> Unit,
     onAnalyze: () -> Unit,
@@ -873,6 +899,14 @@ private fun DetailSheets(
             onClick = { onSheet(NoteSheet.Folder) },
         )
         ActionRow(
+            icon = R.drawable.ic_languages,
+            label = "Language",
+            description = languageBlocked,
+            trailing = languageName(language),
+            enabled = languageBlocked == null,
+            onClick = { onSheet(NoteSheet.Language) },
+        )
+        ActionRow(
             icon = R.drawable.ic_copy,
             label = "Copy text",
             description = "Copies the full transcript",
@@ -887,7 +921,7 @@ private fun DetailSheets(
             description = when {
                 analyzing -> "Echo is reading this note now"
                 !canAnalyze -> "Available once transcription finishes"
-                else -> "Replaces the current ones"
+                else -> "Replaces tasks you haven't touched"
             },
             enabled = canAnalyze && !analyzing,
             onClick = {
@@ -920,6 +954,33 @@ private fun DetailSheets(
         onConfirm = {
             dismiss()
             onDelete()
+        },
+        onDismiss = dismiss,
+    )
+    PickerSheet(
+        visible = sheet == NoteSheet.Language,
+        title = "Language",
+        options = languages.map { "${it.flag} ${it.label}" to it.code },
+        selected = language,
+        dividerBefore = { code -> languages.firstOrNull { it.code == code }?.dividerBefore == true },
+        onPick = {
+            if (it == language) dismiss()
+            else {
+                onChooseLanguage(it)
+                onSheet(NoteSheet.ConfirmLanguage)
+            }
+        },
+        onDismiss = dismiss,
+    )
+    ConfirmSheet(
+        visible = sheet == NoteSheet.ConfirmLanguage,
+        title = if (chosenLanguage.isEmpty()) "Transcribe again with auto-detect?" else "Transcribe again in ${displayLanguage(chosenLanguage)}?",
+        message = "The transcript, including your edits, is replaced. The summary is redone; speaker names and tasks you've checked or edited stay.",
+        confirmLabel = "Transcribe again",
+        destructive = false,
+        onConfirm = {
+            dismiss()
+            onRetranscribe()
         },
         onDismiss = dismiss,
     )
@@ -1039,3 +1100,5 @@ internal fun FullTextLine(
         }
     }
 }
+
+private fun languageName(code: String): String = if (code.isEmpty()) "Auto-detect" else displayLanguage(code)

@@ -150,12 +150,14 @@ class Transcriptions(
     val started: SharedFlow<String> = _started
 
     /** A blank [title] leaves the note to be named after its file, then by analysis. */
-    fun accept(file: ImportFile, createdAt: Long, title: String?, always: ImportDay?) {
+    /** [language] is this note's Whisper code, empty for auto-detect; null follows Settings. */
+    fun accept(file: ImportFile, createdAt: Long, title: String?, always: ImportDay?, language: String? = null) {
         if (always != null) settings.importDay = always
         _offered.update { it - file }
         // With several files, the sheet asks about the next; only the last one opens.
         val open = _offered.value.isEmpty()
-        scope.launch { importOne(file, createdAt, title?.trim()?.ifBlank { null }, open) }
+        val override = language?.takeIf { it != settings.transcriptionLanguage.orEmpty() }
+        scope.launch { importOne(file, createdAt, title?.trim()?.ifBlank { null }, open, override) }
     }
 
     fun decline(file: ImportFile) = _offered.update { it - file }
@@ -188,7 +190,7 @@ class Transcriptions(
         ImportFile(uri, name ?: "Audio", size, durationMs, tagged ?: modified?.takeIf { it > 0 })
     }
 
-    private suspend fun importOne(file: ImportFile, createdAt: Long, title: String?, open: Boolean) {
+    private suspend fun importOne(file: ImportFile, createdAt: Long, title: String?, open: Boolean, language: String?) {
         val id = UUID.randomUUID().toString()
         val importDir = dirFor(id).apply { mkdirs() }
         File(importDir, PENDING).writeText("import")
@@ -200,6 +202,7 @@ class Transcriptions(
             createdAt = createdAt,
             title = title ?: file.name.substringBeforeLast('.').ifBlank { null },
             titleByUser = title != null,
+            languageOverride = language,
         )
         copying.update { it + transcript.id }
         if (open) _started.tryEmit(transcript.id)
@@ -279,6 +282,30 @@ class Transcriptions(
         }
     }
 
+    /**
+     * Transcribes [id] again from its kept audio in [language] (empty for auto-detect). Speaker
+     * names survive: diarizing the same audio finds the same voices. A capped note stays capped.
+     */
+    fun retranscribe(id: String, language: String) {
+        val dir = dirFor(id)
+        if (!File(dir, SOURCE).isFile && !File(dir, PCM).isFile) return
+        scope.launch {
+            val status = status.first()[id]
+            if (status != null && status != TranscriptionStatus.Failed) return@launch
+            val note = repository.transcripts.first().firstOrNull { it.id == id } ?: return@launch
+            analysis.cancelAndAwait(id)
+            repository.setLanguageOverride(id, language)
+            // Otherwise the run would keep the capped prefix, still in the old language.
+            repository.setTranscribedUntil(id, null)
+            withContext(Dispatchers.IO) {
+                File(dir, RETRANSCRIBE).writeText(if (note.analyzedAt != null) REANALYZE else "")
+            }
+            enqueue(id, restart = true)
+        }
+    }
+
+    private fun retranscribing(id: String) = File(dirFor(id), RETRANSCRIBE).isFile
+
     fun discard(id: String) {
         analysis.cancel(id)
         interruptedImports.update { it - id }
@@ -340,10 +367,11 @@ class Transcriptions(
                 val heard = _live.value?.takeIf { it.id == id }?.segments
                 if (transcript != null && heard != null) {
                     repository.setTranscription(id, transcriptText(heard), transcript.language, transcript.durationMs, heard,
-                        preserveSpeakers = unlock || transcript.transcribedUntilMs != null)
+                        preserveSpeakers = unlock || transcript.transcribedUntilMs != null || retranscribing(id))
                 }
                 File(dirFor(id), SPEECH_COMPLETE).createNewFile()
                 File(dirFor(id), PENDING).delete()
+                File(dirFor(id), RETRANSCRIBE).delete()
                 try {
                     finishAudio(id)
                 } catch (e: CancellationException) {
@@ -422,15 +450,16 @@ class Transcriptions(
         val prefix = if (note?.transcribedUntilMs != null) savedSegments.takeWhile { it.startMs < note.transcribedUntilMs }
             else if (continuingUnlock) savedSegments else emptyList()
         val existingSpeakers = if (preservingPrefix) repository.speakers(id).first() else emptyList()
+        val keepSpeakers = preservingPrefix || retranscribing(id)
         val resumed = resumeChunk(checkpoint.chunk(), note, savedSegments, preserveCompleted = continuingUnlock)
         val segments = resumed?.segments?.toMutableList() ?: mutableListOf()
         if (resumed != null) {
             repository.setTranscription(id, transcriptText(segments), resumed.language, durationMs, segments,
-                preserveSpeakers = preservingPrefix)
+                preserveSpeakers = keepSpeakers)
             _live.value = LiveTranscript(id, segments.toList())
         }
         var firstSegmentLogged = false
-        var language: String? = resumed?.language ?: settings.transcriptionLanguage
+        var language: String? = resumed?.language ?: requestedLanguage(note?.languageOverride, settings.transcriptionLanguage)
         val prompt = whisperPrompt(dictionary.all().map { it.term })
         // The LLM is closed first: both models at once had the low-memory killer take the app.
         modelSlot.whisper { coroutineScope {
@@ -484,7 +513,7 @@ class Transcriptions(
                         start += length
                         checkpoint.saveChunk(start, language.orEmpty(), segments)
                         repository.setTranscription(id, transcriptText(segments), language.orEmpty(), durationMs, segments,
-                            preserveSpeakers = preservingPrefix)
+                            preserveSpeakers = keepSpeakers)
                         Log.i(LOG_TAG, "$id: chunk to ${start / SAMPLE_RATE} s done at ${elapsed()} ms")
                     }
                 }
@@ -507,7 +536,7 @@ class Transcriptions(
                         detected, prefix, (existingSpeakers.maxOfOrNull { it.index } ?: -1) + 1,
                     ) else detected
                     val speakerCount = maxOf(count, (assigned.mapNotNull { it.speaker }.maxOrNull() ?: -1) + 1)
-                    repository.setSpeakers(id, assigned, speakerCount, preserveExisting = preservingPrefix)
+                    repository.setSpeakers(id, assigned, speakerCount, preserveExisting = keepSpeakers)
                 }
             }
         } }
@@ -522,8 +551,12 @@ class Transcriptions(
         }, finalize = {
         finishAudio(id)
 
+        // A note that had a summary gets a new one in its new language, whatever autoAnalyze says.
+        val marker = withContext(Dispatchers.IO) { File(dir, RETRANSCRIBE).takeIf { it.isFile }?.readText() }
+        if (marker != null) repository.invalidateAnalysis(id)
+        val reanalyze = marker == REANALYZE
         val transcript = repository.transcripts.first().firstOrNull { it.id == id }
-        if (transcript != null && id !in stops.value && settings.autoAnalyze && transcript.text.isNotBlank()) {
+        if (transcript != null && id !in stops.value && (settings.autoAnalyze || reanalyze) && transcript.text.isNotBlank()) {
             analysis.allow(id)
             analysisQueue.enqueue(id)
             // Stop can arrive while the queue write is suspended.
@@ -548,6 +581,7 @@ class Transcriptions(
         }
         })
         File(dir, PENDING).delete()
+        File(dir, RETRANSCRIBE).delete()
     }
 
     /** Finalize playback after completion or a user stop, once native readers have returned. */
@@ -601,6 +635,8 @@ class Transcriptions(
         private const val PCM = "audio.pcm"
         private const val PENDING = "transcription-pending"
         private const val SPEECH_COMPLETE = "speech-complete"
+        private const val RETRANSCRIBE = "retranscribe"
+        private const val REANALYZE = "reanalyze"
         private const val DECODE_SHARE = 0.05f
         private const val KEY_PHASE = "phase"
         private const val KEY_FRACTION = "fraction"
@@ -640,3 +676,7 @@ internal fun parseMediaDate(value: String, zone: java.time.ZoneId = java.time.Zo
         .getOrNull() ?: return null
     return time.atZone(if (value.trim().endsWith("Z")) java.time.ZoneOffset.UTC else zone).toInstant().toEpochMilli()
 }
+
+/** Whisper's language for a note: its own choice when it made one ("" auto-detects), else Settings'. */
+internal fun requestedLanguage(override: String?, global: String?): String? =
+    if (override != null) override.ifEmpty { null } else global

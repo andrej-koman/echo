@@ -268,7 +268,7 @@ fun EditTaskScreen(
                         }
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = transcript.title ?: title(transcript.text),
+                                text = transcript.title ?: title(transcript.text, transcript.createdAt),
                                 style = EchoTheme.typography.bodySm,
                                 color = EchoTheme.colors.textPrimary,
                             )

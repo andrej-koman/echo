@@ -56,8 +56,10 @@ class SqlDerivedRepository(
     private fun replaceItems(transcriptId: String, items: List<NewTodo>, createdAt: Long) {
         val before = queries.selectFor(transcriptId, ::TodoItem).executeAsList().associateBy { it.id }
         val savedAt = now()
-        queries.deleteFor(transcriptId)
-        items.distinctBy { derivedId(transcriptId, it.text) }.forEach { newTodo ->
+        // A task the user acted on is theirs now; only untouched AI tasks are redone.
+        val kept = before.values.filter { it.touched }.mapTo(HashSet()) { it.id }
+        queries.deleteUntouchedFor(transcriptId)
+        items.distinctBy { derivedId(transcriptId, it.text) }.filter { derivedId(transcriptId, it.text) !in kept }.forEach { newTodo ->
             val id = derivedId(transcriptId, newTodo.text)
             val old = before[id]
             val changed = old == null || scheduleChanged(old, newTodo.dueAt, newTodo.hasTime, newTodo.hasDate)
@@ -78,6 +80,7 @@ class SqlDerivedRepository(
                     reminderDate = if (changed) reminder?.date else old.reminderDate,
                     reminderDelivered = if (changed) false else old.reminderDelivered,
                     sourceQuote = newTodo.sourceQuote ?: old?.sourceQuote,
+                    touched = false,
                 ),
             )
         }

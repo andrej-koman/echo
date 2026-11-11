@@ -138,3 +138,16 @@ val QWEN3_0_6B_INT4 = ModelSpec(
     fileName = "Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
     bytes = 329_000_000,
 )
+
+/**
+ * Apache-2.0, ungated. Gemma covers ~140 languages; Qwen3 1.7B reads Slovenian but writes it
+ * badly. Text-only use memory-maps the embeddings, so it fits beside the app's other models.
+ * Pinned like the Qwen files, so a template rewrite upstream can't break it.
+ */
+val GEMMA4_E2B = ModelSpec(
+    url = "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/" +
+        "2d74ac41a33d7da82f39f7d5720a04c68514a103/" +
+        "gemma-4-E2B-it.litertlm",
+    fileName = "gemma-4-E2B-it.litertlm",
+    bytes = 2_588_147_712,
+)

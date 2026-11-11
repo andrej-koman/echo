@@ -18,6 +18,7 @@ data class TodoItem(
     val reminderDate: String? = null,
     val reminderDelivered: Boolean = false,
     val sourceQuote: String? = null,
+    val touched: Boolean = false,
 )
 
 /** What the analyzer produces, before the repository gives it an id. */
@@ -28,4 +29,6 @@ data class NewTodo(
     val hasDate: Boolean,
     val sourceOffsetMs: Long? = null,
     val sourceQuote: String? = null,
+    /** The model's English rendering of the stated time, for grounding a note in any language. */
+    val whenEn: String? = null,
 )

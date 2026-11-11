@@ -32,6 +32,22 @@ class SqlDerivedRepositoryTest {
     }
 
     @Test
+    fun `re-analysis keeps tasks the user touched and replaces the rest`() = runTest {
+        val repository = repository()
+        repository.replaceFor("t1", listOf(item("Kupi mleko"), item("Pokliči mamo"), item("Plačaj račun"), item("Untouched")))
+        val byText = repository.items.first().associateBy { it.text }
+        repository.setDone(byText.getValue("Kupi mleko").id, true)
+        repository.update(byText.getValue("Pokliči mamo").id, "Pokliči mamo zvečer", 1_000L, hasTime = false, hasDate = true)
+        repository.snooze(byText.getValue("Plačaj račun").id)
+
+        repository.replaceFor("t1", listOf(item("Buy milk"), item("Kupi mleko")))
+
+        val texts = repository.items.first().map { it.text }.toSet()
+        assertEquals(setOf("Kupi mleko", "Pokliči mamo zvečer", "Plačaj račun", "Buy milk"), texts)
+        assertTrue(repository.items.first().single { it.text == "Kupi mleko" }.done)
+    }
+
+    @Test
     fun `analysis for a missing transcript creates no tasks or queue writes`() = runTest {
         val database = testDatabase()
         val repository = SqlDerivedRepository(database)

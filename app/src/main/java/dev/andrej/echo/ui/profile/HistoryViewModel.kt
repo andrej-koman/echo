@@ -138,7 +138,7 @@ internal fun buildHistoryState(
             HistoryDetailRow(
                 id = transcript.id,
                 time = timeFormat.format(Instant.ofEpochMilli(transcript.createdAt).atZone(zone)),
-                title = transcript.title ?: title(transcript.text),
+                title = transcript.title ?: title(transcript.text, transcript.createdAt),
                 taskCount = taskCounts[transcript.id] ?: 0,
             )
         }
@@ -156,7 +156,7 @@ internal fun buildHistoryState(
         selectedDayLabel = if (selected == today) "Today, ${DateTimeFormatter.ofPattern("d MMMM").format(selected)}" else dayDetailFormat.format(selected),
         selectedDetail = selectedDetail,
         selectedTasks = tasksByDay[selected].orEmpty().sortedWith(compareBy({ it.done }, { !it.hasTime }, { it.dueAt })),
-        noteTitles = transcripts.associate { it.id to (it.title ?: title(it.text)) },
+        noteTitles = transcripts.associate { it.id to (it.title ?: title(it.text, it.createdAt)) },
         canGoNext = true,
         weekDays = (0..6).map { offset ->
             val date = selected.minusDays((selected.dayOfWeek.value - 1).toLong()).plusDays(offset.toLong())

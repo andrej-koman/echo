@@ -8,7 +8,7 @@ interface DerivedRepository {
     /** Soonest first; within a day, timed items before date-only ones. */
     val items: Flow<List<TodoItem>>
 
-    /** Replaces whatever the given transcript produced before, so re-analysis does not duplicate. */
+    /** Replaces the given transcript's untouched tasks, keeping ones the user checked, edited or snoozed. */
     suspend fun replaceFor(
         transcriptId: String,
         items: List<NewTodo>,

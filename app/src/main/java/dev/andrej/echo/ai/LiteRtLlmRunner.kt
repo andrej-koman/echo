@@ -24,9 +24,13 @@ class LiteRtLlmRunner(
     private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : LlmRunner {
 
+    private val model = NotesAiModel.entries.firstOrNull { it.spec.fileName == store.spec.fileName }
+
     override val modelName: String
-        get() = NotesAiModel.entries.firstOrNull { it.spec.fileName == store.spec.fileName }?.title
-            ?: store.spec.fileName
+        get() = model?.title ?: store.spec.fileName
+
+    override val writesNoteLanguage: Boolean
+        get() = model?.writesNoteLanguage == true
 
     // Only touched inside the slot, which also keeps analysis to one conversation at a time
     // on the one engine.

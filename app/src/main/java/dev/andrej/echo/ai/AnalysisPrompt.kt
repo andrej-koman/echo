@@ -5,6 +5,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -17,10 +18,30 @@ data class Analysis(
 
 data class NoteSummary(val title: String?, val summary: String?)
 
+/** English name of a Whisper language code, for telling the model; null when unknown. */
+internal fun languageName(code: String?): String? {
+    if (code.isNullOrBlank()) return null
+    val name = Locale.forLanguageTag(code).getDisplayLanguage(Locale.ENGLISH)
+    return name.takeIf { it.isNotBlank() && !it.equals(code, ignoreCase = true) }
+}
+
+/**
+ * True for a note the analysis reads in its own language but answers in English. Qwen3 1.7B
+ * reads Slovenian well but writes it badly: asked for Slovenian it copied the transcript as its
+ * summary and every sentence as a task, and its translations back were nonsense. Its English
+ * answers for the same note were accurate.
+ */
+internal fun answersInEnglish(language: String?): Boolean = !language.isNullOrBlank() && language != "en"
+
+private fun inLanguage(code: String?): String = when {
+    code == "en" -> "in English"
+    else -> languageName(code)?.let { "in $it, the language of the note; never translate it" } ?: "in the language the speaker used"
+}
+
 private val promptDate = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 private val promptTime = DateTimeFormatter.ofPattern("HH:mm")
 
-fun buildSummaryPrompt(text: String): String = """
+fun buildSummaryPrompt(text: String, language: String? = null): String = """
     Summarize this voice note. Reply with JSON only, both keys always present:
 
     {"title":"...","summary":"..."}
@@ -29,15 +50,13 @@ fun buildSummaryPrompt(text: String): String = """
     Do not invent or assume any topic, event, person, object, or action. The example shows the
     format and style only: never use its details unless the voice note itself states them.
 
-    title: what the note is about, at most 6 words.
+    title: what the note is about, at most 6 words, ${inLanguage(language)}.
 
-    summary: the gist, in the language the speaker used. One or two sentences for a short note;
+    summary: the gist, ${inLanguage(language)}. One or two sentences for a short note;
     for a long one, a short paragraph or a few "- " bullet points. Write it as the speaker's own
     note, never as a report about it: no "The speaker…", "Tells…", "Describes…", "Mentions…".
 
-    Example. Voice note: "ok so the tap in the kitchen is dripping again, I need to call the
-    plumber, probably tomorrow, and I should check if we still have spare washers"
-    {"title":"Dripping kitchen tap","summary":"The kitchen tap is dripping again. Call the plumber tomorrow and check for spare washers."}
+    $SUMMARY_EXAMPLE
 
     Voice note:
     ""${'"'}
@@ -45,8 +64,15 @@ fun buildSummaryPrompt(text: String): String = """
     ""${'"'}
 """.trimIndent()
 
+/**
+ * English only, whatever the note's language: given a Slovenian example, the 1.7B model put the
+ * example's dripping tap into a Slovenian note's title and summary.
+ */
+private const val SUMMARY_EXAMPLE = """Example. Voice note: "ok so the tap in the kitchen is dripping again, I need to call the plumber, probably tomorrow, and I should check if we still have spare washers"
+    {"title":"Dripping kitchen tap","summary":"The kitchen tap is dripping again. Call the plumber tomorrow and check for spare washers."}"""
+
 /** A long note is summarized part by part; this folds the parts' summaries into one. */
-fun buildMergePrompt(parts: List<NoteSummary>): String = """
+fun buildMergePrompt(parts: List<NoteSummary>, language: String? = null): String = """
     These are summaries of consecutive parts of one long voice note. Combine them into a single
     summary of the whole note. Reply with JSON only, both keys always present:
 
@@ -55,10 +81,10 @@ fun buildMergePrompt(parts: List<NoteSummary>): String = """
     Use only information explicitly stated in the parts below for both title and summary.
     Do not invent or assume any topic, event, person, object, or action, or add missing details.
 
-    title: what the whole note is about, at most 6 words.
+    title: what the whole note is about, at most 6 words, ${inLanguage(language)}.
 
-    summary: a short paragraph or a few "- " bullet points covering every part, in the language
-    the parts are written in. Written as the speaker's own note, never as a report about it: no
+    summary: a short paragraph or a few "- " bullet points covering every part,
+    ${inLanguage(language)}. Written as the speaker's own note, never as a report about it: no
     "The speaker…", "Tells…", "Describes…".
 
     ${parts.mapIndexed { i, part -> "Part ${i + 1}: ${part.title.orEmpty()}\n${part.summary.orEmpty()}" }.joinToString("\n\n")}
@@ -68,9 +94,10 @@ fun buildMergePrompt(parts: List<NoteSummary>): String = """
  * A yes/no asked before the tasks prompt: told in words not to list steps someone explains, the
  * 1.7B model listed every step of a how-to video as a task anyway.
  */
-fun buildIntentPrompt(text: String): String = """
+fun buildIntentPrompt(text: String, language: String? = null): String = """
     Decide whether this voice note contains the speaker's own intended actions or obligations.
-    "I have to", "I need to", "I will", appointments, errands, and requests for reminders count
+    The note may be in any language; judge what it means, not which words it uses.
+    "I have to", "I need to", "I will", "I want to", "I'd like to", appointments, errands, and requests for reminders count
     as plans, even if the speaker never says the word "plan". If at least one such action is
     present, answer true. Instructions teaching someone else, past events, and general discussion
     without a personal action are false. Reply with JSON only: {"plans":true} or {"plans":false}.
@@ -78,6 +105,7 @@ fun buildIntentPrompt(text: String): String = """
     Examples:
     "Tomorrow I have to visit the dentist at 9 and pick up groceries at 11." -> {"plans":true}
     "I need to call Alex." -> {"plans":true}
+    "So tomorrow at ten I want to go to the doctor." -> {"plans":true}
     "Remind me to water the plants." -> {"plans":true}
     "To install the game, download Steam and click Install." -> {"plans":false}
     "Yesterday I went shopping." -> {"plans":false}
@@ -98,7 +126,17 @@ fun buildIntentPrompt(text: String): String = """
  * duration ("in 20 minutes") has nothing to add to, so the model guesses; it was seen inventing
  * `02:20` for a note recorded at 11am.
  */
-fun buildTasksPrompt(lines: List<IndexedValue<String>>, now: LocalDateTime): String = """
+/** [language] is the note's; [answerIn] the language the task text is written in. */
+fun buildTasksPrompt(
+    lines: List<IndexedValue<String>>,
+    now: LocalDateTime,
+    language: String? = null,
+    answerIn: String? = language,
+): String {
+    // An English note's own words already feed the English time rules.
+    val spoken = !language.isNullOrBlank() && language != "en"
+    fun whenEn(value: String?) = if (!spoken) "" else ",\"when_en\":" + (value?.let { "\"$it\"" } ?: "null")
+    return """
     Today is ${promptDate.format(now)}, the current time is ${promptTime.format(now)}. List the
     tasks in this voice note: things the speaker says they themselves will do or want to be
     reminded of, one per stated intention. Steps the speaker explains or teaches to others
@@ -107,10 +145,10 @@ fun buildTasksPrompt(lines: List<IndexedValue<String>>, now: LocalDateTime): Str
     List each task once. A shared date such as "tomorrow" applies to all the following actions
     in the same plan unless the speaker states a different date. Reply with JSON only:
 
-    {"items":[{"text":"...","source":"exact words from the note","due":"ISO date, ISO datetime, or null","due_relative_minutes":123 or null,"line":0}]}
+    {"items":[{"text":"...","source":"exact words from the note","due":"ISO date, ISO datetime, or null","due_relative_minutes":123 or null,"line":0${whenEn("the stated time in English")}}]}
 
-    text: the action itself, imperative, no time attached, in the language the speaker used.
-    It names what to do, never only when: "Tomorrow at 10 a.m." is a due, not a text. For an
+    text: the action itself, a short imperative command with no time attached,
+    ${inLanguage(answerIn)}. Rewrite it; never copy the spoken sentence. It names what to do, never only when: "Tomorrow at 10 a.m." is a due, not a text. For an
     appointment or a reminder, the text is the thing to do or attend ("Go to the vet."), not
     the word "reminder". Use sentence case: start with a capital letter, preserve proper names,
     and use correct punctuation including a final period. Example: "Go to the barber shop."
@@ -120,23 +158,20 @@ fun buildTasksPrompt(lines: List<IndexedValue<String>>, now: LocalDateTime): Str
     ISO8601 timestamp; a date alone or "all day" becomes a bare ISO date, NEVER midnight.
     12 a.m. is 00:00; 12 p.m. is 12:00; 6 p.m. is 18:00. "Around" still names a time.
     source: copy the task's complete source sentence, including its date/time, verbatim from
-    the note. It may span numbered lines. Do not paraphrase it. line: the line containing the
+    the note, without the [number] prefix${if (answerIn != language) ", in the note's own language, never translated" else ""}. It may span numbered lines. Do not paraphrase it. line: the line containing the
     action words, not an earlier introduction or date. due_relative_minutes: if the
     speaker instead stated a duration from now ("in 20 minutes" -> 20, "in an hour" -> 60), the
     number of minutes from now — and leave due null in that case, don't resolve it yourself. If
     no date, time, or duration was stated at all, leave both null. line: the number of the line
-    the task was said on. If there are no tasks, reply {"items":[]}. No commentary.
+    the task was said on.${if (spoken) WHEN_EN_RULE else ""} If there are no tasks, reply {"items":[]}. No commentary.
 
     Example. Today is 2026-01-01, the current time is 08:00.
     [0] Remind me to call the dentist tomorrow at 9am.
     [1] Also water the plants in 20 minutes.
     [2] Oh and I need to buy milk.
-    {"items":[{"text":"Call the dentist.","source":"Remind me to call the dentist tomorrow at 9am.","due":"2026-01-02T09:00:00","due_relative_minutes":null,"line":0},{"text":"Water the plants.","source":"Also water the plants in 20 minutes.","due":null,"due_relative_minutes":20,"line":1},{"text":"Buy milk.","source":"Oh and I need to buy milk.","due":null,"due_relative_minutes":null,"line":2}]}
+    {"items":[{"text":"Call the dentist.","source":"Remind me to call the dentist tomorrow at 9am.","due":"2026-01-02T09:00:00","due_relative_minutes":null,"line":0${whenEn("tomorrow at 9 a.m.")}},{"text":"Water the plants.","source":"Also water the plants in 20 minutes.","due":null,"due_relative_minutes":20,"line":1${whenEn("in 20 minutes")}},{"text":"Buy milk.","source":"Oh and I need to buy milk.","due":null,"due_relative_minutes":null,"line":2${whenEn(null)}}]}
 
-    Example. Today is 2026-03-10, the current time is 19:30.
-    [4] So tomorrow I have a vet appointment at 9 a.m. and
-    [5] also I want a reminder for tomorrow at 5 p.m. that I have to pick up the car.
-    {"items":[{"text":"Go to the vet appointment.","source":"So tomorrow I have a vet appointment at 9 a.m.","due":"2026-03-11T09:00:00","due_relative_minutes":null,"line":4},{"text":"Pick up the car.","source":"also I want a reminder for tomorrow at 5 p.m. that I have to pick up the car.","due":"2026-03-11T17:00:00","due_relative_minutes":null,"line":5}]}
+    ${if (language == "sl") SLOVENIAN_TIMES else ""}${englishTasks(::whenEn)}
 
     Example. Today is 2026-01-01, the current time is 08:00.
     [0] I think I should start a podcast, I'm thinking about names.
@@ -146,6 +181,26 @@ fun buildTasksPrompt(lines: List<IndexedValue<String>>, now: LocalDateTime): Str
     Voice note:
     ${lines.joinToString("\n") { "[${it.index}] ${it.value}" }}
 """.trimIndent()
+}
+
+/** Asked of every non-English note so its times reach the English rules, not per-language ones. */
+private const val WHEN_EN_RULE = """
+    when_en: the date and time stated for this task, translated into plain English: "today",
+    "tomorrow", "the day after tomorrow", a weekday such as "on Friday", a clock time with a.m. or
+    p.m. or as 24-hour HH:MM, or a duration such as "in 20 minutes". Include a date said earlier
+    for the same plan. Translate what was said, not a guess. null if nothing was stated."""
+
+private fun englishTasks(whenEn: (String?) -> String) = """Example. Today is 2026-03-10, the current time is 19:30.
+    [4] So tomorrow I have a vet appointment at 9 a.m. and
+    [5] also I want a reminder for tomorrow at 5 p.m. that I have to pick up the car.
+    {"items":[{"text":"Go to the vet appointment.","source":"So tomorrow I have a vet appointment at 9 a.m.","due":"2026-03-11T09:00:00","due_relative_minutes":null,"line":4${whenEn("tomorrow at 9 a.m.")}},{"text":"Pick up the car.","source":"also I want a reminder for tomorrow at 5 p.m. that I have to pick up the car.","due":"2026-03-11T17:00:00","due_relative_minutes":null,"line":5${whenEn("tomorrow at 5 p.m.")}}]}"""
+
+/**
+ * Slovenian counts half hours toward the next one, which the model gets wrong unprompted. A hint,
+ * not an example: same-language examples get copied into the note's answer.
+ */
+private const val SLOVENIAN_TIMES = """In Slovenian "ob desetih" is 10:00, "pol desetih" is 09:30, "zjutraj" means a.m., "popoldne" and "zvečer" mean p.m.
+    """
 
 @Serializable
 private data class RawSummary(
@@ -170,6 +225,7 @@ private data class RawItem(
     @SerialName("due") val due: String? = null,
     @SerialName("due_relative_minutes") val dueRelativeMinutes: Int? = null,
     val line: Int? = null,
+    @SerialName("when_en") val whenEn: String? = null,
 )
 
 private val json = Json {
@@ -207,15 +263,22 @@ fun parseTasks(
         .filter { it.text.isNotBlank() }
         .map { item ->
             val due = resolveDue(item.due, item.dueRelativeMinutes, zone, today, recordedAt)
-            NewTodo(item.text.trim(), due.at, due.hasTime, due.hasDate, item.line?.let(lineOffsetMs), item.source)
+            // The model was seen quoting the "[0] " line numbers too, which never match the text.
+            val source = item.source?.replace(linePrefix, "")?.trim()?.ifBlank { null }
+            NewTodo(item.text.trim(), due.at, due.hasTime, due.hasDate, item.line?.let(lineOffsetMs), source, item.whenEn?.trim())
         }
 }
+
+private val linePrefix = Regex("\\[\\d+]\\s*")
 
 /**
  * True when task text names only a date or time — the 1.7B model was seen writing
  * "Tomorrow at 10 a.m." as the text and leaving the action out.
  */
-fun isScheduleOnly(text: String): Boolean = text.lowercase()
+fun isScheduleOnly(text: String, language: String? = null): Boolean =
+    if (language == "sl") isSlovenianScheduleOnly(text) else isEnglishScheduleOnly(text)
+
+private fun isEnglishScheduleOnly(text: String): Boolean = text.lowercase()
     .replace(Regex("\\b[ap]\\.?m\\.?(?!\\w)"), " ")
     .replace(scheduleWords, " ")
     .none { it.isLetter() }
@@ -233,11 +296,24 @@ private val scheduleWords = Regex(
  */
 private inline fun <reified T> decodeOutermost(raw: String): T? {
     val start = raw.indexOf('{')
+    if (start == -1) return null
     val end = raw.lastIndexOf('}')
-    if (start == -1 || end <= start) return null
+    if (end > start) {
+        val candidate = raw.substring(start, end + 1)
+        (decode<T>(candidate) ?: decode<T>(repairMissingBrace(candidate)))?.let { return it }
+    }
+    return decode<T>(closeUnclosed(raw.substring(start)))
+}
 
-    val candidate = raw.substring(start, end + 1)
-    return decode<T>(candidate) ?: decode<T>(repairMissingBrace(candidate))
+/**
+ * Seen on device: `{"title":"…","summary":"…")` — the closing brace written as `)`. Drops
+ * stray closers after the last value and appends the braces still open; braces inside strings
+ * could miscount, but then the decode simply fails as before.
+ */
+private fun closeUnclosed(text: String): String {
+    val trimmed = text.trimEnd().trimEnd(')', '.', ',', ' ')
+    val missing = trimmed.count { it == '{' } - trimmed.count { it == '}' }
+    return if (missing in 1..3) trimmed + "}".repeat(missing) else text
 }
 
 private inline fun <reified T> decode(candidate: String): T? = try {

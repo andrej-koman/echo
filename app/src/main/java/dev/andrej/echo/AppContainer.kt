@@ -174,7 +174,7 @@ class AppContainer(context: Context) {
         dev.andrej.echo.data.SqlTaskReminderRepository(database),
         dev.andrej.echo.notify.AndroidTaskReminderDelivery(applicationContext) { transcriptId ->
             runBlocking { repository.transcripts.first() }.firstOrNull { it.id == transcriptId }
-                ?.let { it.title ?: dev.andrej.echo.ui.notes.title(it.text) }
+                ?.let { it.title ?: dev.andrej.echo.ui.notes.title(it.text, it.createdAt) }
         },
     )
 
@@ -520,10 +520,12 @@ class AppContainer(context: Context) {
 
     private var downloadJob: Job? = null
 
-    fun downloadModel(model: NotesAiModel = modelSelection.active.value) {
-        if (downloadJob?.isActive == true) return
-        if (settings.wifiOnlyDownload && !onWifi()) return
+    /** False when Wi-Fi only blocks the download, so the caller can say why nothing started. */
+    fun downloadModel(model: NotesAiModel = modelSelection.active.value): Boolean {
+        if (downloadJob?.isActive == true) return true
+        if (settings.wifiOnlyDownload && !onWifi()) return false
         downloadJob = appScope.launch { downloadModelNow(model) }
+        return true
     }
 
     /** Skips the Wi-Fi-only check: callers are an explicit user action or a job with its own constraint. */
@@ -562,6 +564,45 @@ class AppContainer(context: Context) {
         }
     }
 
+    private val speechChoice = MutableStateFlow(settings.speechModel)
+
+    /** Also emits on a switch, which lands just after the new model's Ready state. */
+    val speechModelStates: Flow<List<ModelState>> = combine(
+        combine(speechModels.choices.map { speechModels.store(it).state }) { it.toList() },
+        speechChoice,
+    ) { states, _ -> states }
+
+    private var speechDownloadJob: Job? = null
+    private var speechDownloadTarget: WhisperModel? = null
+
+    /** Switches to [model] once its file is complete; a failed or cancelled download keeps the old one. */
+    fun downloadSpeechModel(model: WhisperModel): Boolean {
+        if (settings.wifiOnlyDownload && !onWifi()) return false
+        speechDownloadJob?.cancel()
+        speechDownloadTarget = model
+        speechDownloadJob = appScope.launch {
+            val store = speechModels.store(model)
+            store.download()
+            if (store.state.value is ModelState.Ready) {
+                settings.speechModel = model.id
+                speechChoice.value = model.id
+            }
+        }
+        return true
+    }
+
+    fun cancelSpeechDownload() {
+        speechDownloadJob?.cancel()
+    }
+
+    /** Deleting the model in use is allowed: the next transcription downloads it again. */
+    fun deleteSpeechModel(model: WhisperModel) {
+        appScope.launch {
+            if (speechDownloadTarget == model) speechDownloadJob?.cancelAndJoin()
+            speechModels.store(model).delete()
+        }
+    }
+
     fun storageUsage(): StorageUsage = scanStorage(
         filesDir = applicationContext.filesDir,
         databasesDir = databaseFile.parentFile!!,
@@ -595,6 +636,9 @@ class AppContainer(context: Context) {
                     importDay = { settings.importDay },
                     onRetryTranscription = transcriptions::transcribe,
                     onStopTranscription = transcriptions::stop,
+                    onRetranscribe = transcriptions::retranscribe,
+                    languageOptions = { buildLanguageOptions(WhisperNative.languages().toList()) },
+                    defaultLanguage = { settings.transcriptionLanguage.orEmpty() },
                     onDeleted = transcriptions::discard,
                     audioFile = transcriptions::audioFile,
                     folders = folders.folders,
@@ -627,6 +671,10 @@ class AppContainer(context: Context) {
                     whisperLanguages = { WhisperNative.languages().toList() },
                     speechModels = speechModels.choices,
                     currentSpeechModel = { speechModels.current },
+                    speechModelStates = speechModelStates,
+                    onDownloadSpeechModel = ::downloadSpeechModel,
+                    onCancelSpeechDownload = ::cancelSpeechDownload,
+                    onDeleteSpeechModel = ::deleteSpeechModel,
                     transcripts = repository,
                     derived = derived,
                     aiCardState = aiCardState,

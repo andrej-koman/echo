@@ -73,20 +73,21 @@ class NotesViewModelTest {
 
     @Test
     fun `title stops at the first sentence`() {
-        assertEquals("Oat milk, two cartons", title("Oat milk, two cartons. Sourdough as well."))
+        assertEquals("Oat milk, two cartons", title("Oat milk, two cartons. Sourdough as well.", 0L))
     }
 
     @Test
     fun `title cuts a long opening at six words`() {
         assertEquals(
             "She wants the pitch cut to…",
-            title("She wants the pitch cut to eight slides and the pricing page moved"),
+            title("She wants the pitch cut to eight slides and the pricing page moved", 0L),
         )
     }
 
     @Test
-    fun `title falls back for empty text`() {
-        assertEquals("Untitled", title("   "))
+    fun `title falls back to the note's date for empty text`() {
+        val createdAt = java.time.LocalDate.of(2026, 11, 11).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+        assertEquals("Nov 11, 2026", title("   ", createdAt, java.util.Locale.US))
     }
 
     @Test

@@ -38,6 +38,10 @@ import dev.andrej.echo.ui.components.ThinkingDots
 import dev.andrej.echo.ui.theme.EchoTheme
 import androidx.compose.ui.platform.LocalContext
 import dev.andrej.echo.ui.detail.copyToClipboard
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import dev.andrej.echo.ui.profile.LanguageOption
+import androidx.compose.runtime.produceState
 
 @Composable
 fun NotesScreen(
@@ -51,6 +55,9 @@ fun NotesScreen(
     val folders by viewModel.folders.collectAsStateWithLifecycle()
     var acting by remember { mutableStateOf<NoteRow?>(null) }
     val offeredImport by viewModel.offeredImport.collectAsStateWithLifecycle()
+    val importLanguages by produceState(emptyList<LanguageOption>(), offeredImport != null) {
+        if (offeredImport != null && value.isEmpty()) value = withContext(Dispatchers.Default) { viewModel.languageOptions() }
+    }
     // Non-null is selection mode, entered by long-pressing a note.
     var selection by rememberSaveable { mutableStateOf<Set<String>?>(null) }
     var bulk by remember { mutableStateOf<BulkAction?>(null) }
@@ -132,7 +139,9 @@ fun NotesScreen(
         ImportSheet(
             file = offeredImport,
             fixedDay = remember(offeredImport) { viewModel.importDay() },
-            onImport = viewModel::acceptImport,
+            languages = importLanguages,
+            defaultLanguage = remember(offeredImport) { viewModel.defaultLanguage() },
+            onImport = { file, createdAt, title, always, language -> viewModel.acceptImport(file, createdAt, title, always, language) },
             onDismiss = { offeredImport?.let(viewModel::declineImport) },
         )
     }

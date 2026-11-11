@@ -54,6 +54,39 @@ class TranscriptAnalyzerTest {
         assertEquals(listOf("Buy a washer"), dropped.map { it.text })
     }
 
+    @Test
+    fun `a Slovenian note is answered in English and grounded on its quotes`() = runTest {
+        val segments = listOf(Segment(0, 7_000, "Tako da jutri ob desetih zjutraj želim iti k zdravniku."),
+            Segment(7_000, 14_000, "Na to pa danes pa bi rad ob šestih zvečer šal na trening."))
+        // The model's real answer on device, wrong day and untranslated when_en included.
+        val english = """{"items":[
+            {"text":"Go to the doctor","source":"Tako da jutri ob desetih zjutraj želim iti k zdravniku.","due":"2026-11-12T10:00:00","line":0,"when_en":"jutri ob desetih"},
+            {"text":"Go to the gym","source":"Na to pa danes pa bi rad ob šestih zvečer šal na trening.","due":"2026-11-12T18:00:00","line":1,"when_en":"danes ob šestih"}
+        ]}"""
+        val runner = FakeLlmRunner(listOf("""{"title":"Doctor and gym","summary":"Doctor tomorrow at 10, gym today at 6 pm."}""", plans, english))
+        val recorded = LocalDate.of(2026, 11, 11).atTime(16, 5)
+        val note = transcript(segments.joinToString(" ") { it.text }).copy(language = "sl", createdAt = recorded.atZone(UTC).toInstant().toEpochMilli())
+
+        val analysis = (analyzer(runner, segments).analyze(note) as AnalysisOutcome.Success).analysis
+
+        assertTrue(runner.prompts[0].contains("in English"))
+        assertEquals(3, runner.prompts.size)
+        assertEquals("Doctor and gym", analysis.title)
+        assertEquals(listOf("Go to the doctor", "Go to the gym"), analysis.items.map { it.text })
+        assertEquals(listOf(recorded.plusDays(1).toLocalDate().atTime(10, 0), recorded.toLocalDate().atTime(18, 0))
+            .map { it.atZone(UTC).toInstant().toEpochMilli() }, analysis.items.map { it.dueAt })
+        assertEquals(listOf(0L, 7_000L), analysis.items.map { it.sourceOffsetMs })
+        assertEquals(segments.map { it.text }, analysis.items.map { it.sourceQuote })
+    }
+
+    @Test
+    fun `a model that writes the note's language answers in it`() = runTest {
+        val runner = FakeLlmRunner(listOf(summary, plans, tasks), writesNoteLanguage = true)
+        analyzer(runner).analyze(transcript().copy(language = "sl"))
+        assertTrue(runner.prompts[0].contains("in Slovenian, the language of the note"))
+        assertTrue(runner.prompts[2].contains("when_en"))
+    }
+
     private val summary = """{"title":"Fix the tap","summary":"It drips."}"""
     private val tasks = """{"items":[{"text":"Buy a washer","due":null,"line":1}]}"""
     private val plans = """{"plans":true}"""

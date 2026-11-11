@@ -5,6 +5,7 @@ class FakeLlmRunner(
     private val responses: List<String> = emptyList(),
     private val availability: LlmAvailability = LlmAvailability.Ready,
     private val throwOnGenerate: Boolean = false,
+    override val writesNoteLanguage: Boolean = false,
 ) : LlmRunner {
 
     val prompts = mutableListOf<String>()

@@ -32,7 +32,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
@@ -152,7 +151,6 @@ internal fun ContinuousTranscript(
     current: Int,
     highlight: String,
     live: Boolean,
-    taskColors: Map<String, Color>,
     onTaskClick: (String) -> Unit,
     onSegmentClick: (Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -190,7 +188,6 @@ internal fun ContinuousTranscript(
             .padding(horizontal = EchoTheme.spacing.s3, vertical = EchoTheme.spacing.s2),
         taskLinks = links,
         onTaskClick = onTaskClick,
-        taskColors = taskColors,
         currentRange = current.takeIf { it in lines.indices }?.let { starts[it] until starts[it] + lines[it].length },
         onTextClick = { onSegmentClick(segmentAtOffset(it)) },
         onTextLongClick = onSegmentLongClick?.let { click -> { offset -> click(segmentAtOffset(offset)) } },
@@ -209,7 +206,6 @@ internal fun Paragraph(
     live: Boolean = false,
     taskLinks: List<TaskTextLink> = emptyList(),
     onTaskClick: (String) -> Unit = {},
-    taskColors: Map<String, Color> = emptyMap(),
     reading: AnalysisReading? = null,
     readingIndex: Int = -1,
 ) {
@@ -220,7 +216,6 @@ internal fun Paragraph(
         live = live,
         taskLinks = taskLinks,
         onTaskClick = onTaskClick,
-        taskColors = taskColors,
         reading = reading,
         readingIndex = readingIndex,
         modifier = modifier
@@ -241,7 +236,6 @@ private fun LineText(
     modifier: Modifier,
     taskLinks: List<TaskTextLink> = emptyList(),
     onTaskClick: (String) -> Unit = {},
-    taskColors: Map<String, Color> = emptyMap(),
     currentRange: IntRange? = null,
     onTextClick: ((Int) -> Unit)? = null,
     onTextLongClick: ((Int) -> Unit)? = null,
@@ -292,17 +286,15 @@ private fun LineText(
             val measured = layout ?: return@drawBehind
             taskLinks.forEach { link ->
                 if (link.start < 0 || link.end > measured.layoutInput.text.length || link.start >= link.end) return@forEach
-                val color = taskColors[link.taskId] ?: colors.transcriptHighlight
+                val color = colors.taskHighlight
                 (link.start until link.end).groupBy { measured.getLineForOffset(it) }.values.forEach { offsets ->
                     val first = measured.getBoundingBox(offsets.first())
                     val last = measured.getBoundingBox(offsets.last())
-                    val left = (first.left - 1.dp.toPx()).coerceAtLeast(0f)
-                    val right = (last.right + 1.dp.toPx()).coerceAtMost(size.width)
+                    val left = (first.left - 2.dp.toPx()).coerceAtLeast(0f)
+                    val right = (last.right + 2.dp.toPx()).coerceAtMost(size.width)
                     val top = first.top + 2.5.dp.toPx()
                     val box = Size(right - left, last.bottom - first.top - 5.dp.toPx())
-                    val radius = CornerRadius(6.dp.toPx())
-                    drawRoundRect(color, Offset(left, top), box, radius)
-                    drawRoundRect(color.copy(alpha = 0.55f), Offset(left, top), box, radius, style = Stroke(0.8.dp.toPx()))
+                    drawRoundRect(color, Offset(left, top), box, CornerRadius(4.dp.toPx()))
                 }
             }
         }.then(

@@ -1,6 +1,6 @@
 package dev.andrej.echo.ui.profile
 
-import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -17,6 +17,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
@@ -34,6 +38,8 @@ import dev.andrej.echo.ui.theme.EchoTheme
 import dev.andrej.echo.ui.theme.LocalReducedMotion
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import androidx.compose.ui.platform.LocalContext
+import dev.andrej.echo.ui.detail.copyToClipboard
 
 @Composable
 fun HistoryScreen(
@@ -100,10 +106,16 @@ fun HistoryScreen(
             }
         }
     }
+    val analyzingId by notesViewModel.analyzingId.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     NoteActionsSheets(
         note = allNotes.firstOrNull { it.id == actingId },
         folders = folders,
+        analyzingId = analyzingId,
         onMove = notesViewModel::moveToFolder,
+        onRename = notesViewModel::rename,
+        onCopy = { id -> notesViewModel.transcriptText(id) { context.copyToClipboard(it) } },
+        onAnalyze = notesViewModel::analyze,
         onDelete = notesViewModel::delete,
         onDismiss = { actingId = null },
     )
@@ -120,9 +132,24 @@ internal fun CalendarPanel(
     onPick: (LocalDate) -> Unit,
 ) {
     val colors = EchoTheme.colors
-    val motion = if (LocalReducedMotion.current) Modifier else Modifier.animateContentSize()
+    val reducedMotion = LocalReducedMotion.current
+    val weeks = state.days.chunked(7)
+    val selectedRow = (state.days.indexOfFirst { it.date == state.selectedDay } / 7).coerceAtLeast(0)
+    val density = LocalDensity.current
+    val rowPx = with(density) { DayHeight.toPx() }
+    val collapsedPx = rowPx
+    val expandedPx = rowPx * weeks.size.coerceAtLeast(1)
+    val height = remember { Animatable(if (expanded) expandedPx else collapsedPx) }
+    var dragging by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(expanded, expandedPx) {
+        if (dragging) return@LaunchedEffect
+        val target = if (expanded) expandedPx else collapsedPx
+        if (reducedMotion) height.snapTo(target) else height.animateTo(target)
+    }
+    val progress = if (expandedPx > collapsedPx) ((height.value - collapsedPx) / (expandedPx - collapsedPx)).coerceIn(0f, 1f) else 1f
     Column(
-        modifier = Modifier.fillMaxWidth().then(motion)
+        modifier = Modifier.fillMaxWidth()
             .clip(RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp))
             .background(colors.surfaceCard)
             .statusBarsPadding()
@@ -139,7 +166,7 @@ internal fun CalendarPanel(
                 Text(state.monthLabel, style = EchoTheme.typography.heading, color = colors.textPrimary,
                     modifier = Modifier.weight(1f, fill = false))
                 Icon(painterResource(R.drawable.ic_chevron_down),
-                    contentDescription = null, tint = colors.textAccent, modifier = Modifier.size(14.dp).rotate(if (expanded) 180f else 0f))
+                    contentDescription = null, tint = colors.textAccent, modifier = Modifier.size(14.dp).rotate(180f * progress))
             }
             Text("Today", style = EchoTheme.typography.caption.copy(fontWeight = FontWeight.SemiBold), color = colors.textAccent,
                 modifier = Modifier.clip(CircleShape).background(colors.surfaceAccentSoft)
@@ -153,34 +180,57 @@ internal fun CalendarPanel(
                     textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
             }
         }
-        Column(Modifier.padding(top = 6.dp)) {
-            (if (expanded) state.days else state.weekDays).chunked(7).forEach { week ->
-                Row(Modifier.fillMaxWidth()) {
-                    week.forEach { day ->
-                        CalendarDay(day, day.date == state.selectedDay, { onPick(day.date) }, Modifier.weight(1f))
+        // The month grid is clipped to the dragged height; the selected week slides from its row
+        // to the top so collapsing reveals or hides the other weeks around it.
+        Box(
+            Modifier.padding(top = 6.dp).fillMaxWidth()
+                .height(with(density) { height.value.toDp() })
+                .clipToBounds(),
+        ) {
+            Column(
+                Modifier.wrapContentHeight(Alignment.Top, unbounded = true)
+                    .offset { IntOffset(0, (-selectedRow * rowPx * (1f - progress)).roundToInt()) },
+            ) {
+                weeks.forEach { week ->
+                    Row(Modifier.fillMaxWidth()) {
+                        week.forEach { day ->
+                            CalendarDay(day, day.date == state.selectedDay, { onPick(day.date) }, Modifier.weight(1f))
+                        }
                     }
                 }
             }
         }
-        var handleDrag by remember { mutableFloatStateOf(0f) }
-        val threshold = with(LocalDensity.current) { 24.dp.toPx() }
         DragHandle(
             description = "Calendar drag handle",
-            onDrag = { handleDrag += it },
-            onRelease = {
-                if ((!expanded && handleDrag > threshold) || (expanded && handleDrag < -threshold)) onToggle()
-                handleDrag = 0f
+            onDrag = { delta ->
+                dragging = true
+                scope.launch { height.snapTo((height.value + delta).coerceIn(collapsedPx, expandedPx)) }
             },
-            onCancel = { handleDrag = 0f },
+            onRelease = {
+                val open = if (expanded) progress > 0.75f else progress > 0.25f
+                scope.launch {
+                    height.animateTo(if (open) expandedPx else collapsedPx)
+                    dragging = false
+                }
+                if (open != expanded) onToggle()
+            },
+            onCancel = {
+                scope.launch {
+                    height.animateTo(if (expanded) expandedPx else collapsedPx)
+                    dragging = false
+                }
+            },
         )
     }
 }
+
+private val DayHeight = 56.dp
 
 @Composable
 private fun CalendarDay(day: HistoryDay, isSelected: Boolean, onClick: () -> Unit, modifier: Modifier) {
     val colors = EchoTheme.colors
     Column(
-        modifier.height(56.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick)
+        modifier.height(DayHeight).clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick)
             .semantics(mergeDescendants = true) {
                 selected = isSelected
                 contentDescription = "${day.date}, ${if (day.heatLevel == 3) "3 or more" else day.heatLevel} notes"

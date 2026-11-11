@@ -13,7 +13,26 @@ class TaskSourceTest {
         val links = taskLinks(lines, listOf(task().copy(text = "Go to the dentist.")))
         assertEquals(1, links[0].size)
         assertEquals(1, links[1].size)
-        assertEquals("I have to go to the dentist.", lines[1].substring(links[1][0].start, links[1][0].end))
+        assertEquals("I have to go to the dentist", lines[1].substring(links[1][0].start, links[1][0].end))
+    }
+
+    @Test fun `links mark the time and action but not lead-in filler`() {
+        val text = "Hi. Okay. So I'm thinking about what I should do tomorrow. I think that tomorrow at 10 a.m. I have to go to the dentist. " +
+            "Then at 12 a.m. tomorrow I have to go to the shop. Then after everything at around, I don't know, 6 p.m. I have drinks with my girlfriend. " +
+            "Oh, and also remind me to for tomorrow all day to turn in an assignment. I think that I need to call Alex at 5 p.m."
+        val tasks = listOf("Go to the dentist.", "Go to the shop.", "Drinks with girlfriend.", "Turn in assignment.", "Call Alex.")
+            .mapIndexed { i, action -> task().copy(id = "t$i", text = action) }
+        val marked = taskLinks(listOf(text), tasks).single().map { text.substring(it.start, it.end) }
+        assertEquals(
+            listOf(
+                "tomorrow at 10 a.m. I have to go to the dentist",
+                "at 12 a.m. tomorrow I have to go to the shop",
+                "6 p.m. I have drinks with my girlfriend",
+                "tomorrow all day to turn in an assignment",
+                "need to call Alex at 5 p.m.",
+            ),
+            marked,
+        )
     }
 
     @Test fun `stale or unrelated quotations produce no link`() {
@@ -32,11 +51,9 @@ class TaskSourceTest {
         assertEquals(2, source.start)
     }
 
-    @Test fun `renaming a task keeps its unchanged source quotation and audio reference`() {
+    @Test fun `renaming a task keeps its unchanged source quotation`() {
         val task = task().copy(text = "Discuss the budget.", sourceQuote = "Call Alex tomorrow.", sourceOffsetMs = 1000)
         assertEquals(1, taskLinks(listOf("Call Alex tomorrow."), listOf(task)).single().size)
-        assertEquals(1000L, taskPlaybackOffset(task, listOf(Segment(1000, 2000, "Call Alex tomorrow."))))
-        assertNull(taskPlaybackOffset(task, listOf(Segment(1000, 2000, "Different words."))))
     }
 
     private fun task() = TodoItem("task", "note", "Call Alex.", 0, false, createdAt = 0)

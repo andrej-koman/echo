@@ -44,8 +44,16 @@ data class SettingsUiState(
     val notesCount: Int = 0,
     val tasksCount: Int = 0,
     val notesAiModels: List<NotesAiModelStatus> = emptyList(),
+    val backup: BackupStatus = BackupStatus.Idle,
 ) {
     val storageBytes: Long get() = storage.totalBytes
+}
+
+sealed interface BackupStatus {
+    data object Idle : BackupStatus
+    data class Working(val label: String) : BackupStatus
+    data class Done(val message: String) : BackupStatus
+    data class Failed(val message: String) : BackupStatus
 }
 
 class SettingsViewModel(
@@ -66,6 +74,8 @@ class SettingsViewModel(
     val onTestModelDownloadNotification: () -> Unit = {},
     private val onDeleteAllData: suspend () -> Unit = {},
     val onReplayOnboarding: () -> Unit = {},
+    private val onSaveBackup: suspend (android.net.Uri) -> Unit = {},
+    private val onRestoreBackup: suspend (android.net.Uri) -> Unit = {},
     private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
 
@@ -82,6 +92,7 @@ class SettingsViewModel(
                             languages = _state.value.languages,
                             storage = _state.value.storage,
                             notesAiModels = _state.value.notesAiModels,
+                            backup = _state.value.backup,
                         )
                 }
         }
@@ -106,6 +117,31 @@ class SettingsViewModel(
         notesCount = notesCount,
         tasksCount = tasksCount,
     )
+
+    fun saveBackup(uri: android.net.Uri) = runBackup("Saving backup…", "Backup saved", "Couldn't save the backup. Try another place.") { onSaveBackup(uri) }
+
+    /** On success the process restarts, so only failures come back. */
+    fun restoreBackup(uri: android.net.Uri) = runBackup("Reading backup…", null, "Couldn't read that backup. Nothing was changed.") { onRestoreBackup(uri) }
+
+    fun clearBackupStatus() {
+        if (_state.value.backup !is BackupStatus.Working) _state.value = _state.value.copy(backup = BackupStatus.Idle)
+    }
+
+    private fun runBackup(working: String, done: String?, failed: String, action: suspend () -> Unit) {
+        if (_state.value.backup is BackupStatus.Working) return
+        _state.value = _state.value.copy(backup = BackupStatus.Working(working))
+        viewModelScope.launch {
+            val result = runCatching { action() }
+            _state.value = _state.value.copy(
+                backup = result.fold(
+                    onSuccess = { done?.let(BackupStatus::Done) ?: BackupStatus.Idle },
+                    onFailure = {
+                        BackupStatus.Failed((it as? dev.andrej.echo.data.BackupException)?.message ?: failed)
+                    },
+                ),
+            )
+        }
+    }
 
     fun refreshStorage() {
         viewModelScope.launch {

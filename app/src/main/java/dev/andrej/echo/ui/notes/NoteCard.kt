@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -37,17 +38,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.andrej.echo.R
 import dev.andrej.echo.data.Folder
-import dev.andrej.echo.ui.components.ButtonVariant
 import dev.andrej.echo.ui.components.CardPadding
 import dev.andrej.echo.ui.components.CardTone
 import dev.andrej.echo.ui.components.ConfirmSheet
-import dev.andrej.echo.ui.components.EchoButton
 import dev.andrej.echo.ui.components.EchoCard
 import dev.andrej.echo.ui.components.EchoIconButton
 import dev.andrej.echo.ui.components.IconButtonSize
-import dev.andrej.echo.ui.components.PickerSheet
-import dev.andrej.echo.ui.components.Sheet
+import dev.andrej.echo.ui.components.ActionDivider
+import dev.andrej.echo.ui.components.ActionRow
+import dev.andrej.echo.ui.components.ActionSheet
+import dev.andrej.echo.ui.detail.RenameNoteSheet
 import dev.andrej.echo.ui.folders.FolderIcon
+import dev.andrej.echo.ui.folders.FolderPickerSheet
 import dev.andrej.echo.ui.folders.folderColor
 import dev.andrej.echo.ui.theme.EchoTheme
 import dev.andrej.echo.ui.theme.LocalReducedMotion
@@ -75,44 +77,46 @@ internal fun NoteCard(
                 .padding(start = EchoTheme.spacing.s5, top = EchoTheme.spacing.s5, bottom = EchoTheme.spacing.s5),
         ) {
             ProgressStripe(stage = row.stage, modifier = Modifier.width(3.dp).fillMaxHeight())
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = EchoTheme.spacing.s5),
-                verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3),
-            ) {
-                Row(verticalAlignment = Alignment.Top) {
+            Box(modifier = Modifier.weight(1f)) {
+                Column(
+                    modifier = Modifier.padding(start = EchoTheme.spacing.s5),
+                    verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3),
+                ) {
                     Text(
                         text = row.title,
                         style = EchoTheme.typography.body.copy(fontWeight = FontWeight.SemiBold),
                         color = EchoTheme.colors.textPrimary,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(top = EchoTheme.spacing.s2),
+                        modifier = Modifier.padding(end = IconButtonSize.Sm.box + EchoTheme.spacing.s2 + EchoTheme.spacing.s4),
                     )
-                    if (selected == null) {
-                        EchoIconButton(
-                            iconRes = R.drawable.ic_ellipsis,
-                            contentDescription = "More",
-                            tint = EchoTheme.colors.textTertiary,
-                            onClick = onMore,
-                            modifier = Modifier.padding(horizontal = EchoTheme.spacing.s2),
-                        )
-                    } else {
-                        SelectionCheck(selected, Modifier.padding(horizontal = EchoTheme.spacing.s2))
-                    }
+                    Text(
+                        text = row.excerpt,
+                        style = EchoTheme.typography.bodySm,
+                        color = EchoTheme.colors.textSecondary,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(end = EchoTheme.spacing.s5),
+                    )
+                    Meta(row = row, showFolder = showFolder)
                 }
-                Text(
-                    text = row.excerpt,
-                    style = EchoTheme.typography.bodySm,
-                    color = EchoTheme.colors.textSecondary,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(end = EchoTheme.spacing.s5),
-                )
-                Meta(row = row, showFolder = showFolder)
+                // Overlaid so the 32dp touch target doesn't push the excerpt away from the title;
+                // the ellipsis glyph sits low in its square box, so lift it to match the end inset.
+                val cornerModifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(y = -EchoTheme.spacing.s4)
+                    .padding(start = EchoTheme.spacing.s2, end = EchoTheme.spacing.s4)
+                if (selected == null) {
+                    EchoIconButton(
+                        iconRes = R.drawable.ic_ellipsis,
+                        contentDescription = "More",
+                        tint = EchoTheme.colors.textTertiary,
+                        onClick = onMore,
+                        modifier = cornerModifier,
+                    )
+                } else {
+                    SelectionCheck(selected, cornerModifier)
+                }
             }
         }
     }
@@ -231,38 +235,78 @@ private fun ProgressStripe(stage: NoteStage, modifier: Modifier = Modifier) {
 internal fun NoteActionsSheets(
     note: NoteRow?,
     folders: List<Folder>,
+    analyzingId: String?,
     onMove: (noteId: String, folderId: String?) -> Unit,
+    onRename: (noteId: String, title: String) -> Unit,
+    onCopy: (noteId: String) -> Unit,
+    onAnalyze: (noteId: String) -> Unit,
     onDelete: (noteId: String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var mode by remember(note?.id) { mutableStateOf(NoteAction.Menu) }
-    Sheet(visible = note != null && mode == NoteAction.Menu, onDismiss = onDismiss) {
-        Text(
-            text = note?.title.orEmpty(),
-            style = EchoTheme.typography.heading,
-            color = EchoTheme.colors.textPrimary,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
+    val canAnalyze = note?.pending?.severity != PendingSeverity.Parked
+    val analyzing = note != null && analyzingId == note.id
+    ActionSheet(
+        visible = note != null && mode == NoteAction.Menu,
+        title = note?.title.orEmpty(),
+        subtitle = note?.let { "${it.date} · ${it.duration}" },
+        onDismiss = onDismiss,
+    ) {
+        ActionRow(
+            icon = R.drawable.ic_pen_line,
+            label = "Rename",
+            onClick = { mode = NoteAction.Rename },
         )
-        Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3)) {
-            EchoButton(
-                text = "Move to folder",
-                onClick = { mode = NoteAction.Move },
-                variant = ButtonVariant.Secondary,
-                fullWidth = true,
-            )
-            EchoButton(
-                text = "Delete",
-                onClick = { mode = NoteAction.Delete },
-                variant = ButtonVariant.Danger,
-                fullWidth = true,
-            )
-        }
+        ActionRow(
+            icon = R.drawable.ic_folder,
+            label = "Move to folder",
+            trailing = note?.folder?.name ?: "No folder",
+            onClick = { mode = NoteAction.Move },
+        )
+        ActionRow(
+            icon = R.drawable.ic_copy,
+            label = "Copy text",
+            description = "Copies the full transcript",
+            onClick = {
+                note?.let { onCopy(it.id) }
+                onDismiss()
+            },
+        )
+        ActionRow(
+            icon = R.drawable.ic_sparkles,
+            label = if (analyzing) "Analyzing…" else "Redo summary and tasks",
+            description = when {
+                analyzing -> "Echo is reading this note now"
+                !canAnalyze -> "Available once transcription finishes"
+                else -> "Replaces the current ones"
+            },
+            enabled = canAnalyze && !analyzing,
+            onClick = {
+                note?.let { onAnalyze(it.id) }
+                onDismiss()
+            },
+        )
+        ActionDivider()
+        ActionRow(
+            icon = R.drawable.ic_trash,
+            label = "Delete note",
+            destructive = true,
+            onClick = { mode = NoteAction.Delete },
+        )
     }
-    PickerSheet(
+    RenameNoteSheet(
+        visible = note != null && mode == NoteAction.Rename,
+        title = note?.title.orEmpty(),
+        onSave = { title ->
+            note?.let { onRename(it.id, title) }
+            onDismiss()
+        },
+        onDismiss = onDismiss,
+    )
+    FolderPickerSheet(
         visible = note != null && mode == NoteAction.Move,
         title = "Move to folder",
-        options = listOf("No folder" to null) + folders.map { it.name to it.id },
+        folders = folders,
         selected = note?.folder?.id,
         onPick = { folderId ->
             note?.let { onMove(it.id, folderId) }
@@ -274,7 +318,7 @@ internal fun NoteActionsSheets(
         visible = note != null && mode == NoteAction.Delete,
         title = "Delete this note?",
         message = "The recording, transcript and its tasks are removed. This can't be undone.",
-        confirmLabel = "Delete",
+        confirmLabel = "Delete note",
         onConfirm = {
             note?.let { onDelete(it.id) }
             onDismiss()
@@ -283,7 +327,7 @@ internal fun NoteActionsSheets(
     )
 }
 
-private enum class NoteAction { Menu, Move, Delete }
+private enum class NoteAction { Menu, Rename, Move, Delete }
 
 internal enum class BulkAction { Move, Delete }
 
@@ -298,10 +342,10 @@ internal fun BulkActionSheets(
 ) {
     val count = if (notes.size == 1) "1 note" else "${notes.size} notes"
     val places = notes.map { it.folder?.id }.distinct()
-    PickerSheet(
+    FolderPickerSheet(
         visible = action == BulkAction.Move,
         title = "Move $count to",
-        options = listOf("No folder" to null) + folders.map { it.name to it.id },
+        folders = folders,
         // Checked only when every note is already in the same place.
         selected = if (places.size == 1) places.single() else MIXED,
         onPick = { folderId ->
@@ -314,7 +358,7 @@ internal fun BulkActionSheets(
         visible = action == BulkAction.Delete,
         title = "Delete $count?",
         message = "Their recordings, transcripts and tasks are removed. This can't be undone.",
-        confirmLabel = "Delete",
+        confirmLabel = "Delete $count",
         onConfirm = {
             onDelete()
             onDismiss()

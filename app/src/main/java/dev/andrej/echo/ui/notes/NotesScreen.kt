@@ -36,6 +36,8 @@ import dev.andrej.echo.ui.components.Mascot
 import dev.andrej.echo.ui.components.MascotVariant
 import dev.andrej.echo.ui.components.ThinkingDots
 import dev.andrej.echo.ui.theme.EchoTheme
+import androidx.compose.ui.platform.LocalContext
+import dev.andrej.echo.ui.detail.copyToClipboard
 
 @Composable
 fun NotesScreen(
@@ -75,8 +77,8 @@ fun NotesScreen(
                     onQueryChange = viewModel::search,
                     searchPlaceholder = "Search all notes…",
                     leading = { Mascot(size = 30.dp) },
+                    titleBadge = if (isPro) { { EchoBadge("Pro", tone = BadgeTone.Success) } } else null,
                     actions = {
-                        if (isPro) EchoBadge("Pro", tone = BadgeTone.Success)
                         EchoIconButton(
                             iconRes = R.drawable.ic_upload,
                             contentDescription = "Import audio",
@@ -98,10 +100,16 @@ fun NotesScreen(
             )
         }
 
+        val analyzingId by viewModel.analyzingId.collectAsStateWithLifecycle()
+        val context = LocalContext.current
         NoteActionsSheets(
             note = acting,
             folders = folders,
+            analyzingId = analyzingId,
             onMove = viewModel::moveToFolder,
+            onRename = viewModel::rename,
+            onCopy = { id -> viewModel.transcriptText(id) { context.copyToClipboard(it) } },
+            onAnalyze = viewModel::analyze,
             onDelete = viewModel::delete,
             onDismiss = { acting = null },
         )
@@ -204,10 +212,10 @@ private fun NotesBody(
     }
 }
 
-private fun Set<String>.toggle(id: String): Set<String> = if (id in this) this - id else this + id
+internal fun Set<String>.toggle(id: String): Set<String> = if (id in this) this - id else this + id
 
 @Composable
-private fun SelectionBar(count: Int, onClose: () -> Unit, onMove: () -> Unit, onDelete: () -> Unit) {
+internal fun SelectionBar(count: Int, onClose: () -> Unit, onMove: () -> Unit, onDelete: () -> Unit) {
     EchoTopBar(
         title = if (count == 1) "1 selected" else "$count selected",
         leading = {

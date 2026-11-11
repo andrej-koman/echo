@@ -60,14 +60,17 @@ import dev.andrej.echo.data.Speaker
 import dev.andrej.echo.data.TodoItem
 import dev.andrej.echo.data.TaskTextLink
 import dev.andrej.echo.data.taskLinks
-import dev.andrej.echo.data.taskPlaybackOffset
 import dev.andrej.echo.export.ExportFormat
 import dev.andrej.echo.export.ExportNote
 import dev.andrej.echo.export.canExport
 import dev.andrej.echo.export.ExportOptions
 import dev.andrej.echo.export.Exporter
 import dev.andrej.echo.transcribe.TranscriptionStatus
+import dev.andrej.echo.ui.components.ActionDivider
+import dev.andrej.echo.ui.components.ActionRow
+import dev.andrej.echo.ui.components.ActionSheet
 import dev.andrej.echo.ui.components.BarCenter
+import dev.andrej.echo.ui.folders.FolderPickerSheet
 import dev.andrej.echo.ui.components.ButtonSize
 import dev.andrej.echo.ui.components.ButtonVariant
 import dev.andrej.echo.ui.components.ConfirmSheet
@@ -76,8 +79,6 @@ import dev.andrej.echo.ui.components.EchoCard
 import dev.andrej.echo.ui.components.EchoIconButton
 import dev.andrej.echo.ui.components.IconButtonSize
 import dev.andrej.echo.ui.components.LocalBottomBarHeight
-import dev.andrej.echo.ui.components.PickerSheet
-import dev.andrej.echo.ui.components.Sheet
 import dev.andrej.echo.ui.folders.FolderIcon
 import dev.andrej.echo.ui.folders.folderColor
 import dev.andrej.echo.ui.notes.NotesViewModel
@@ -157,13 +158,6 @@ fun NoteDetailScreen(
     val noteTasks = remember(tasks, noteId) { tasks.filter { it.sourceTranscriptId == noteId } }
     val sourceLinks = remember(segments, noteTasks, transcript?.text) {
         taskLinks(if (segments.isEmpty()) listOf(transcript?.text.orEmpty()) else segments.map { it.text }, noteTasks)
-    }
-    val referenceColors = EchoTheme.colors.palette.take(4)
-    val taskColors = remember(sourceLinks, referenceColors) {
-        sourceLinks.flatMap { links -> links.sortedBy { it.start } }
-            .map { it.taskId }.distinct().mapIndexed { index, id ->
-                id to referenceColors[index % referenceColors.size].copy(alpha = 0.24f)
-            }.toMap()
     }
     val openSourceTask: (String) -> Unit = { id ->
         focusedTaskId = id
@@ -371,12 +365,8 @@ fun NoteDetailScreen(
                         tasks = noteTasks,
                         analyzed = transcript.analyzedAt != null,
                         onToggle = { viewModel.setTaskDone(it.id, !it.done) },
-                        onPlay = { task ->
-                            taskPlaybackOffset(task, segments)?.let { player?.playFrom(it) }
-                        },
                         onEdit = { onEditTask(it.id) },
                         focusedTaskId = focusedTaskId,
-                        taskColors = taskColors,
                     )
                     typed.isEmpty() -> item(key = "plain") {
                         Paragraph(
@@ -391,7 +381,6 @@ fun NoteDetailScreen(
                             live = typing,
                             taskLinks = taskLinks(listOf(transcript.text), noteTasks).single(),
                             onTaskClick = openSourceTask,
-                            taskColors = taskColors,
                         )
                     }
                     shown == NoteTab.FullText && !editing -> item(key = "p0") {
@@ -401,7 +390,6 @@ fun NoteDetailScreen(
                             current = current,
                             highlight = highlight,
                             live = typing,
-                            taskColors = taskColors,
                             onTaskClick = { reading.stop(); openSourceTask(it) },
                             onSegmentClick = { reading.stop(); player?.playFrom(segments[it].startMs) },
                             modifier = Modifier.padding(horizontal = EchoTheme.spacing.gutterScreen),
@@ -435,7 +423,6 @@ fun NoteDetailScreen(
                             edits = edits,
                             taskLinks = sourceLinks,
                             onTaskClick = openSourceTask,
-                            taskColors = taskColors,
                             onHeaderClick = { if (editable) speakerTarget = SpeakerTarget.Segments(run.toSet()) },
                             onLineClick = { i ->
                                 when {
@@ -471,7 +458,12 @@ fun NoteDetailScreen(
             }
             val barHeight = LocalBottomBarHeight.current
             val onBar = playable != null || status != null
-            Spacer(Modifier.height(if (onBar && !recording) (barHeight - PlayRowOverlap).coerceAtLeast(0.dp) else barHeight))
+            Spacer(
+                Modifier
+                    .fillMaxWidth()
+                    .height(if (onBar && !recording) (barHeight - PlayRowOverlap).coerceAtLeast(0.dp) else barHeight)
+                    .then(if (onBar) Modifier.background(EchoTheme.colors.surfaceBar) else Modifier),
+            )
         }
 
         if (transcript != null) {
@@ -479,6 +471,13 @@ fun NoteDetailScreen(
                 sheet = sheet,
                 onSheet = { sheet = it },
                 title = transcript.title ?: title(transcript.text),
+                subtitle = listOfNotNull(
+                    dateLabel(transcript.createdAt, System.currentTimeMillis()),
+                    clock(transcript.durationMs),
+                    tasks.count { it.sourceTranscriptId == noteId }
+                        .takeIf { it > 0 }
+                        ?.let { if (it == 1) "1 task" else "$it tasks" },
+                ).joinToString(" · "),
                 folderId = transcript.folderId,
                 folders = folders,
                 canAnalyze = pending[noteId]?.severity != PendingSeverity.Parked,
@@ -620,7 +619,6 @@ private fun SpeakerRun(
     onLineLongClick: (Int) -> Unit,
     taskLinks: List<List<TaskTextLink>> = emptyList(),
     onTaskClick: (String) -> Unit = {},
-    taskColors: Map<String, Color> = emptyMap(),
 ) {
     val first = segments[run.first]
     val playing = current in run && !editing
@@ -647,7 +645,6 @@ private fun SpeakerRun(
                 current = if (current in run) current - run.first else -1,
                 highlight = highlight,
                 live = liveLine in run,
-                taskColors = taskColors,
                 onTaskClick = onTaskClick,
                 onSegmentClick = { onLineClick(run.first + it) },
                 onSegmentLongClick = { onLineLongClick(run.first + it) },
@@ -672,10 +669,8 @@ private fun LazyListScope.tasksTab(
     tasks: List<TodoItem>,
     analyzed: Boolean,
     onToggle: (TodoItem) -> Unit,
-    onPlay: (TodoItem) -> Unit,
     onEdit: (TodoItem) -> Unit,
     focusedTaskId: String?,
-    taskColors: Map<String, Color>,
 ) {
     if (tasks.isNotEmpty()) {
         items(tasks.size, key = { "task:${tasks[it].id}" }) { index ->
@@ -696,7 +691,7 @@ private fun LazyListScope.tasksTab(
                     .clip(shape)
                     .background(EchoTheme.colors.surfaceCard)
                     .background(
-                        if (task.id == focusedTaskId) taskColors[task.id] ?: EchoTheme.colors.transcriptHighlight
+                        if (task.id == focusedTaskId) EchoTheme.colors.taskHighlight
                         else Color.Transparent,
                     )
                     .border(Dp.Hairline, EchoTheme.colors.borderSubtle, shape)
@@ -710,8 +705,7 @@ private fun LazyListScope.tasksTab(
                 TaskRow(
                     task = task,
                     onToggle = { onToggle(task) },
-                    onEdit = { onPlay(task) },
-                    onLongPress = { onEdit(task) },
+                    onEdit = { onEdit(task) },
                     showDate = task.hasDate,
                     overdue = isOverdue(task, System.currentTimeMillis(), ZoneId.systemDefault()),
                 )
@@ -849,6 +843,7 @@ private fun DetailSheets(
     sheet: NoteSheet?,
     onSheet: (NoteSheet?) -> Unit,
     title: String,
+    subtitle: String,
     folderId: String?,
     folders: List<Folder>,
     canAnalyze: Boolean,
@@ -867,40 +862,48 @@ private fun DetailSheets(
     onDelete: () -> Unit,
 ) {
     val dismiss = { onSheet(null) }
-    Sheet(visible = sheet == NoteSheet.More, onDismiss = dismiss) {
-        Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3)) {
-            EchoButton(
-                text = "Rename note",
-                onClick = { onSheet(NoteSheet.Rename) },
-                variant = ButtonVariant.Secondary,
-                fullWidth = true,
-            )
-            EchoButton(
-                text = if (analyzing) "Analyzing…" else "Re-analyze",
-                onClick = {
-                    onAnalyze()
-                    dismiss()
-                },
-                variant = ButtonVariant.Secondary,
-                enabled = canAnalyze && !analyzing,
-                fullWidth = true,
-            )
-            EchoButton(
-                text = "Copy text",
-                onClick = {
-                    onCopy()
-                    dismiss()
-                },
-                variant = ButtonVariant.Secondary,
-                fullWidth = true,
-            )
-            EchoButton(
-                text = "Delete",
-                onClick = { onSheet(NoteSheet.Delete) },
-                variant = ButtonVariant.Danger,
-                fullWidth = true,
-            )
-        }
+    ActionSheet(visible = sheet == NoteSheet.More, title = title, subtitle = subtitle, onDismiss = dismiss) {
+        ActionRow(
+            icon = R.drawable.ic_pen_line,
+            label = "Rename",
+            onClick = { onSheet(NoteSheet.Rename) },
+        )
+        ActionRow(
+            icon = R.drawable.ic_folder,
+            label = "Move to folder",
+            trailing = folders.firstOrNull { it.id == folderId }?.name ?: "No folder",
+            onClick = { onSheet(NoteSheet.Folder) },
+        )
+        ActionRow(
+            icon = R.drawable.ic_copy,
+            label = "Copy text",
+            description = "Copies the full transcript",
+            onClick = {
+                onCopy()
+                dismiss()
+            },
+        )
+        ActionRow(
+            icon = R.drawable.ic_sparkles,
+            label = if (analyzing) "Analyzing…" else "Redo summary and tasks",
+            description = when {
+                analyzing -> "Echo is reading this note now"
+                !canAnalyze -> "Available once transcription finishes"
+                else -> "Replaces the current ones"
+            },
+            enabled = canAnalyze && !analyzing,
+            onClick = {
+                onAnalyze()
+                dismiss()
+            },
+        )
+        ActionDivider()
+        ActionRow(
+            icon = R.drawable.ic_trash,
+            label = "Delete note",
+            destructive = true,
+            onClick = { onSheet(NoteSheet.Delete) },
+        )
     }
     RenameNoteSheet(
         visible = sheet == NoteSheet.Rename,
@@ -915,17 +918,17 @@ private fun DetailSheets(
         visible = sheet == NoteSheet.Delete,
         title = "Delete this note?",
         message = "The recording, transcript and its tasks are removed. This can't be undone.",
-        confirmLabel = "Delete",
+        confirmLabel = "Delete note",
         onConfirm = {
             dismiss()
             onDelete()
         },
         onDismiss = dismiss,
     )
-    PickerSheet(
+    FolderPickerSheet(
         visible = sheet == NoteSheet.Folder,
         title = "Move to folder",
-        options = listOf("No folder" to null) + folders.map { it.name to it.id },
+        folders = folders,
         selected = folderId,
         onPick = {
             onMove(it)
@@ -1005,7 +1008,7 @@ private val exportDate = SimpleDateFormat("d MMM yyyy, HH:mm", Locale.getDefault
 
 private fun megabytes(bytes: Long) = "%.1f MB".format(bytes / 1_000_000.0)
 
-private fun Context.copyToClipboard(text: String) {
+internal fun Context.copyToClipboard(text: String) {
     val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     clipboard.setPrimaryClip(ClipData.newPlainText("Echo transcript", text))
 }

@@ -33,19 +33,27 @@ fun EchoTopBar(
     subtitle: String? = null,
     leading: @Composable (RowScope.() -> Unit)? = null,
     trailing: @Composable (RowScope.() -> Unit)? = null,
+    titleBadge: @Composable (() -> Unit)? = null,
 ) {
     EchoTopBar(modifier = modifier, leading = leading, trailing = trailing) {
         Column(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(1.dp),
         ) {
-            Text(
-                text = title,
-                style = EchoTheme.typography.titleSm,
-                color = EchoTheme.colors.textPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s2),
+            ) {
+                Text(
+                    text = title,
+                    style = EchoTheme.typography.titleSm,
+                    color = EchoTheme.colors.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                titleBadge?.invoke()
+            }
             if (subtitle != null) {
                 Text(
                     text = subtitle,
@@ -70,6 +78,7 @@ fun EchoTopBar(
     subtitle: String? = null,
     leading: @Composable (RowScope.() -> Unit)? = null,
     actions: @Composable (RowScope.() -> Unit)? = null,
+    titleBadge: @Composable (() -> Unit)? = null,
 ) {
     // Starts open when there is a query, so a bar swapped out and back doesn't hide its filter.
     var expanded by remember { mutableStateOf(query.isNotEmpty()) }
@@ -102,6 +111,7 @@ fun EchoTopBar(
             modifier = modifier,
             subtitle = subtitle,
             leading = leading,
+            titleBadge = titleBadge,
             trailing = {
                 actions?.invoke(this)
                 EchoIconButton(

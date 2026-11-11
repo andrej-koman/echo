@@ -53,6 +53,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import dev.andrej.echo.R
 import dev.andrej.echo.ui.theme.EchoTheme
 
@@ -103,44 +112,172 @@ fun <T> PickerSheet(
     modifier: Modifier = Modifier,
     subtitle: (T) -> String? = { null },
     dividerBefore: (T) -> Boolean = { false },
+    leading: (@Composable (T) -> Unit)? = null,
 ) {
     Sheet(visible = visible, onDismiss = onDismiss, modifier = modifier) {
-        Text(text = title, style = EchoTheme.typography.heading, color = EchoTheme.colors.textPrimary)
-        Column(
-            Modifier
-                .heightIn(max = 420.dp)
-                .verticalScroll(rememberScrollState()),
-        ) {
-            options.forEach { (label, value) ->
-                if (dividerBefore(value)) HorizontalDivider(color = EchoTheme.colors.borderSubtle)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                        ) { onPick(value) }
-                        .padding(vertical = EchoTheme.spacing.s5),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(text = label, style = EchoTheme.typography.body, color = EchoTheme.colors.textPrimary)
-                        subtitle(value)?.let {
-                            Text(text = it, style = EchoTheme.typography.bodySm, color = EchoTheme.colors.textTertiary)
+        Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4)) {
+            SheetHeader(title = title, subtitle = null)
+            Column(
+                Modifier
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                options.forEach { (label, value) ->
+                    if (dividerBefore(value)) ActionDivider()
+                    MenuRow(
+                        onClick = { onPick(value) },
+                        leading = leading?.let { { it(value) } },
+                        label = label,
+                        description = subtitle(value),
+                        labelColor = EchoTheme.colors.textPrimary,
+                        selected = value == selected,
+                    ) {
+                        if (value == selected) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_check),
+                                contentDescription = null,
+                                tint = EchoTheme.colors.textAccent,
+                                modifier = Modifier.size(18.dp),
+                            )
                         }
-                    }
-                    if (value == selected) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_check),
-                            contentDescription = null,
-                            tint = EchoTheme.colors.textAccent,
-                            modifier = Modifier.size(18.dp),
-                        )
                     }
                 }
             }
         }
+    }
+}
+
+/** A list of actions under a header naming what they act on, e.g. a note's ··· menu. */
+@Composable
+fun ActionSheet(
+    visible: Boolean,
+    title: String,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Sheet(visible = visible, onDismiss = onDismiss, modifier = modifier) {
+        Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4)) {
+            SheetHeader(title = title, subtitle = subtitle)
+            Column(content = content)
+        }
+    }
+}
+
+@Composable
+fun ActionRow(
+    @DrawableRes icon: Int,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    description: String? = null,
+    trailing: String? = null,
+    destructive: Boolean = false,
+    enabled: Boolean = true,
+) {
+    val colors = EchoTheme.colors
+    val tint = if (destructive) colors.textDanger else colors.textPrimary
+    MenuRow(
+        onClick = onClick,
+        modifier = modifier.alpha(if (enabled) 1f else 0.45f),
+        enabled = enabled,
+        leading = {
+            Icon(
+                painter = painterResource(icon),
+                contentDescription = null,
+                tint = if (destructive) colors.textDanger else colors.textSecondary,
+                modifier = Modifier.size(20.dp),
+            )
+        },
+        label = label,
+        description = description,
+        labelColor = tint,
+    ) {
+        trailing?.let {
+            Text(
+                text = it,
+                style = EchoTheme.typography.bodySm,
+                color = colors.textTertiary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 140.dp),
+            )
+        }
+    }
+}
+
+@Composable
+fun ActionDivider() {
+    HorizontalDivider(
+        color = EchoTheme.colors.borderSubtle,
+        modifier = Modifier.padding(horizontal = EchoTheme.spacing.s4, vertical = EchoTheme.spacing.s3),
+    )
+}
+
+@Composable
+private fun SheetHeader(title: String, subtitle: String?) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = EchoTheme.spacing.s4),
+        verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s1),
+    ) {
+        Text(
+            text = title,
+            style = EchoTheme.typography.body.copy(fontWeight = FontWeight.SemiBold),
+            color = EchoTheme.colors.textPrimary,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        subtitle?.let {
+            Text(text = it, style = EchoTheme.typography.micro, color = EchoTheme.colors.textTertiary)
+        }
+        HorizontalDivider(
+            color = EchoTheme.colors.borderSubtle,
+            modifier = Modifier.padding(top = EchoTheme.spacing.s5),
+        )
+    }
+}
+
+/** Rows highlight while pressed instead of rippling, matching the sheet's quiet surface. */
+@Composable
+private fun MenuRow(
+    onClick: () -> Unit,
+    leading: (@Composable () -> Unit)?,
+    label: String,
+    description: String?,
+    labelColor: Color,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    selected: Boolean? = null,
+    trailing: @Composable () -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 52.dp)
+            .clip(EchoTheme.radii.md)
+            .background(if (pressed) EchoTheme.colors.surfaceSunken else Color.Transparent)
+            .then(
+                if (selected == null) {
+                    Modifier.clickable(interaction, null, enabled = enabled, role = Role.Button, onClick = onClick)
+                } else {
+                    Modifier.selectable(selected, interaction, null, enabled, Role.RadioButton, onClick)
+                },
+            )
+            .padding(horizontal = EchoTheme.spacing.s4, vertical = EchoTheme.spacing.s5),
+        horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s6),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        leading?.invoke()
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s1)) {
+            Text(text = label, style = EchoTheme.typography.body, color = labelColor)
+            description?.let {
+                Text(text = it, style = EchoTheme.typography.micro, color = EchoTheme.colors.textTertiary)
+            }
+        }
+        trailing()
     }
 }
 

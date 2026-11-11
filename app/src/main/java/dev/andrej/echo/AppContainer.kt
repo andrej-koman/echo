@@ -30,7 +30,15 @@ import dev.andrej.echo.data.SqlAnalysisQueueRepository
 import dev.andrej.echo.data.SqlDerivedRepository
 import dev.andrej.echo.data.SqlTranscriptRepository
 import dev.andrej.echo.data.TranscriptRepository
-import dev.andrej.echo.data.echoDatabase
+import android.content.Intent
+import android.net.Uri
+import dev.andrej.echo.data.Backup
+import dev.andrej.echo.data.BackupException
+import dev.andrej.echo.data.DATABASE_NAME
+import dev.andrej.echo.data.db.EchoDatabase
+import dev.andrej.echo.data.echoDriver
+import dev.andrej.echo.data.schemaVersionOf
+import kotlinx.coroutines.withContext
 import dev.andrej.echo.ai.ModelState
 import dev.andrej.echo.notify.ModelDownloadNotifier
 import dev.andrej.echo.notify.RecordingNotifier
@@ -95,10 +103,22 @@ class AppContainer(context: Context) {
 
     private val applicationContext = context.applicationContext
 
-    private val database = run {
+    private val databaseFile = applicationContext.getDatabasePath(DATABASE_NAME)
+
+    private val backup = Backup(
+        filesDir = applicationContext.filesDir,
+        databaseFile = databaseFile,
+        schemaVersion = EchoDatabase.Schema.version,
+        schemaVersionOf = ::schemaVersionOf,
+    )
+
+    private val driver = run {
         deleteJsonStore(applicationContext.filesDir)
-        echoDatabase(applicationContext)
+        backup.applyStaged()
+        echoDriver(applicationContext)
     }
+
+    private val database = EchoDatabase(driver)
 
     val repository: TranscriptRepository = SqlTranscriptRepository(database)
 
@@ -337,6 +357,36 @@ class AppContainer(context: Context) {
         derived.clear()
     }
 
+    suspend fun saveBackup(uri: Uri) = withContext(Dispatchers.IO) {
+        val out = applicationContext.contentResolver.openOutputStream(uri, "wt")
+            ?: throw BackupException("Couldn't open that file.")
+        out.use {
+            backup.write(it) { dir ->
+                // An open write transaction stops any commit or checkpoint while the files are copied.
+                database.transaction {
+                    databaseFile.copyTo(File(dir, databaseFile.name))
+                    File(databaseFile.path + "-wal").takeIf { wal -> wal.isFile }
+                        ?.copyTo(File(dir, databaseFile.name + "-wal"))
+                }
+            }
+        }
+    }
+
+    suspend fun restoreBackup(uri: Uri) {
+        if (recordingController.state.value.isRecording) throw BackupException("Stop the recording first.")
+        withContext(Dispatchers.IO) {
+            val input = applicationContext.contentResolver.openInputStream(uri)
+                ?: throw BackupException("Couldn't open that file.")
+            input.use { backup.stage(it) }
+        }
+        transcriptions.discardAll()
+        pendingAnalysisWorker.cancelAllAndAwait()
+        applicationContext.packageManager.getLaunchIntentForPackage(applicationContext.packageName)?.let {
+            applicationContext.startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
+        }
+        Runtime.getRuntime().exit(0)
+    }
+
     fun recordingNotification() = recordingNotifier.notification(recordingController.state.value.mode())
 
     init {
@@ -442,7 +492,7 @@ class AppContainer(context: Context) {
 
     fun storageUsage(): StorageUsage = scanStorage(
         filesDir = applicationContext.filesDir,
-        databasesDir = applicationContext.getDatabasePath("echo.db").parentFile!!,
+        databasesDir = databaseFile.parentFile!!,
         preferencesDir = File(applicationContext.filesDir.parentFile, "shared_prefs"),
         cacheDir = applicationContext.cacheDir,
         noBackupDir = applicationContext.noBackupFilesDir,
@@ -517,6 +567,8 @@ class AppContainer(context: Context) {
                     onTestModelDownloadNotification = ::sendTestModelDownloadNotification,
                     onDeleteAllData = ::deleteAllData,
                     onReplayOnboarding = ::replayOnboarding,
+                    onSaveBackup = ::saveBackup,
+                    onRestoreBackup = ::restoreBackup,
                 ) as T
 
             modelClass.isAssignableFrom(DictionaryViewModel::class.java) ->

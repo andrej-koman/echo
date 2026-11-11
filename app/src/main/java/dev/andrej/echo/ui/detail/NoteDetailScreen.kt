@@ -114,6 +114,7 @@ fun NoteDetailScreen(
     onDeleted: () -> Unit,
     onBack: () -> Unit,
     onEditTask: (String) -> Unit,
+    openTasks: Boolean = false,
     isPro: Boolean = false,
     onUpgrade: () -> Unit = {},
     recording: Boolean = false,
@@ -140,7 +141,8 @@ fun NoteDetailScreen(
     val audio = remember(noteId, transcribing) { viewModel.audio(noteId) }
     val player = rememberNotePlayer(audio)
 
-    var tab by rememberSaveable { mutableStateOf(NoteTab.BySpeaker) }
+    var tab by rememberSaveable { mutableStateOf(if (openTasks) NoteTab.Tasks else NoteTab.BySpeaker) }
+    LaunchedEffect(noteId) { viewModel.noteOpened(noteId) }
     // Null until the note has loaded; tells "Full text just appeared" from "was always there".
     var wasTranscribed by remember(noteId) { mutableStateOf<Boolean?>(null) }
     var sheet by remember { mutableStateOf<NoteSheet?>(null) }

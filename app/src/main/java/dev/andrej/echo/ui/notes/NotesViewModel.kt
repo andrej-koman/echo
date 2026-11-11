@@ -97,6 +97,7 @@ class NotesViewModel(
     private val onDeleted: (String) -> Unit = {},
     private val audioFile: (String) -> File? = { null },
     folders: Flow<List<Folder>> = flowOf(emptyList()),
+    private val onNoteOpened: (String) -> Unit = {},
     private val now: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
 
@@ -231,6 +232,8 @@ class NotesViewModel(
             repository.transcripts.first().firstOrNull { it.id == transcriptId }?.let { onText(it.text) }
         }
     }
+
+    fun noteOpened(transcriptId: String) = onNoteOpened(transcriptId)
 
     /** The recording or imported file, once there is one to play. */
     fun audio(transcriptId: String): File? = audioFile(transcriptId)

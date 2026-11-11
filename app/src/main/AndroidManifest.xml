@@ -62,8 +62,78 @@
             android:exported="false" />
 
         <receiver
+            android:name=".widget.RecordWidgetReceiver"
+            android:exported="false"
+            android:label="Record">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_record_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.CombinedWidgetReceiver"
+            android:exported="false"
+            android:label="Echo">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_combined_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.TasksWidgetReceiver"
+            android:exported="false"
+            android:label="Today">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_tasks_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.RecentWidgetReceiver"
+            android:exported="false"
+            android:label="Recent notes">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_recent_info" />
+        </receiver>
+
+        <receiver
+            android:name=".notify.NoteStatusNotifier$RetryReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".notify.TaskActionReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".notify.RecordingActionReceiver"
             android:exported="false" />
+
+        <service
+            android:name=".RecordTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_mic"
+            android:label="Record"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="true" />
+        </service>
 
         <service
             android:name=".RecordingService"

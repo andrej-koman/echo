@@ -39,6 +39,7 @@ data class SettingsUiState(
     val litertModelBytes: Long = 0,
     val autoAnalyze: Boolean = true,
     val detectSpeakers: Boolean = true,
+    val idleNotification: Boolean = false,
     val wifiOnlyDownload: Boolean = false,
     val storage: StorageUsage = StorageUsage(emptyList()),
     val notesCount: Int = 0,
@@ -76,6 +77,7 @@ class SettingsViewModel(
     val onReplayOnboarding: () -> Unit = {},
     private val onSaveBackup: suspend (android.net.Uri) -> Unit = {},
     private val onRestoreBackup: suspend (android.net.Uri) -> Unit = {},
+    private val onIdleNotificationChange: (Boolean) -> Unit = {},
     private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
 
@@ -113,6 +115,7 @@ class SettingsViewModel(
         litertModelBytes = litertModelBytes,
         autoAnalyze = settings.autoAnalyze,
         detectSpeakers = settings.detectSpeakers,
+        idleNotification = settings.idleNotification,
         wifiOnlyDownload = settings.wifiOnlyDownload,
         notesCount = notesCount,
         tasksCount = tasksCount,
@@ -178,6 +181,12 @@ class SettingsViewModel(
     fun setImportDay(day: ImportDay?) {
         settings.importDay = day
         _state.value = _state.value.copy(importDay = day)
+    }
+
+    fun setIdleNotification(value: Boolean) {
+        settings.idleNotification = value
+        _state.value = _state.value.copy(idleNotification = value)
+        onIdleNotificationChange(value)
     }
 
     fun setDetectSpeakers(value: Boolean) {

@@ -26,6 +26,12 @@ interface DerivedRepository {
 
     suspend fun setDone(itemId: String, done: Boolean)
 
+    /**
+     * Reminds again in an hour. A timed task's time moves with it (an hour after its time, or after
+     * now once overdue) so lists show the new time; date-only and undated tasks keep their deadline.
+     */
+    suspend fun snooze(itemId: String)
+
     suspend fun update(itemId: String, text: String, dueAt: Long, hasTime: Boolean, hasDate: Boolean)
 
     suspend fun delete(itemId: String)

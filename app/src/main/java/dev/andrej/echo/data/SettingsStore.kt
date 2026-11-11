@@ -37,6 +37,9 @@ interface SettingsStore {
     var cachedIsPro: Boolean
 
     var themeMode: ThemeMode
+
+    /** The always-there "Tap to record" notification; off by default since widgets and the tile cover it. */
+    var idleNotification: Boolean
 }
 
 class SharedPreferencesSettingsStore(context: Context) : SettingsStore {
@@ -88,6 +91,10 @@ class SharedPreferencesSettingsStore(context: Context) : SettingsStore {
             ?.let { name -> ThemeMode.entries.find { it.name == name } } ?: ThemeMode.Dark
         set(value) = preferences.edit().putString(KEY_THEME_MODE, value.name).apply()
 
+    override var idleNotification: Boolean
+        get() = preferences.getBoolean(KEY_IDLE_NOTIFICATION, false)
+        set(value) = preferences.edit().putBoolean(KEY_IDLE_NOTIFICATION, value).apply()
+
     private companion object {
         const val KEY_LANGUAGE = "transcription_language"
         const val KEY_AUTO_ANALYZE = "auto_analyze"
@@ -99,6 +106,7 @@ class SharedPreferencesSettingsStore(context: Context) : SettingsStore {
         const val KEY_PENDING_NOTES_AI_MODEL = "pending_notes_ai_model"
         const val KEY_IMPORT_DAY = "import_day"
         const val KEY_THEME_MODE = "theme_mode"
+        const val KEY_IDLE_NOTIFICATION = "idle_notification"
         const val DEFAULT_NOTES_AI_MODEL = "qwen3_1_7b"
     }
 }

@@ -22,6 +22,7 @@ import kotlinx.coroutines.delay
 private const val SAMPLE_MS = 70L
 private const val ATTACK = 0.6f
 private const val DECAY = 0.12f
+private const val MAX_HISTORY = 400
 
 /**
  * @param level microphone loudness, 0f..1f. While [live] the bars are a scrolling history of it,
@@ -40,10 +41,11 @@ fun Waveform(
     idleColor: Color = EchoTheme.colors.waveformIdle,
 ) {
     val currentLevel by rememberUpdatedState(level)
-    val history = remember(bars) { mutableStateListOf<Float>().apply { repeat(bars) { add(0f) } } }
+    // Not keyed on [bars]: a parent whose width shifts (a ticking timer beside it) must not wipe the history.
+    val history = remember { mutableStateListOf<Float>().apply { repeat(MAX_HISTORY) { add(0f) } } }
     val idleProfile = remember(bars) { idleProfile(bars) }
 
-    LaunchedEffect(live, bars) {
+    LaunchedEffect(live) {
         if (!live) {
             for (i in history.indices) history[i] = 0f
             return@LaunchedEffect
@@ -70,7 +72,7 @@ fun Waveform(
         val minHeight = 3.dp.toPx()
 
         repeat(bars) { index ->
-            val fraction = if (live) history[index] else idleProfile[index] * 0.25f
+            val fraction = if (live) history.getOrElse(history.size - bars + index) { 0f } else idleProfile[index] * 0.25f
             val barHeight = maxOf(minHeight, fraction * size.height)
             val x = startX + index * (barPx + gapPx)
 

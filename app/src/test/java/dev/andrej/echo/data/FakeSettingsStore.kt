@@ -12,4 +12,5 @@ class FakeSettingsStore(initial: String? = null) : SettingsStore {
     override var importDay: ImportDay? = null
     override var cachedIsPro: Boolean = false
     override var themeMode: ThemeMode = ThemeMode.Dark
+    override var idleNotification: Boolean = false
 }

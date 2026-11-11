@@ -14,7 +14,10 @@ import dev.andrej.echo.MainActivity
 import dev.andrej.echo.R
 import dev.andrej.echo.data.TodoItem
 
-class AndroidTaskReminderDelivery(private val context: Context) : TaskReminderDelivery {
+class AndroidTaskReminderDelivery(
+    private val context: Context,
+    private val noteTitle: (transcriptId: String) -> String? = { null },
+) : TaskReminderDelivery {
     private val alarms = context.getSystemService(AlarmManager::class.java)
     private val notifications = context.getSystemService(NotificationManager::class.java)
 
@@ -63,11 +66,15 @@ class AndroidTaskReminderDelivery(private val context: Context) : TaskReminderDe
         val open = PendingIntent.getActivity(
             context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        val source = noteTitle(task.sourceTranscriptId)?.let { "From “$it”" }
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification_echo)
-            .setContentTitle("Task reminder")
-            .setContentText(task.text)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(task.text))
+            .setSmallIcon(R.drawable.ic_bell)
+            .setColor(RecordingNotifier.BRONZE)
+            .setSubText("Reminder")
+            .setContentTitle(task.text)
+            .setContentText(source)
+            .addAction(R.drawable.ic_check, "Done", actionIntent(TaskActionReceiver.ACTION_DONE, task.id))
+            .addAction(R.drawable.ic_clock, "Snooze 1h", actionIntent(TaskActionReceiver.ACTION_SNOOZE, task.id))
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(open)
@@ -78,6 +85,16 @@ class AndroidTaskReminderDelivery(private val context: Context) : TaskReminderDe
         notifications.notify(TAG_PREFIX + task.id, 0, notification)
         return notificationsAllowed()
     }
+
+    private fun actionIntent(action: String, id: String): PendingIntent = PendingIntent.getBroadcast(
+        context,
+        0,
+        Intent(context, TaskActionReceiver::class.java)
+            .setAction(action)
+            .setData(Uri.parse("echo://task-action/$id"))
+            .putExtra(EXTRA_TASK_ID, id),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
 
     private fun alarmBaseIntent(id: String) = Intent(context, TaskReminderReceiver::class.java)
         .setAction(ACTION_REMIND)

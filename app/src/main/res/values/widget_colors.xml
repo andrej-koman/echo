@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget palette from the "Echo widgets and notifications" design; widgets follow the system day/night. -->
+<resources>
+    <color name="widget_card">#FFFFFDF5</color>
+    <color name="widget_sunk">#FFF5F2E8</color>
+    <color name="widget_tx">#FF2A2318</color>
+    <color name="widget_tx2">#FF635747</color>
+    <color name="widget_tx3">#FF7A6D5A</color>
+    <color name="widget_hair">#1A3A3125</color>
+    <color name="widget_ctl">#FF9A8F7D</color>
+    <color name="widget_acc_soft">#FFF6E7D7</color>
+    <color name="widget_acc_tx">#FF7A5533</color>
+    <color name="widget_warn_bg">#FFFBEECB</color>
+    <color name="widget_warn">#FF7D5C10</color>
+    <color name="widget_live_tx">#FF9E4B2E</color>
+    <color name="widget_cream">#FFFAEDCD</color>
+    <color name="widget_danger_bg">#FFF8E2D9</color>
+    <color name="widget_danger">#FF9E4B2E</color>
+    <color name="widget_track">#FFEBE6D8</color>
+    <color name="widget_bronze">#FFD4A373</color>
+    <color name="widget_on_bronze">#FF2A2318</color>
+    <color name="widget_white">#FFFFFFFF</color>
+</resources>

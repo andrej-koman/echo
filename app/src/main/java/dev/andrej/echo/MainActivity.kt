@@ -28,6 +28,8 @@ class MainActivity : ComponentActivity() {
 
     private var pendingOpenCapture by mutableStateOf(false)
     private var pendingOpenTask by mutableStateOf<String?>(null)
+    private var pendingOpenNote by mutableStateOf<OpenNote?>(null)
+    private var pendingOpenCalendar by mutableStateOf(false)
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         container.onAppForegrounded()
     }
@@ -39,6 +41,8 @@ class MainActivity : ComponentActivity() {
         container = (application as EchoApplication).container
         pendingOpenCapture = consumeBooleanExtra(intent, EXTRA_OPEN_CAPTURE)
         pendingOpenTask = consumeTaskExtra(intent)
+        pendingOpenNote = consumeNoteExtra(intent)
+        pendingOpenCalendar = consumeBooleanExtra(intent, EXTRA_OPEN_CALENDAR)
         // A recreation replays the same Intent; the import already happened the first time.
         if (savedInstanceState == null) importShared(intent)
 
@@ -71,6 +75,10 @@ class MainActivity : ComponentActivity() {
                     onOpenCaptureHandled = { pendingOpenCapture = false },
                     pendingOpenTask = pendingOpenTask,
                     onOpenTaskHandled = { pendingOpenTask = null },
+                    pendingOpenNote = pendingOpenNote,
+                    onOpenNoteHandled = { pendingOpenNote = null },
+                    pendingOpenCalendar = pendingOpenCalendar,
+                    onOpenCalendarHandled = { pendingOpenCalendar = false },
                 )
             }
         }
@@ -80,6 +88,8 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         pendingOpenCapture = consumeBooleanExtra(intent, EXTRA_OPEN_CAPTURE)
         pendingOpenTask = consumeTaskExtra(intent)
+        consumeNoteExtra(intent)?.let { pendingOpenNote = it }
+        if (consumeBooleanExtra(intent, EXTRA_OPEN_CALENDAR)) pendingOpenCalendar = true
         importShared(intent)
     }
 
@@ -103,13 +113,31 @@ class MainActivity : ComponentActivity() {
     private fun consumeTaskExtra(intent: Intent): String? =
         intent.getStringExtra(EXTRA_OPEN_TASK)?.also { intent.removeExtra(EXTRA_OPEN_TASK) }
 
+    private fun consumeNoteExtra(intent: Intent): OpenNote? {
+        val id = intent.getStringExtra(EXTRA_OPEN_NOTE) ?: return null
+        val tasks = intent.getBooleanExtra(EXTRA_OPEN_NOTE_TASKS, false)
+        intent.removeExtra(EXTRA_OPEN_NOTE)
+        intent.removeExtra(EXTRA_OPEN_NOTE_TASKS)
+        return OpenNote(id, tasks)
+    }
+
     override fun onStart() {
         super.onStart()
         container.onAppForegrounded()
     }
 
+    override fun onStop() {
+        super.onStop()
+        container.onAppBackgrounded()
+    }
+
     companion object {
         const val EXTRA_OPEN_CAPTURE = "open_capture"
         const val EXTRA_OPEN_TASK = "open_task"
+        const val EXTRA_OPEN_NOTE = "open_note"
+        const val EXTRA_OPEN_NOTE_TASKS = "open_note_tasks"
+        const val EXTRA_OPEN_CALENDAR = "open_calendar"
     }
 }
+
+data class OpenNote(val id: String, val tasks: Boolean)

@@ -59,6 +59,12 @@ class TaskReminders(
         }
     }
 
+    /** A reminder acted on from its notification: Done or Snooze already changed the row. */
+    suspend fun dismiss(id: String) = mutex.withLock {
+        delivery.cancelNotification(id)
+        shownText.remove(id)
+    }
+
     suspend fun deliver(id: String, expectedAt: Long) = mutex.withLock {
         deliverLocked(id, expectedAt, now())
     }

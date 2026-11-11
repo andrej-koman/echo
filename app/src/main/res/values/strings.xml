@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">Echo</string>
+    <string name="widget_record_description">One tap to record, stop or resume</string>
+    <string name="widget_combined_description">Record, today\'s tasks and your latest note</string>
+    <string name="widget_tasks_description">Today\'s tasks from your notes, tick or snooze in place</string>
+    <string name="widget_recent_description">Your latest notes and how far along they are</string>
 </resources>

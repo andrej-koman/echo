@@ -19,11 +19,13 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 data class HistoryDay(
     val date: LocalDate,
     val inMonth: Boolean,
     val heatLevel: Int,
+    val taskLevel: Int = 0,
 )
 
 data class HistoryDetailRow(
@@ -43,6 +45,9 @@ data class HistoryUiState(
     val selectedDay: LocalDate = LocalDate.now(),
     val selectedDayLabel: String = "",
     val selectedDetail: List<HistoryDetailRow> = emptyList(),
+    /** Tasks due on the selected day; undated tasks have no place on the calendar. */
+    val selectedTasks: List<TodoItem> = emptyList(),
+    val noteTitles: Map<String, String> = emptyMap(),
     val canGoNext: Boolean = true,
     val weekDays: List<HistoryDay> = emptyList(),
     val previousNoteDay: LocalDate? = null,
@@ -75,6 +80,10 @@ class HistoryViewModel(
 
     fun goToday() = pick(Instant.ofEpochMilli(now()).atZone(zone).toLocalDate())
 
+    fun toggleTask(item: TodoItem) {
+        viewModelScope.launch { derived.setDone(item.id, !item.done) }
+    }
+
 }
 
 internal fun calendarStep(day: LocalDate, expanded: Boolean, direction: Int): LocalDate =
@@ -96,6 +105,8 @@ internal fun buildHistoryState(
     fun Long.day() = Instant.ofEpochMilli(this).atZone(zone).toLocalDate()
 
     val byDay = transcripts.groupBy { it.day() }
+    val tasksByDay = items.filter { it.hasDate }.groupBy { it.dueAt.day() }
+    fun taskLevel(date: LocalDate) = (tasksByDay[date]?.size ?: 0).coerceAtMost(3)
 
     val firstOfMonth = month.atDay(1)
     val gridStart = firstOfMonth.minusDays((firstOfMonth.dayOfWeek.value - 1).toLong())
@@ -112,6 +123,7 @@ internal fun buildHistoryState(
                 count == 2 -> 2
                 else -> 3
             },
+            taskLevel = taskLevel(date),
         )
     }
 
@@ -143,11 +155,13 @@ internal fun buildHistoryState(
         selectedDay = selected,
         selectedDayLabel = if (selected == today) "Today, ${DateTimeFormatter.ofPattern("d MMMM").format(selected)}" else dayDetailFormat.format(selected),
         selectedDetail = selectedDetail,
+        selectedTasks = tasksByDay[selected].orEmpty().sortedWith(compareBy({ it.done }, { !it.hasTime }, { it.dueAt })),
+        noteTitles = transcripts.associate { it.id to (it.title ?: title(it.text)) },
         canGoNext = true,
         weekDays = (0..6).map { offset ->
             val date = selected.minusDays((selected.dayOfWeek.value - 1).toLong()).plusDays(offset.toLong())
-            HistoryDay(date, YearMonth.from(date) == month, (byDay[date]?.size ?: 0).coerceAtMost(3))
+            HistoryDay(date, YearMonth.from(date) == month, (byDay[date]?.size ?: 0).coerceAtMost(3), taskLevel(date))
         },
-        previousNoteDay = byDay.keys.filter { it < selected }.maxOrNull(),
+        previousNoteDay = (byDay.keys + tasksByDay.keys).filter { it < selected }.maxOrNull(),
     )
 }

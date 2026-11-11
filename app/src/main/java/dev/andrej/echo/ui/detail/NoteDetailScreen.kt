@@ -88,6 +88,7 @@ import dev.andrej.echo.ui.notes.clock
 import dev.andrej.echo.ui.notes.dateLabel
 import dev.andrej.echo.ui.notes.title
 import dev.andrej.echo.ui.tasks.TaskRow
+import dev.andrej.echo.ui.tasks.taskRowPadding
 import dev.andrej.echo.ui.tasks.isOverdue
 import dev.andrej.echo.ui.theme.EchoTheme
 import dev.andrej.echo.ui.theme.hairline
@@ -114,6 +115,7 @@ fun NoteDetailScreen(
     onDeleted: () -> Unit,
     onBack: () -> Unit,
     onEditTask: (String) -> Unit,
+    openTasks: Boolean = false,
     isPro: Boolean = false,
     onUpgrade: () -> Unit = {},
     recording: Boolean = false,
@@ -140,7 +142,8 @@ fun NoteDetailScreen(
     val audio = remember(noteId, transcribing) { viewModel.audio(noteId) }
     val player = rememberNotePlayer(audio)
 
-    var tab by rememberSaveable { mutableStateOf(NoteTab.BySpeaker) }
+    var tab by rememberSaveable { mutableStateOf(if (openTasks) NoteTab.Tasks else NoteTab.BySpeaker) }
+    LaunchedEffect(noteId) { viewModel.noteOpened(noteId) }
     // Null until the note has loaded; tells "Full text just appeared" from "was always there".
     var wasTranscribed by remember(noteId) { mutableStateOf<Boolean?>(null) }
     var sheet by remember { mutableStateOf<NoteSheet?>(null) }
@@ -694,15 +697,10 @@ private fun LazyListScope.tasksTab(
                         if (task.id == focusedTaskId) EchoTheme.colors.taskHighlight
                         else Color.Transparent,
                     )
-                    .border(Dp.Hairline, EchoTheme.colors.borderSubtle, shape)
-                    .padding(
-                        start = EchoTheme.spacing.s4,
-                        end = EchoTheme.spacing.s4,
-                        top = if (first) EchoTheme.spacing.s2 else 0.dp,
-                        bottom = if (last) EchoTheme.spacing.s2 else 0.dp,
-                    ),
+                    .border(Dp.Hairline, EchoTheme.colors.borderSubtle, shape),
             ) {
                 TaskRow(
+                    padding = taskRowPadding(first, last),
                     task = task,
                     onToggle = { onToggle(task) },
                     onEdit = { onEdit(task) },

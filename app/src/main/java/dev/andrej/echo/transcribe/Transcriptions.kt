@@ -48,6 +48,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -109,6 +110,11 @@ class Transcriptions(
 
     /** Copying a large file takes a while, and the row must not read as failed meanwhile. */
     private val interruptedImports = MutableStateFlow(emptySet<String>())
+
+    private val _transcribedOnly = MutableSharedFlow<String>(extraBufferCapacity = 16)
+
+    /** Finished transcripts that won't be analyzed automatically (Summary and tasks is off). */
+    val transcribedOnly: SharedFlow<String> = _transcribedOnly.asSharedFlow()
     private val copying = MutableStateFlow(emptySet<String>())
 
     private val _live = MutableStateFlow<LiveTranscript?>(null)
@@ -537,6 +543,8 @@ class Transcriptions(
                     progress.cancel()
                 }
             }
+        } else if (transcript != null && id !in stops.value && transcript.text.isNotBlank()) {
+            _transcribedOnly.tryEmit(id)
         }
         })
         File(dir, PENDING).delete()

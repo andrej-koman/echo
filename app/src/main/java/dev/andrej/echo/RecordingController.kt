@@ -39,7 +39,10 @@ class RecordingController(
     private val _state = MutableStateFlow(RecordUiState())
     val state: StateFlow<RecordUiState> = _state.asStateFlow()
 
-    private class Take(val id: String, val file: File, val startedAt: Long)
+    private class Take(val id: String, val file: File, val startedAt: Long) {
+        var samplesSeen = 0L
+        var voicedSamples = 0L
+    }
 
     private var take: Take? = null
     private var recordJob: Job? = null
@@ -57,13 +60,16 @@ class RecordingController(
     }
 
     private fun capture() {
-        val file = take?.file ?: return
+        val take = take ?: return
+        val file = take.file
         // A paused capture may still be finishing its last read; two writers would interleave.
         val previous = recordJob
         recordJob = scope.launch {
             previous?.cancelAndJoin()
             try {
                 recorder.record(file) { level, samples ->
+                    if (level >= VOICE_LEVEL) take.voicedSamples += samples - take.samplesSeen
+                    take.samplesSeen = samples
                     _state.update { it.copy(level = level, elapsedMs = samples * 1000 / SAMPLE_RATE) }
                 }
             } catch (e: CancellationException) {
@@ -97,7 +103,7 @@ class RecordingController(
         scope.launch {
             job?.join()
             val samples = take.file.length() / 2
-            if (samples == 0L) {
+            if (samples == 0L || take.voicedSamples < MIN_VOICED_SAMPLES) {
                 onDiscarded(take.id)
                 return@launch
             }
@@ -131,5 +137,12 @@ class RecordingController(
         interruptions.stop()
         _state.value = RecordUiState()
         return job
+    }
+
+    private companion object {
+        // Loudness ~-41 dBFS: above room tone, below speech at arm's length. A take that never
+        // stays above it for a few hundred ms has nothing for Whisper to hear.
+        const val VOICE_LEVEL = 0.35f
+        const val MIN_VOICED_SAMPLES = SAMPLE_RATE * 3L / 10
     }
 }

@@ -124,6 +124,18 @@ class NotesViewModelTest {
     }
 
     @Test
+    fun `a row counts its open and total tasks`() {
+        fun task(id: String, note: String, done: Boolean) = dev.andrej.echo.data.TodoItem(
+            id = id, sourceTranscriptId = note, text = id, dueAt = 0, hasTime = false, done = done, createdAt = 0,
+        )
+        val tasks = listOf(task("1", "a", false), task("2", "a", true), task("3", "b", true))
+
+        val rows = rows(listOf(transcript("a", 2_000L), transcript("b", 1_000L)), 2_000L, tasks = tasks)
+
+        assertEquals(listOf(1 to 2, 0 to 1), rows.map { it.openTasks to it.totalTasks })
+    }
+
+    @Test
     fun `a row picks up its pending copy`() {
         val work = Work(queued = mapOf("a" to PendingAnalysis("a", 0, lastBlock = AnalysisBlock.EmptyResult)))
 

@@ -83,8 +83,13 @@ class TranscriptAnalyzer(
                     completed()
                     return@flatMap emptyList()
                 }
-                generate(runner, buildTasksPrompt(chunk, recordedAt)) { raw ->
-                    parseTasks(raw, zone, today, recordedAt) { line -> timed.getOrNull(line)?.startMs }
+                // A task whose text is only its time earns the retry; on the last attempt it is dropped.
+                generate(runner, buildTasksPrompt(chunk, recordedAt)) { raw, last ->
+                    val parsed = parseTasks(raw, zone, today, recordedAt) { line -> timed.getOrNull(line)?.startMs }
+                        ?: return@generate null
+                    val valid = parsed.filterNot { isScheduleOnly(it.text) }
+                    if (valid.size < parsed.size) logWarn("task text holds only a date or time")
+                    valid.takeIf { last || it.size == parsed.size }
                 }.also { completed() }
             }
 
@@ -110,9 +115,13 @@ class TranscriptAnalyzer(
     }
 
     /** One prompt, retried once at zero temperature when it throws or its answer does not parse. */
-    private suspend fun <T : Any> generate(runner: LlmRunner, prompt: String, parse: (String) -> T?): T {
+    private suspend fun <T : Any> generate(runner: LlmRunner, prompt: String, parse: (String) -> T?): T =
+        generate(runner, prompt) { raw, _ -> parse(raw) }
+
+    private suspend fun <T : Any> generate(runner: LlmRunner, prompt: String, parse: (raw: String, last: Boolean) -> T?): T {
         var failure: AnalysisBlock = AnalysisBlock.EmptyResult
-        for (temperature in listOf(LlmRunner.DEFAULT_TEMPERATURE, 0f)) {
+        val temperatures = listOf(LlmRunner.DEFAULT_TEMPERATURE, 0f)
+        for ((attempt, temperature) in temperatures.withIndex()) {
             currentCoroutineContext().ensureActive()
             val raw = try {
                 runner.generate(prompt, temperature)
@@ -127,7 +136,7 @@ class TranscriptAnalyzer(
             currentCoroutineContext().ensureActive()
             logDebug("raw output (temperature=$temperature): $raw")
 
-            parse(raw)?.let {
+            parse(raw, attempt == temperatures.lastIndex)?.let {
                 logDebug("parsed: $it")
                 return it
             }

@@ -161,11 +161,41 @@ private fun Meta(row: NoteRow, showFolder: Boolean) {
             color = EchoTheme.colors.textTertiary,
             maxLines = 1,
         )
+        if (row.totalTasks > 0) TaskCount(row)
         val folder = row.folder
         when {
             row.pending != null -> PendingBadge(row.pending, modifier = Modifier.weight(1f, fill = false))
             showFolder && folder != null -> FolderLabel(folder, modifier = Modifier.weight(1f, fill = false))
         }
+    }
+}
+
+/** Open tasks while any remain; once all are ticked off, how many were done, muted. */
+@Composable
+private fun TaskCount(row: NoteRow) {
+    val open = row.openTasks > 0
+    val color = if (open) EchoTheme.colors.textSecondary else EchoTheme.colors.textTertiary
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s2),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text = "·", style = EchoTheme.typography.micro, color = EchoTheme.colors.textTertiary)
+        Icon(
+            painter = painterResource(R.drawable.ic_check),
+            contentDescription = null,
+            tint = color,
+            modifier = Modifier.size(12.dp),
+        )
+        Text(
+            text = when {
+                !open -> "${row.totalTasks} done"
+                row.openTasks == 1 -> "1 task"
+                else -> "${row.openTasks} tasks"
+            },
+            style = EchoTheme.typography.micro.copy(fontWeight = FontWeight.Medium),
+            color = color,
+            maxLines = 1,
+        )
     }
 }
 

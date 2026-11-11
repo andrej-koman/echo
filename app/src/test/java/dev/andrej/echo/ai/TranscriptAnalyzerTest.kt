@@ -40,6 +40,20 @@ class TranscriptAnalyzerTest {
         assertEquals(listOf(9060L, 9060L, 18600L, 30640L), result.map { it.sourceOffsetMs })
     }
 
+    @Test
+    fun `a task named only by its time is retried, then dropped`() = runTest {
+        val timeOnly = """{"items":[{"text":"Tomorrow at 10 a.m.","due":null,"line":0},{"text":"Buy a washer","due":null,"line":1}]}"""
+
+        val fixed = FakeLlmRunner(listOf(summary, plans, timeOnly, tasks))
+        val retried = (analyzer(fixed).analyze(transcript()) as AnalysisOutcome.Success).analysis.items
+        assertEquals(listOf("Buy a washer"), retried.map { it.text })
+        assertEquals(listOf(LlmRunner.DEFAULT_TEMPERATURE, 0f), fixed.temperatures.takeLast(2))
+
+        val stubborn = FakeLlmRunner(listOf(summary, plans, timeOnly, timeOnly))
+        val dropped = (analyzer(stubborn).analyze(transcript()) as AnalysisOutcome.Success).analysis.items
+        assertEquals(listOf("Buy a washer"), dropped.map { it.text })
+    }
+
     private val summary = """{"title":"Fix the tap","summary":"It drips."}"""
     private val tasks = """{"items":[{"text":"Buy a washer","due":null,"line":1}]}"""
     private val plans = """{"plans":true}"""

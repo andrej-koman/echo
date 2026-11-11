@@ -98,12 +98,12 @@ private object Routes {
     const val SETTINGS = "settings"
     const val STORAGE = "storage"
     const val DICTIONARY = "dictionary"
-    const val DETAIL = "detail/{id}"
+    const val DETAIL = "detail/{id}?tab={tab}"
     const val FOLDER = "folders/{id}"
     const val EDIT_TASK = "tasks/{id}/edit"
 
     fun paywall(note: String? = null) = if (note == null) PAYWALL_BASE else "$PAYWALL_BASE?note=$note"
-    fun detail(id: String) = "detail/$id"
+    fun detail(id: String, tasks: Boolean = false) = if (tasks) "detail/$id?tab=tasks" else "detail/$id"
     fun folder(id: String) = "folders/$id"
     fun editTask(id: String) = "tasks/$id/edit"
 }
@@ -127,6 +127,10 @@ fun EchoApp(
     onOpenCaptureHandled: () -> Unit = {},
     pendingOpenTask: String? = null,
     onOpenTaskHandled: () -> Unit = {},
+    pendingOpenNote: OpenNote? = null,
+    onOpenNoteHandled: () -> Unit = {},
+    pendingOpenCalendar: Boolean = false,
+    onOpenCalendarHandled: () -> Unit = {},
 ) {
     val done by onboardingDone.collectAsStateWithLifecycle()
     var captureAfterOnboarding by remember { mutableStateOf(false) }
@@ -155,6 +159,10 @@ fun EchoApp(
                 onOpenImportHandled = { importAfterOnboarding = false },
                 pendingOpenTask = pendingOpenTask,
                 onOpenTaskHandled = onOpenTaskHandled,
+                pendingOpenNote = pendingOpenNote,
+                onOpenNoteHandled = onOpenNoteHandled,
+                pendingOpenCalendar = pendingOpenCalendar,
+                onOpenCalendarHandled = onOpenCalendarHandled,
                 onOpenCaptureHandled = {
                     captureAfterOnboarding = false
                     onOpenCaptureHandled()
@@ -176,6 +184,10 @@ private fun MainApp(
     onOpenImportHandled: () -> Unit = {},
     pendingOpenTask: String? = null,
     onOpenTaskHandled: () -> Unit = {},
+    pendingOpenNote: OpenNote? = null,
+    onOpenNoteHandled: () -> Unit = {},
+    pendingOpenCalendar: Boolean = false,
+    onOpenCalendarHandled: () -> Unit = {},
 ) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -271,6 +283,20 @@ private fun MainApp(
         }
     }
 
+    LaunchedEffect(pendingOpenNote) {
+        pendingOpenNote?.let {
+            navController.navigate(Routes.detail(it.id, it.tasks)) { launchSingleTop = true }
+            onOpenNoteHandled()
+        }
+    }
+
+    LaunchedEffect(pendingOpenCalendar) {
+        if (pendingOpenCalendar) {
+            navController.selectTab(Routes.CALENDAR)
+            onOpenCalendarHandled()
+        }
+    }
+
     val openSheets = remember { mutableIntStateOf(0) }
     val barCenter = remember { mutableStateOf<(@Composable () -> Unit)?>(null) }
 
@@ -362,6 +388,8 @@ private fun MainApp(
                         notesViewModel = notesViewModel,
                         onPickDay = historyViewModel::pick,
                         onOpen = { navController.navigate(Routes.detail(it)) },
+                        onToggleTask = historyViewModel::toggleTask,
+                        onEditTask = { navController.navigate(Routes.editTask(it)) },
                     )
                 }
 
@@ -381,6 +409,7 @@ private fun MainApp(
                         onImportDayChange = settingsViewModel::setImportDay,
                         onAutoAnalyzeChange = settingsViewModel::setAutoAnalyze,
                         onDetectSpeakersChange = settingsViewModel::setDetectSpeakers,
+                        onIdleNotificationChange = settingsViewModel::setIdleNotification,
                         onWifiOnlyDownloadChange = settingsViewModel::setWifiOnlyDownload,
                         onDeleteAllData = settingsViewModel::deleteAllData,
                         onDownloadModel = settingsViewModel.onDownloadModel,
@@ -432,12 +461,16 @@ private fun MainApp(
                     )
                 }
 
-                composable(Routes.DETAIL) { entry ->
+                composable(
+                    Routes.DETAIL,
+                    arguments = listOf(navArgument("tab") { type = NavType.StringType; nullable = true; defaultValue = null }),
+                ) { entry ->
                     val notesViewModel: NotesViewModel = viewModel(factory = viewModelFactory)
                     CompositionLocalProvider(LocalBottomBarHeight provides (barHeight - if (recording.isRecording) recordingRowHeight else 0.dp).coerceAtLeast(0.dp)) {
                     NoteDetailScreen(
                         viewModel = notesViewModel,
                         noteId = entry.arguments?.getString("id").orEmpty(),
+                        openTasks = entry.arguments?.getString("tab") == "tasks",
                         onDeleted = { navController.popBackStack() },
                         onBack = { navController.popBackStack() },
                         onEditTask = { navController.navigate(Routes.editTask(it)) },

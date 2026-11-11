@@ -41,7 +41,12 @@ class TranscriptionWorker(context: Context, params: WorkerParameters) : Coroutin
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "transcription of $transcriptId failed (attempt $runAttemptCount)", e)
-            if (runAttemptCount < MAX_RETRIES) Result.retry() else Result.failure()
+            if (runAttemptCount < MAX_RETRIES) {
+                Result.retry()
+            } else {
+                (applicationContext as EchoApplication).container.onTranscriptionFailed(transcriptId)
+                Result.failure()
+            }
         }
     }
 

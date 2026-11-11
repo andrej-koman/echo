@@ -39,7 +39,8 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
 - `RecordingController` (app-scoped) records through `AudioRecorder` straight to
   `recordings/<id>/audio.pcm` — raw 16 kHz PCM16, what Whisper reads, with no header to finish if
   the process dies. Stop saves a transcript row with that id (empty text) and hands it to
-  `Transcriptions.transcribe`; a take with no audio is discarded. Afterwards the PCM is encoded to
+  `Transcriptions.transcribe`; a take with no audio, or under 300 ms above loudness 0.35
+  (~-41 dBFS), is discarded with its files: nothing was said, so there is nothing to transcribe. Afterwards the PCM is encoded to
   AAC `source` (`AudioEncoder`, 32 kbps — ~14 MB/hour instead of 115) and deleted. Encoding goes
   to `source.part` and is renamed: a half-written `source` would read as an import.
 - **No live text while recording, and no Processing screen.** Stop closes the compact recording row; Whisper runs
@@ -301,7 +302,8 @@ becomes "N selected" with Move to folder and Delete (`BulkActionSheets`), back o
 Header is the mascot + "Echo", with a "Pro" badge when the billing entitlement is active.
 Notes is the one list of everything; Folders lists folders, each opening its notes (no folder
 filter on Notes); Calendar is `HistoryScreen` (month heat grid, the picked day's notes open on
-tap). Settings opens directly from the fourth tab. A note is moved from its own screen (folder icon in
+tap). Tasks sit on their due day, not their note's day, as sage dots beside the bronze note dots;
+the picked day lists them above its notes. Undated tasks have no day and stay off the calendar. Settings opens directly from the fourth tab. A note is moved from its own screen (folder icon in
 the bar, `PickerSheet`). Raw transcript text lives only in each note's screen. The record
 button sits in the bar's middle slot (`TabBar(centerGap = true)` leaves the gap, `EchoApp` overlays the
 button on a bar-coloured cradle so it pokes above the hairline). The tab bar is icon-only — no labels, no
@@ -609,10 +611,13 @@ Onboarding is ported from the separate "Echo Onboarding" Design artifact
 
 ## Notifications
 
-Four channels: task reminders, the recording notification
-(`RecordingNotifier` — idle "tap to record", or ongoing while `RecordingService` runs), the
-model download progress (`ModelDownloadNotifier`), and transcription progress (posted by
-`TranscriptionWorker` itself, including the Whisper download inside the job).
+Channels: task reminders, recording (`RecordingNotifier`, ongoing while `RecordingService` runs),
+record shortcut (the idle "Tap to record", `IMPORTANCE_MIN`, its own channel because importance can't
+be lowered on an existing one), notes ready (`NoteStatusNotifier`), model download progress
+(`ModelDownloadNotifier`), and transcription progress (posted by `TranscriptionWorker` itself).
+
+Design: claude.ai/code/artifact/fafde722-3aa6-4a0a-a851-c9fa3332416c ("Echo widgets and
+notifications"). Bronze `setColor` on every Echo notification; clay only while a recording is live.
 
 - **Task reminders** use `TaskReminders`, `AndroidTaskReminderDelivery`, and
   `TaskReminderReceiver`. Explicit times use the resolved instant; date-only tasks notify at
@@ -663,8 +668,60 @@ model download progress (`ModelDownloadNotifier`), and transcription progress (p
   **Cancel** are the same call (`AppContainer.cancelDownload`, which cancels the coroutine — the
   `.part` file survives so the next `downloadModel()` resumes) except Cancel also calls
   `deleteModel()`.
-- Widgets and the Quick Settings tile come in Phase 10 (design: OutLoud "Echo Notifications &
-  Widgets", Claude Design project `e17770fa-3b8d-43f1-b85d-c74c647c4e70`).
+- **Idle notification is opt-in** (`SettingsStore.idleNotification`, default off; Settings →
+  Recordings). Widgets and the tile cover quick capture. Recording shows a system chronometer
+  (`setWhen(now - elapsedMs)`) so the notification is re-posted only on mode change; "Stop and save"
+  reads that way so nobody fears losing the take. `RecordingNotifier.foreground` is what the service
+  posts: the service starts before the controller, so an idle state there still reads as recording.
+- **Reminder actions**: Done and Snooze 1h go to `TaskActionReceiver` →
+  `DerivedRepository.setDone`/`snooze`, then `TaskReminders.dismiss`; `reconcile` re-arms the alarm
+  from the row. Snooze moves a timed task's time an hour past its time (or past now when overdue) so
+  lists show the new time; date-only and undated tasks keep their deadline and only remind again.
+- **Note status** (`NoteStatusNotifier`) posts only while no Echo activity is started
+  (`AppContainer.appVisible`, set from `MainActivity.onStart/onStop`), one card per note (tag
+  `note:<id>`, a group summary from two up), private on the lock screen. Note ready comes from
+  `PendingAnalysisWorker.outcomes` (`noteStatus()` maps outcome → kind); Transcript ready from
+  `Transcriptions.transcribedOnly` (auto-analyze off) or a parked analysis (`WaitingForModel`,
+  `NoBackend`); Couldn't finish from `GenerationFailed`/`EmptyResult` or the transcription worker's
+  final `Result.failure`. Retry uses `AppContainer.retryNote`, the same split as the note's retry
+  button. Opening the note cancels its card. A parked note is retried on every drain, so the notifier
+  remembers what it showed per note.
+- Note and calendar deep links use Activity extras like `EXTRA_OPEN_CAPTURE`: `EXTRA_OPEN_NOTE`
+  (+ `EXTRA_OPEN_NOTE_TASKS` → `detail/{id}?tab=tasks`) and `EXTRA_OPEN_CALENDAR`. There is no
+  standalone tasks screen, so "today's tasks" links open the Calendar tab.
+
+## Widgets
+
+- Glance (`androidx.glance:glance-appwidget`), one `GlanceAppWidget` + receiver per widget in
+  `widget/`: Record 1×1 (`SizeMode.Exact`, the disc fills the cell, no elapsed time), Combined 4×1,
+  Tasks (responsive narrow/wide), Recent notes 4×2.
+- `WidgetUpdater` (in `AppContainer`) builds one `WidgetSnapshot` from recording mode, tasks, notes
+  and pipeline `Work`, and pushes at most once a second (transcription progress moves per
+  percent). It also re-ticks every 15 min and on app foreground, since overdue rows, the day and mic
+  permission change outside any flow. Widgets `collectAsState` the snapshot while their session lives.
+- Pushes render each placed widget with Glance `compose()` and call `AppWidgetManager.updateAppWidget`
+  directly. Glance's `updateAll` goes through a WorkManager `SessionWorker`; One UI cancels that job
+  when Echo is swiped from recents (stop reason 11) and holds it until the app opens, so a widget
+  stayed on the record disc through a whole take. Only `actionRunCallback` and intent actions are
+  used, since lambda actions need a live session.
+- `SizeMode.Responsive` picks the largest bucket that fits, else the smallest. Tasks buckets are
+  110 dp tall: at 200 dp a One UI 4×2 (194 dp) fit neither and got the narrow layout without times.
+- Tasks shows today (overdue included); when that's empty, the first later day with dated tasks,
+  labelled Tomorrow, a weekday within the week, or a date. Tasks and Recent scroll (`LazyColumn`).
+- `RecordDisc` always reserves the 5 dp live halo, so starting a take doesn't shift neighbours; the
+  4×1's middle slot is one fixed width across idle/recording/paused for the same reason.
+- Picker previews are Glance `providePreview` with `previewSnapshot`, pushed by `setWidgetPreviews`
+  (Android 15+) once per install/update; the system rate-limits it, so a failed push retries on the
+  next start.
+- Ticked rows stay ~2 s struck through (`justDone`); snoozed rows show "time · +1h" for ~4 s.
+- Elapsed time uses a framework `Chronometer` via `AndroidRemoteViews` (`widget_chronometer_*.xml`),
+  so a live recording needs no per-second widget updates.
+- Colours are day/night resource pairs in `values*/widget_colors.xml`, following the system theme,
+  not Echo's in-app theme. Rounded shapes are drawables (`widget_*.xml`) because Glance's
+  `cornerRadius` is ignored below Android 12.
+- Disc taps: idle → `RecordingActionReceiver` (starts directly, opens the app when the mic isn't
+  granted), recording → `ACTION_STOP`, paused → `ACTION_RESUME`. `RecordTileService` does the same
+  from Quick Settings and ticks its subtitle only between `onStartListening`/`onStopListening`.
 
 ## On-device AI
 
@@ -722,6 +779,11 @@ is the user's call), so a smaller per-tier model (Phase 2) slots in as one more 
   barber/store itinerary and silently skipped extraction. Shared dates carry across errands;
   vague filler such as "some stuff to do" is not a task.
   This replaced the 3000-word truncation.
+- **Task text must name an action.** For "tomorrow I have a doctor's appointment at 10 a.m. and
+  … a reminder for tomorrow at 6 p.m. that I have to go to the mechanic", the 1.7B model wrote
+  "Tomorrow at 10 a.m." and "Tomorrow at 6 p.m." as the texts (dues correct). The prompt now has
+  an appointment-plus-reminder example, and `isScheduleOnly` rejects time-only text: such an
+  answer uses the step's retry, and whatever is still time-only on the last attempt is dropped.
 - Task text uses sentence case and final punctuation in the extraction prompt. `formatTaskText`
   also formats task rows and the initial edit text so older lowercase model output reads correctly
   without re-analysis; it preserves existing punctuation and capitalization within the sentence.

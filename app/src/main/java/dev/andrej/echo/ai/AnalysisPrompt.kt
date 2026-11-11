@@ -110,8 +110,10 @@ fun buildTasksPrompt(lines: List<IndexedValue<String>>, now: LocalDateTime): Str
     {"items":[{"text":"...","source":"exact words from the note","due":"ISO date, ISO datetime, or null","due_relative_minutes":123 or null,"line":0}]}
 
     text: the action itself, imperative, no time attached, in the language the speaker used.
-    Use sentence case: start with a capital letter, preserve proper names, and use correct
-    punctuation including a final period. Example: "Go to the barber shop."
+    It names what to do, never only when: "Tomorrow at 10 a.m." is a due, not a text. For an
+    appointment or a reminder, the text is the thing to do or attend ("Go to the vet."), not
+    the word "reminder". Use sentence case: start with a capital letter, preserve proper names,
+    and use correct punctuation including a final period. Example: "Go to the barber shop."
     due: if an explicit clock time or date was stated ("at 10am", "tomorrow at 3", "tomorrow",
     "on Friday") resolve it — use the stated or shared date, using today ONLY if no date was
     stated. Tomorrow means ${promptDate.format(now.plusDays(1))}. A clock time becomes a full
@@ -130,6 +132,11 @@ fun buildTasksPrompt(lines: List<IndexedValue<String>>, now: LocalDateTime): Str
     [1] Also water the plants in 20 minutes.
     [2] Oh and I need to buy milk.
     {"items":[{"text":"Call the dentist.","source":"Remind me to call the dentist tomorrow at 9am.","due":"2026-01-02T09:00:00","due_relative_minutes":null,"line":0},{"text":"Water the plants.","source":"Also water the plants in 20 minutes.","due":null,"due_relative_minutes":20,"line":1},{"text":"Buy milk.","source":"Oh and I need to buy milk.","due":null,"due_relative_minutes":null,"line":2}]}
+
+    Example. Today is 2026-03-10, the current time is 19:30.
+    [4] So tomorrow I have a vet appointment at 9 a.m. and
+    [5] also I want a reminder for tomorrow at 5 p.m. that I have to pick up the car.
+    {"items":[{"text":"Go to the vet appointment.","source":"So tomorrow I have a vet appointment at 9 a.m.","due":"2026-03-11T09:00:00","due_relative_minutes":null,"line":4},{"text":"Pick up the car.","source":"also I want a reminder for tomorrow at 5 p.m. that I have to pick up the car.","due":"2026-03-11T17:00:00","due_relative_minutes":null,"line":5}]}
 
     Example. Today is 2026-01-01, the current time is 08:00.
     [0] I think I should start a podcast, I'm thinking about names.
@@ -203,6 +210,22 @@ fun parseTasks(
             NewTodo(item.text.trim(), due.at, due.hasTime, due.hasDate, item.line?.let(lineOffsetMs), item.source)
         }
 }
+
+/**
+ * True when task text names only a date or time — the 1.7B model was seen writing
+ * "Tomorrow at 10 a.m." as the text and leaving the action out.
+ */
+fun isScheduleOnly(text: String): Boolean = text.lowercase()
+    .replace(Regex("\\b[ap]\\.?m\\.?(?!\\w)"), " ")
+    .replace(scheduleWords, " ")
+    .none { it.isLetter() }
+
+private val scheduleWords = Regex(
+    "\\b(?:at|on|by|in|for|the|this|next|around|about|until|from|to|and|day after|tomorrow|today|tonight|" +
+        "morning|afternoon|evening|night|noon|midnight|o'clock|all|day|week|weekend|month|" +
+        "monday|tuesday|wednesday|thursday|friday|saturday|sunday|" +
+        "minutes?|hours?|an?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|half|quarter|past)\\b|\\d",
+)
 
 /**
  * Reads the outermost braces rather than the whole string: a small model wraps its answer in

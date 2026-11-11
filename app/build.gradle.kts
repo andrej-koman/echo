@@ -112,6 +112,7 @@ dependencies {
 
     implementation(libs.litertlm.android)
     implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.androidx.glance.appwidget)
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.sherpa.onnx)
     implementation(libs.sqldelight.android.driver)

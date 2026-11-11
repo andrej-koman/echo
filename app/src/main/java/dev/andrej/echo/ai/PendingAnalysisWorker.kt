@@ -12,6 +12,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,6 +39,11 @@ class PendingAnalysisWorker(
 ) {
 
     private val completedAttempts = MutableSharedFlow<String>(extraBufferCapacity = 64)
+
+    private val _outcomes = MutableSharedFlow<Pair<String, AnalysisOutcome>>(extraBufferCapacity = 16)
+
+    /** Every finished attempt, manual or queued; the note-status notifications listen here. */
+    val outcomes: SharedFlow<Pair<String, AnalysisOutcome>> = _outcomes.asSharedFlow()
 
     private val _progress = MutableStateFlow<Map<String, AnalysisProgress>>(emptyMap())
     val progress: StateFlow<Map<String, AnalysisProgress>> = _progress.asStateFlow()
@@ -158,6 +165,7 @@ class PendingAnalysisWorker(
                         queue.recordBlock(transcriptId, outcome.reason, outcome.reason.consumesAttempt())
                     }
                 }
+                _outcomes.tryEmit(transcriptId to outcome)
             } finally {
                 _progress.update { it - transcript.id }
                 _activeId.value = null
@@ -218,6 +226,7 @@ class PendingAnalysisWorker(
                         is AnalysisOutcome.Blocked ->
                             queue.recordBlock(entry.transcriptId, outcome.reason, outcome.reason.consumesAttempt())
                     }
+                    _outcomes.tryEmit(entry.transcriptId to outcome)
                 } finally {
                     _progress.update { it - transcript.id }
                     _activeId.value = null

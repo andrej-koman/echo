@@ -29,6 +29,26 @@ class TaskReminderRepositoryTest {
         assertEquals(extracted.sourceQuote, task().sourceQuote)
     }
 
+    @Test fun `snooze moves a timed task an hour past its time or past now when overdue`() = runTest {
+        repository.replaceFor("note", listOf(NewTodo("Call Alex", now + 600_000, true, true)))
+        repository.snooze(task().id)
+        assertEquals(now + 600_000 + 3_600_000, task().dueAt)
+        assertEquals(task().dueAt, task().reminderAt)
+        assertFalse(task().reminderDelivered)
+        now += 3 * 3_600_000
+        repository.snooze(task().id)
+        assertEquals(now + 3_600_000, task().dueAt)
+    }
+
+    @Test fun `snooze keeps a date-only deadline and reminds in an hour`() = runTest {
+        val due = at("2026-11-05T00:00:00")
+        repository.replaceFor("note", listOf(NewTodo("Dentist", due, false, true)))
+        repository.snooze(task().id)
+        assertEquals(due, task().dueAt)
+        assertEquals(now + 3_600_000, task().reminderAt)
+        assertNull(task().reminderDate)
+    }
+
     @Test fun `undated reminder starts an hour after save not recording`() = runTest {
         repository.replaceFor("note", listOf(undated()), createdAt = 1)
         assertEquals(now + 3_600_000, task().reminderAt)

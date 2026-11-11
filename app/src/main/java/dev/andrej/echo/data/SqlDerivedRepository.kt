@@ -106,6 +106,16 @@ class SqlDerivedRepository(
         Unit
     }
 
+    override suspend fun snooze(itemId: String) = withContext(ioDispatcher) {
+        database.transaction {
+            val old = queries.selectById(itemId, ::TodoItem).executeAsOneOrNull() ?: return@transaction
+            val savedAt = now()
+            val at = (if (old.hasTime) maxOf(old.dueAt, savedAt) else savedAt) + SNOOZE_MS
+            queries.snooze(if (old.hasTime) at else old.dueAt, at, savedAt, itemId)
+        }
+        Unit
+    }
+
     override suspend fun update(itemId: String, text: String, dueAt: Long, hasTime: Boolean, hasDate: Boolean) =
         withContext(ioDispatcher) {
             database.transaction {
@@ -133,6 +143,10 @@ class SqlDerivedRepository(
     override suspend fun clear() = withContext(ioDispatcher) {
         queries.clear()
         Unit
+    }
+
+    private companion object {
+        const val SNOOZE_MS = 3_600_000L
     }
 
     private fun scheduleChanged(old: TodoItem, dueAt: Long, hasTime: Boolean, hasDate: Boolean): Boolean {

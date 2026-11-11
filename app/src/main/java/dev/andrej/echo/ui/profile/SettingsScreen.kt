@@ -86,6 +86,7 @@ fun SettingsScreen(
     onImportDayChange: (ImportDay?) -> Unit,
     onAutoAnalyzeChange: (Boolean) -> Unit,
     onDetectSpeakersChange: (Boolean) -> Unit,
+    onIdleNotificationChange: (Boolean) -> Unit,
     onWifiOnlyDownloadChange: (Boolean) -> Unit,
     onDeleteAllData: () -> Unit,
     onDownloadModel: (NotesAiModel) -> Unit,
@@ -231,6 +232,15 @@ fun SettingsScreen(
                             ImportDay.Today -> "Import day"
                         },
                         onClick = { pickingImportDay = true },
+                    )
+                },
+                {
+                    SwitchSettingsRow(
+                        iconRes = R.drawable.ic_mic,
+                        label = "Tap-to-record notification",
+                        subtitle = "Keep a quiet record shortcut in the notification shade",
+                        checked = state.idleNotification,
+                        onCheckedChange = onIdleNotificationChange,
                     )
                 },
             ),

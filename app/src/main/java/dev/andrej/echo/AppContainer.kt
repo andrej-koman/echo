@@ -51,6 +51,7 @@ import dev.andrej.echo.speech.speakers.SPEAKER_SEGMENTATION
 import dev.andrej.echo.speech.whisper.WhisperNative
 import dev.andrej.echo.speech.whisper.WHISPER_VAD
 import dev.andrej.echo.speech.whisper.SpeechModels
+import dev.andrej.echo.transcribe.TranscriptionStatus
 import dev.andrej.echo.transcribe.Transcriptions
 import dev.andrej.echo.ui.folders.FoldersViewModel
 import dev.andrej.echo.ui.profile.DictionaryViewModel
@@ -81,11 +82,13 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
+import dev.andrej.echo.notify.NoteStatus
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
@@ -153,7 +156,10 @@ class AppContainer(context: Context) {
     val taskReminders = dev.andrej.echo.notify.TaskReminders(
         derived,
         dev.andrej.echo.data.SqlTaskReminderRepository(database),
-        dev.andrej.echo.notify.AndroidTaskReminderDelivery(applicationContext),
+        dev.andrej.echo.notify.AndroidTaskReminderDelivery(applicationContext) { transcriptId ->
+            runBlocking { repository.transcripts.first() }.firstOrNull { it.id == transcriptId }
+                ?.let { it.title ?: dev.andrej.echo.ui.notes.title(it.text) }
+        },
     )
 
     val analysisQueue: AnalysisQueueRepository = SqlAnalysisQueueRepository(database)
@@ -263,6 +269,26 @@ class AppContainer(context: Context) {
     )
 
     private val recordingNotifier = RecordingNotifier(applicationContext)
+
+    private val _appVisible = MutableStateFlow(false)
+    /** True while an Echo activity is started; background-only notifications check it. */
+    val appVisible: StateFlow<Boolean> = _appVisible
+
+    val noteStatus = dev.andrej.echo.notify.NoteStatusNotifier(applicationContext) { _appVisible.value }
+
+    private suspend fun transcript(id: String) = repository.transcripts.first().firstOrNull { it.id == id }
+
+    fun onTranscriptionFailed(id: String) {
+        appScope.launch {
+            transcript(id)?.let { noteStatus.post(it, NoteStatus.Failed(dev.andrej.echo.notify.TRANSCRIPTION_FAILED)) }
+        }
+    }
+
+    /** The same split as the note's retry button: a failed transcription retries that, not analysis. */
+    suspend fun retryNote(id: String) {
+        if (transcriptions.status.first()[id] is TranscriptionStatus.Failed) transcriptions.transcribe(id)
+        else pendingAnalysisWorker.analyzeNowAsync(id)
+    }
 
     private val _onboardingDone = MutableStateFlow(
         settings.onboardingDone || runBlocking { repository.transcripts.first() }.isNotEmpty(),
@@ -387,7 +413,7 @@ class AppContainer(context: Context) {
         Runtime.getRuntime().exit(0)
     }
 
-    fun recordingNotification() = recordingNotifier.notification(recordingController.state.value.mode())
+    fun recordingNotification() = recordingNotifier.foreground(recordingController.state.value)
 
     init {
         appScope.launch {
@@ -417,23 +443,53 @@ class AppContainer(context: Context) {
         }
 
         appScope.launch {
-            recordingController.state.map { it.mode() }.distinctUntilChanged().collect(recordingNotifier::update)
+            pendingAnalysisWorker.outcomes.collect { (id, outcome) ->
+                val note = transcript(id) ?: return@collect
+                val tasks = derived.items.first().count { it.sourceTranscriptId == id }
+                dev.andrej.echo.notify.noteStatus(outcome, tasks)?.let { noteStatus.post(note, it) }
+            }
+        }
+        appScope.launch {
+            transcriptions.transcribedOnly.collect { id ->
+                transcript(id)?.let { noteStatus.post(it, NoteStatus.TranscriptReady) }
+            }
+        }
+        appScope.launch {
+            recordingController.state.distinctUntilChangedBy { it.mode() }
+                .collect { recordingNotifier.update(it, settings.idleNotification) }
         }
 
-        recordingNotifier.postIdle()
         transcriptions.recoverInterruptedRecordings()
         transcriptions.observeUnlocks()
     }
 
+    fun onAppBackgrounded() {
+        _appVisible.value = false
+    }
+
+    val widgets = dev.andrej.echo.widget.WidgetUpdater(
+        context = applicationContext,
+        scope = appScope,
+        derived = derived,
+        recording = recordingController.state,
+        items = derived.items,
+        transcripts = repository.transcripts,
+        work = combine(transcriptions.status, analysisQueue.pending, pendingAnalysisWorker.activeId) { statuses, entries, active ->
+            dev.andrej.echo.ui.notes.Work(statuses, entries.associateBy { it.transcriptId }, active)
+        },
+    )
+
     /** Called from Activity.onStart — a capable backend may have appeared while backgrounded. */
     fun onAppForegrounded() {
+        _appVisible.value = true
+        widgets.refresh()
         pendingAnalysisWorker.requestDrain()
         appScope.launch { taskReminders.reconcile(refreshDates = true, force = true) }
     }
 
     /** [dev.andrej.echo.notify.BootReceiver] calls this — the idle notification does not survive a reboot either. */
     fun repostRecordingNotification() {
-        recordingNotifier.update(recordingController.state.value.mode())
+        recordingNotifier.update(recordingController.state.value, settings.idleNotification)
     }
 
     /** Debug-only: shows the download notification with fake progress. */
@@ -526,6 +582,7 @@ class AppContainer(context: Context) {
                     onDeleted = transcriptions::discard,
                     audioFile = transcriptions::audioFile,
                     folders = folders.folders,
+                    onNoteOpened = noteStatus::cancel,
                 ) as T
 
             modelClass.isAssignableFrom(OnboardingViewModel::class.java) ->
@@ -569,6 +626,7 @@ class AppContainer(context: Context) {
                     onReplayOnboarding = ::replayOnboarding,
                     onSaveBackup = ::saveBackup,
                     onRestoreBackup = ::restoreBackup,
+                    onIdleNotificationChange = { repostRecordingNotification() },
                 ) as T
 
             modelClass.isAssignableFrom(DictionaryViewModel::class.java) ->

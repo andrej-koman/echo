@@ -41,15 +41,19 @@ class RecordingControllerTest {
     @After
     fun tearDown() = Dispatchers.resetMain()
 
-    /** Each call writes [perCall] seconds of silence, then waits to be cancelled (or fails). */
-    private class FakeRecorder(private val perCall: Int = 1, private val fail: Boolean = false) : Recorder {
+    /** Each call writes [perCall] seconds at [level], then waits to be cancelled (or fails). */
+    private class FakeRecorder(
+        private val perCall: Int = 1,
+        private val fail: Boolean = false,
+        private val level: Float = 0.5f,
+    ) : Recorder {
         var calls = 0
 
         override suspend fun record(target: File, onBuffer: (Float, Long) -> Unit) {
             calls++
             if (fail) throw IOException("mic busy")
             target.appendBytes(ByteArray(perCall * SAMPLE_RATE * 2))
-            onBuffer(0.5f, target.length() / 2)
+            onBuffer(level, target.length() / 2)
             awaitCancellation()
         }
     }
@@ -123,6 +127,20 @@ class RecordingControllerTest {
     @Test
     fun `a take with no audio is thrown away`() = runTest {
         val controller = controller(FakeRecorder(perCall = 0))
+        controller.startRecording()
+        advanceUntilIdle()
+
+        controller.stopRecording()
+        advanceUntilIdle()
+
+        assertTrue(repository.transcripts.first().isEmpty())
+        assertTrue(recorded.isEmpty())
+        assertEquals(1, discarded.size)
+    }
+
+    @Test
+    fun `a take where nothing was said is thrown away`() = runTest {
+        val controller = controller(FakeRecorder(perCall = 5, level = 0.1f))
         controller.startRecording()
         advanceUntilIdle()
 

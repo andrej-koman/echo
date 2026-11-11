@@ -40,6 +40,8 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import androidx.compose.ui.platform.LocalContext
 import dev.andrej.echo.ui.detail.copyToClipboard
+import dev.andrej.echo.data.TodoItem
+import dev.andrej.echo.ui.tasks.TaskGroupCard
 
 @Composable
 fun HistoryScreen(
@@ -50,6 +52,8 @@ fun HistoryScreen(
     onPickDay: (LocalDate) -> Unit,
     notesViewModel: NotesViewModel,
     onOpen: (String) -> Unit,
+    onToggleTask: (TodoItem) -> Unit,
+    onEditTask: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
@@ -79,17 +83,31 @@ fun HistoryScreen(
                 Row(Modifier.fillMaxWidth().padding(bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(state.selectedDayLabel, style = EchoTheme.typography.bodySm.copy(fontWeight = FontWeight.SemiBold),
                         color = EchoTheme.colors.textPrimary, modifier = Modifier.weight(1f))
-                    if (state.selectedDetail.isNotEmpty()) {
-                        val count = state.selectedDetail.size
-                        Text(if (count == 1) "1 note" else "$count notes", style = EchoTheme.typography.micro,
+                    val counts = listOfNotNull(
+                        state.selectedTasks.size.takeIf { it > 0 }?.let { if (it == 1) "1 task" else "$it tasks" },
+                        state.selectedDetail.size.takeIf { it > 0 }?.let { if (it == 1) "1 note" else "$it notes" },
+                    )
+                    if (counts.isNotEmpty()) {
+                        Text(counts.joinToString(" · "), style = EchoTheme.typography.micro,
                             color = EchoTheme.colors.textTertiary)
                     }
                 }
             }
-            if (state.selectedDetail.isEmpty()) {
+            if (state.selectedTasks.isNotEmpty()) {
+                item(key = "tasks") {
+                    TaskGroupCard(
+                        items = state.selectedTasks,
+                        showDate = false,
+                        sourceTitleFor = state.noteTitles::get,
+                        onToggle = onToggleTask,
+                        onEdit = { onEditTask(it.id) },
+                    )
+                }
+            }
+            if (state.selectedDetail.isEmpty() && state.selectedTasks.isEmpty()) {
                 item {
                     Column(Modifier.fillMaxWidth().padding(top = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("No notes on this day", style = EchoTheme.typography.bodySm, color = EchoTheme.colors.textSecondary)
+                        Text("Nothing on this day", style = EchoTheme.typography.bodySm, color = EchoTheme.colors.textSecondary)
                         state.previousNoteDay?.let { previous ->
                             Text(
                                 "Go to ${DateTimeFormatter.ofPattern("EEE, d MMM").format(previous)}  →",
@@ -233,7 +251,8 @@ private fun CalendarDay(day: HistoryDay, isSelected: Boolean, onClick: () -> Uni
         modifier.height(DayHeight).clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick)
             .semantics(mergeDescendants = true) {
                 selected = isSelected
-                contentDescription = "${day.date}, ${if (day.heatLevel == 3) "3 or more" else day.heatLevel} notes"
+                contentDescription = "${day.date}, ${if (day.heatLevel == 3) "3 or more" else day.heatLevel} notes, " +
+                    "${if (day.taskLevel == 3) "3 or more" else day.taskLevel} tasks"
             },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -253,6 +272,9 @@ private fun CalendarDay(day: HistoryDay, isSelected: Boolean, onClick: () -> Uni
         Row(Modifier.padding(top = 3.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
             repeat(day.heatLevel.coerceIn(0, 3)) {
                 Box(Modifier.size(3.dp).clip(CircleShape).background(colors.waveformActive))
+            }
+            repeat(day.taskLevel.coerceIn(0, 3)) {
+                Box(Modifier.size(3.dp).clip(CircleShape).background(colors.textSuccess))
             }
         }
     }

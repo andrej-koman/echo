@@ -165,4 +165,12 @@ class ChunkLinesTest {
     fun `sentences split at sentence ends`() {
         assertEquals(listOf("Buy milk.", "Call mum!", "Why?"), sentences(" Buy milk. Call mum! Why? "))
     }
+
+    @Test
+    fun `task text that is only a date or time is recognised`() {
+        listOf("Tomorrow at 10 a.m.", "Tomorrow at 6 p.m.", "On Friday", "In 20 minutes.", "At noon", "18:00")
+            .forEach { assertTrue(it, isScheduleOnly(it)) }
+        listOf("Go to the doctor tomorrow at 10 a.m.", "Go to the mechanic.", "Call Alex at 9", "Buy milk")
+            .forEach { assertFalse(it, isScheduleOnly(it)) }
+    }
 }

@@ -7,6 +7,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -52,9 +53,10 @@ internal fun TaskGroupCard(
     val now = System.currentTimeMillis()
     val zone = ZoneId.systemDefault()
     EchoCard(modifier = modifier.fillMaxWidth(), padding = CardPadding.None) {
-        Column(modifier = Modifier.padding(vertical = EchoTheme.spacing.s2, horizontal = EchoTheme.spacing.s4)) {
+        Column {
             items.forEachIndexed { index, task ->
                 TaskRow(
+                    padding = taskRowPadding(first = index == 0, last = index == items.lastIndex),
                     task = task,
                     overdue = isOverdue(task, now, zone),
                     showDate = showDate,
@@ -64,11 +66,29 @@ internal fun TaskGroupCard(
                     onLongPress = onLongPress?.let { press -> { press(task) } },
                 )
                 if (index != items.lastIndex) {
-                    HorizontalDivider(color = EchoTheme.colors.borderSubtle)
+                    HorizontalDivider(
+                        color = EchoTheme.colors.borderSubtle,
+                        modifier = Modifier.padding(horizontal = EchoTheme.spacing.s4),
+                    )
                 }
             }
         }
     }
+}
+
+/**
+ * A row inside a card carries the card's inset itself, so its press ripple fills the card's
+ * clipped shape edge to edge instead of stopping short of it.
+ */
+@Composable
+internal fun taskRowPadding(first: Boolean, last: Boolean): PaddingValues {
+    val spacing = EchoTheme.spacing
+    return PaddingValues(
+        start = spacing.s4 + spacing.s2,
+        end = spacing.s4 + spacing.s2,
+        top = spacing.s4 + if (first) spacing.s2 else 0.dp,
+        bottom = spacing.s4 + if (last) spacing.s2 else 0.dp,
+    )
 }
 
 @Composable
@@ -80,12 +100,13 @@ internal fun TaskRow(
     overdue: Boolean = false,
     sourceTitle: String? = null,
     onLongPress: (() -> Unit)? = null,
+    padding: PaddingValues = PaddingValues(vertical = EchoTheme.spacing.s4, horizontal = EchoTheme.spacing.s2),
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .combinedClickable(onClick = onEdit, onLongClick = onLongPress)
-            .padding(vertical = EchoTheme.spacing.s4, horizontal = EchoTheme.spacing.s2),
+            .padding(padding),
         horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5),
         verticalAlignment = Alignment.CenterVertically,
     ) {

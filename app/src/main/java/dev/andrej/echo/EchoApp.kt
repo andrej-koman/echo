@@ -388,6 +388,8 @@ private fun MainApp(
                         notesViewModel = notesViewModel,
                         onPickDay = historyViewModel::pick,
                         onOpen = { navController.navigate(Routes.detail(it)) },
+                        onToggleTask = historyViewModel::toggleTask,
+                        onEditTask = { navController.navigate(Routes.editTask(it)) },
                     )
                 }
 

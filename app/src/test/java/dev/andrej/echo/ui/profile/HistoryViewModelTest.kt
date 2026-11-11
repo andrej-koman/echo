@@ -1,5 +1,6 @@
 package dev.andrej.echo.ui.profile
 
+import dev.andrej.echo.data.TodoItem
 import dev.andrej.echo.data.Transcript
 import java.time.LocalDate
 import java.time.YearMonth
@@ -105,4 +106,22 @@ class HistoryViewModelTest {
         assertEquals(state.weekDays.map { it.heatLevel }, state.days.filter { it.date in day..day.plusDays(6) }.map { it.heatLevel })
     }
 
+
+    @Test
+    fun `dated tasks sit on their due day, undated ones nowhere`() {
+        val noteDay = LocalDate.of(2026, 9, 9)
+        val dueDay = noteDay.plusDays(1)
+        fun task(id: String, hasDate: Boolean = true, done: Boolean = false) = TodoItem(
+            id = id, sourceTranscriptId = "a", text = id, dueAt = epochMillisAt(dueDay) + 3_600_000,
+            hasTime = true, hasDate = hasDate, done = done, createdAt = epochMillisAt(noteDay),
+        )
+        val items = listOf(task("done", done = true), task("open"), task("undated", hasDate = false))
+
+        val state = buildHistoryState(listOf(transcript("a", noteDay)), items, YearMonth.from(noteDay), dueDay, noteDay, zone)
+
+        assertEquals(0, state.days.first { it.date == noteDay }.taskLevel)
+        assertEquals(2, state.days.first { it.date == dueDay }.taskLevel)
+        assertEquals(listOf("open", "done"), state.selectedTasks.map { it.id })
+        assertEquals("hello", state.noteTitles["a"])
+    }
 }

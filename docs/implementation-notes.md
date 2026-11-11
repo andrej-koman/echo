@@ -302,7 +302,8 @@ becomes "N selected" with Move to folder and Delete (`BulkActionSheets`), back o
 Header is the mascot + "Echo", with a "Pro" badge when the billing entitlement is active.
 Notes is the one list of everything; Folders lists folders, each opening its notes (no folder
 filter on Notes); Calendar is `HistoryScreen` (month heat grid, the picked day's notes open on
-tap). Settings opens directly from the fourth tab. A note is moved from its own screen (folder icon in
+tap). Tasks sit on their due day, not their note's day, as sage dots beside the bronze note dots;
+the picked day lists them above its notes. Undated tasks have no day and stay off the calendar. Settings opens directly from the fourth tab. A note is moved from its own screen (folder icon in
 the bar, `PickerSheet`). Raw transcript text lives only in each note's screen. The record
 button sits in the bar's middle slot (`TabBar(centerGap = true)` leaves the gap, `EchoApp` overlays the
 button on a bar-coloured cradle so it pokes above the hairline). The tab bar is icon-only — no labels, no
@@ -763,6 +764,11 @@ is the user's call), so a smaller per-tier model (Phase 2) slots in as one more 
   barber/store itinerary and silently skipped extraction. Shared dates carry across errands;
   vague filler such as "some stuff to do" is not a task.
   This replaced the 3000-word truncation.
+- **Task text must name an action.** For "tomorrow I have a doctor's appointment at 10 a.m. and
+  … a reminder for tomorrow at 6 p.m. that I have to go to the mechanic", the 1.7B model wrote
+  "Tomorrow at 10 a.m." and "Tomorrow at 6 p.m." as the texts (dues correct). The prompt now has
+  an appointment-plus-reminder example, and `isScheduleOnly` rejects time-only text: such an
+  answer uses the step's retry, and whatever is still time-only on the last attempt is dropped.
 - Task text uses sentence case and final punctuation in the extraction prompt. `formatTaskText`
   also formats task rows and the initial edit text so older lowercase model output reads correctly
   without re-analysis; it preserves existing punctuation and capitalization within the sentence.

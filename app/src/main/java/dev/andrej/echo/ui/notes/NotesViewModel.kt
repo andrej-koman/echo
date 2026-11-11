@@ -61,6 +61,8 @@ data class NoteRow(
     val stage: NoteStage = NoteStage.Done,
     val folder: Folder? = null,
     val pending: PendingCopy? = null,
+    val openTasks: Int = 0,
+    val totalTasks: Int = 0,
 )
 
 data class NotesUiState(
@@ -138,16 +140,25 @@ class NotesViewModel(
     val folders: StateFlow<List<Folder>> = folders
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    private class RowContext(val work: Work, val folders: List<Folder>, val tasks: List<TodoItem>)
+
+    private val rowContext = combine(work, this.folders, derived.items) { work, folders, tasks ->
+        RowContext(work, folders, tasks)
+    }
+
+    private fun rows(transcripts: List<Transcript>, context: RowContext) =
+        rows(transcripts, now(), context.work, context.folders, context.tasks)
+
     /** A folder's notes, newest first like the Notes list. */
     fun notesIn(folderId: String): Flow<List<NoteRow>> =
-        combine(repository.transcripts, work, this.folders) { transcripts, work, folders ->
-            rows(transcripts.filter { it.folderId == folderId }, now(), work, folders)
+        combine(repository.transcripts, rowContext) { transcripts, context ->
+            rows(transcripts.filter { it.folderId == folderId }, context)
         }
 
     /** Full note rows for the calendar, independent of the Notes search. */
     val calendarNotes: StateFlow<List<NoteRow>> =
-        combine(repository.transcripts, work, this.folders) { transcripts, work, folders ->
-            rows(transcripts, now(), work, folders)
+        combine(repository.transcripts, rowContext) { transcripts, context ->
+            rows(transcripts, context)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun moveToFolder(transcriptId: String, folderId: String?) {
@@ -163,11 +174,11 @@ class NotesViewModel(
     }
 
     val state: StateFlow<NotesUiState> =
-        combine(repository.transcripts, query, searchHits, work, this.folders) { transcripts, text, hits, work, folders ->
+        combine(repository.transcripts, query, searchHits, rowContext) { transcripts, text, hits, context ->
             val matches = if (hits == null) transcripts else transcripts.filter { it.id in hits }
             NotesUiState(
                 query = text,
-                notes = rows(matches, now(), work, folders),
+                notes = rows(matches, context),
                 total = transcripts.size,
                 loaded = true,
             )
@@ -259,9 +270,11 @@ internal fun rows(
     now: Long,
     work: Work = Work(),
     folders: List<Folder> = emptyList(),
+    tasks: List<TodoItem> = emptyList(),
 ): List<NoteRow> {
     val pending = work.pendingCopies()
     val byId = folders.associateBy { it.id }
+    val tasksByNote = tasks.groupBy { it.sourceTranscriptId }
     return transcripts
         .sortedByDescending { it.createdAt }
         .map { transcript ->
@@ -274,6 +287,8 @@ internal fun rows(
                 stage = stage(transcript, work),
                 folder = transcript.folderId?.let(byId::get),
                 pending = pending[transcript.id],
+                openTasks = tasksByNote[transcript.id].orEmpty().count { !it.done },
+                totalTasks = tasksByNote[transcript.id].orEmpty().size,
             )
         }
 }

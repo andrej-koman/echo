@@ -142,6 +142,22 @@ class AppContainer(context: Context) {
         _themeMode.value = value
     }
 
+    private val _hapticsEnabled = MutableStateFlow(settings.hapticsEnabled)
+    val hapticsEnabled: StateFlow<Boolean> = _hapticsEnabled.asStateFlow()
+
+    fun setHapticsEnabled(value: Boolean) {
+        settings.hapticsEnabled = value
+        _hapticsEnabled.value = value
+    }
+
+    private val _reduceMotion = MutableStateFlow(settings.reduceMotion)
+    val reduceMotion: StateFlow<Boolean> = _reduceMotion.asStateFlow()
+
+    fun setReduceMotion(value: Boolean) {
+        settings.reduceMotion = value
+        _reduceMotion.value = value
+    }
+
     /**
      * Application-scoped on purpose: leaving Capture must not cancel a half-finished
      * Engine.initialize(), which would throw away the wait and leak the partial engine. The same
@@ -627,6 +643,10 @@ class AppContainer(context: Context) {
                     onSaveBackup = ::saveBackup,
                     onRestoreBackup = ::restoreBackup,
                     onIdleNotificationChange = { repostRecordingNotification() },
+                    hapticsEnabled = hapticsEnabled,
+                    onHapticsChange = ::setHapticsEnabled,
+                    reduceMotion = reduceMotion,
+                    onReduceMotionChange = ::setReduceMotion,
                 ) as T
 
             modelClass.isAssignableFrom(DictionaryViewModel::class.java) ->

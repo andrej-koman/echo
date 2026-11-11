@@ -38,6 +38,12 @@ interface SettingsStore {
 
     var themeMode: ThemeMode
 
+    /** In-app haptics, on by default; the system haptic setting still applies. */
+    var hapticsEnabled: Boolean
+
+    /** Turns off decorative motion even when the system animation scale is on. */
+    var reduceMotion: Boolean
+
     /** The always-there "Tap to record" notification; off by default since widgets and the tile cover it. */
     var idleNotification: Boolean
 }
@@ -91,6 +97,14 @@ class SharedPreferencesSettingsStore(context: Context) : SettingsStore {
             ?.let { name -> ThemeMode.entries.find { it.name == name } } ?: ThemeMode.Dark
         set(value) = preferences.edit().putString(KEY_THEME_MODE, value.name).apply()
 
+    override var hapticsEnabled: Boolean
+        get() = preferences.getBoolean(KEY_HAPTICS, true)
+        set(value) = preferences.edit().putBoolean(KEY_HAPTICS, value).apply()
+
+    override var reduceMotion: Boolean
+        get() = preferences.getBoolean(KEY_REDUCE_MOTION, false)
+        set(value) = preferences.edit().putBoolean(KEY_REDUCE_MOTION, value).apply()
+
     override var idleNotification: Boolean
         get() = preferences.getBoolean(KEY_IDLE_NOTIFICATION, false)
         set(value) = preferences.edit().putBoolean(KEY_IDLE_NOTIFICATION, value).apply()
@@ -107,6 +121,8 @@ class SharedPreferencesSettingsStore(context: Context) : SettingsStore {
         const val KEY_IMPORT_DAY = "import_day"
         const val KEY_THEME_MODE = "theme_mode"
         const val KEY_IDLE_NOTIFICATION = "idle_notification"
+        const val KEY_HAPTICS = "haptics_enabled"
+        const val KEY_REDUCE_MOTION = "reduce_motion"
         const val DEFAULT_NOTES_AI_MODEL = "qwen3_1_7b"
     }
 }

@@ -14,12 +14,16 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+/** How Pro just arrived on this screen; a purchase is celebrated, a restore only acknowledged. */
+enum class ProArrival { Purchased, Restored }
+
 data class PaywallState(
     val plans: List<Plan> = emptyList(),
     val selected: Plan? = null,
     val loading: Boolean = false,
     val busy: Boolean = false,
     val message: String? = null,
+    val arrival: ProArrival? = null,
 )
 
 class PaywallViewModel(private val billing: Billing) : ViewModel() {
@@ -52,17 +56,24 @@ class PaywallViewModel(private val billing: Billing) : ViewModel() {
         }
     }
 
+    fun consumeArrival() = mutableState.update { it.copy(arrival = null) }
+
     fun select(plan: Plan) {
         if (!state.value.busy && plan in state.value.plans) mutableState.update { it.copy(selected = plan) }
     }
 
     fun purchase(activity: Activity) {
         val selected = state.value.selected ?: return
-        perform { billing.purchase(activity, selected) }
+        perform {
+            billing.purchase(activity, selected)
+            if (billing.isPro.value) mutableState.update { it.copy(arrival = ProArrival.Purchased) }
+        }
     }
 
     fun restore() = perform {
+        val wasPro = billing.isPro.value
         billing.restore()
+        if (!wasPro && billing.isPro.value) mutableState.update { it.copy(arrival = ProArrival.Restored) }
         mutableState.update { it.copy(message = if (billing.isPro.value) "Purchases restored." else "No Pro purchases found for this Google Play account.") }
     }
 

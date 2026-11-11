@@ -64,6 +64,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import dev.andrej.echo.R
 import dev.andrej.echo.ui.theme.EchoTheme
+import dev.andrej.echo.ui.theme.rememberEchoHaptics
 
 @Composable
 fun ConfirmSheet(
@@ -308,6 +309,7 @@ internal fun Sheet(
         var dragOffset by remember { mutableFloatStateOf(0f) }
         var dragging by remember { androidx.compose.runtime.mutableStateOf(false) }
         val threshold = with(LocalDensity.current) { 64.dp.toPx() }
+        val haptics = rememberEchoHaptics()
         val offset by animateFloatAsState(
             targetValue = dragOffset,
             animationSpec = if (dragging) snap() else spring(),
@@ -352,7 +354,13 @@ internal fun Sheet(
                     ) {
                         DragHandle(
                             description = "Sheet drag handle",
-                            onDrag = { dragging = true; dragOffset = (dragOffset + it).coerceAtLeast(0f) },
+                            onDrag = {
+                                dragging = true
+                                val next = (dragOffset + it).coerceAtLeast(0f)
+                                if (dragOffset < threshold && next >= threshold) haptics.threshold()
+                                else if (dragOffset >= threshold && next < threshold) haptics.thresholdBack()
+                                dragOffset = next
+                            },
                             onRelease = {
                                 dragging = false
                                 if (dragOffset >= threshold) onDismiss()

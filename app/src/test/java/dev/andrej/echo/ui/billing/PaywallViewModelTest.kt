@@ -55,4 +55,21 @@ class PaywallViewModelTest {
         assertFalse(vm.state.value.busy)
         assertTrue(vm.state.value.message!!.contains("unavailable"))
     }
+
+    @Test fun `restore that activates pro is acknowledged once, not when already pro`() = runTest {
+        val pro = kotlinx.coroutines.flow.MutableStateFlow(false)
+        val fake = FakeBilling(FakeSettingsStore())
+        val billing = object : Billing by fake {
+            override val isPro = pro
+            override suspend fun restore() { pro.value = true }
+        }
+        val vm = PaywallViewModel(billing)
+        vm.restore()
+        advanceUntilIdle()
+        assertEquals(ProArrival.Restored, vm.state.value.arrival)
+        vm.consumeArrival()
+        vm.restore()
+        advanceUntilIdle()
+        assertNull(vm.state.value.arrival)
+    }
 }

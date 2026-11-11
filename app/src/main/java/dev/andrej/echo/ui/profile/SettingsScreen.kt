@@ -41,6 +41,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import dev.andrej.echo.ui.billing.ProArrival
+import dev.andrej.echo.ui.billing.ProWelcome
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -67,7 +72,9 @@ import dev.andrej.echo.speech.whisper.WhisperModel
 import dev.andrej.echo.data.ImportDay
 import dev.andrej.echo.data.ThemeMode
 import dev.andrej.echo.ui.theme.EchoTheme
+import dev.andrej.echo.ui.theme.EchoHaptics
 import dev.andrej.echo.ui.theme.echoShadow
+import dev.andrej.echo.ui.theme.rememberEchoHaptics
 import java.text.DateFormat
 import java.util.Date
 
@@ -109,13 +116,19 @@ fun SettingsScreen(
     onRestorePurchases: () -> Unit = {},
     restoringPurchases: Boolean = false,
     billingMessage: String? = null,
+    hapticsEnabled: Boolean = true,
+    onHapticsChange: (Boolean) -> Unit = {},
+    reduceMotion: Boolean = false,
+    onReduceMotionChange: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
     var pickingLanguage by remember { mutableStateOf(false) }
     var pickingSpeechModel by remember { mutableStateOf(false) }
     var managingAiModel by remember { mutableStateOf(false) }
     var modelDetails by remember { mutableStateOf<NotesAiModel?>(null) }
     var pickingImportDay by remember { mutableStateOf(false) }
+    var previewingCelebration by remember { mutableStateOf(false) }
     var pickingTheme by remember { mutableStateOf(false) }
     var confirmingNoModel by remember { mutableStateOf(false) }
     var confirmingDeleteAll by remember { mutableStateOf(false) }
@@ -259,6 +272,28 @@ fun SettingsScreen(
                         onClick = { pickingTheme = true },
                     )
                 },
+                {
+                    SwitchSettingsRow(
+                        iconRes = R.drawable.ic_audio_waveform,
+                        label = "Haptics",
+                        subtitle = "Taps, toggles and gestures you can feel",
+                        checked = hapticsEnabled,
+                        onCheckedChange = { on ->
+                            onHapticsChange(on)
+                            // The switch's own haptic was silenced while haptics were off.
+                            if (on) EchoHaptics(view, context.applicationContext, enabled = true).toggle(true)
+                        },
+                    )
+                },
+                {
+                    SwitchSettingsRow(
+                        iconRes = R.drawable.ic_sparkles,
+                        label = "Reduce motion",
+                        subtitle = "Turn off decorative animation",
+                        checked = reduceMotion,
+                        onCheckedChange = onReduceMotionChange,
+                    )
+                },
             ),
         )
 
@@ -349,8 +384,28 @@ fun SettingsScreen(
                             onClick = onReplayOnboarding,
                         )
                     },
+                    {
+                        SettingsRow(
+                            iconRes = R.drawable.ic_sparkles,
+                            label = "Test: Pro celebration",
+                            end = RowEnd.None,
+                            onClick = { previewingCelebration = true },
+                        )
+                    },
                 ),
             )
+            if (previewingCelebration) {
+                Dialog(
+                    onDismissRequest = { previewingCelebration = false },
+                    properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+                ) {
+                    ProWelcome(
+                        unlockNote = null, activePlan = activePlan, renewsAt = renewsAt,
+                        onOpenNote = {}, onDone = { previewingCelebration = false },
+                        arrival = ProArrival.Purchased,
+                    )
+                }
+            }
         }
 
         Column(
@@ -778,12 +833,16 @@ internal fun SwitchSettingsRow(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
 ) {
+    val haptics = rememberEchoHaptics()
     SettingsRow(
         iconRes = iconRes,
         label = label,
         subtitle = subtitle,
         end = RowEnd.None,
-        onClick = { onCheckedChange(!checked) },
+        onClick = {
+            haptics.toggle(!checked)
+            onCheckedChange(!checked)
+        },
         trailing = { EchoSwitch(checked = checked, onCheckedChange = onCheckedChange) },
     )
 }

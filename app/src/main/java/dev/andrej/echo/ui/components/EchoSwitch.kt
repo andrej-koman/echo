@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import dev.andrej.echo.ui.theme.EchoTheme
+import dev.andrej.echo.ui.theme.rememberEchoHaptics
 
 /** A pill toggle with a visible sliding knob — Material's Switch renders track and thumb the
  *  same tan when only checkedThumbColor is set, so "on" and "off" both look like a solid fill. */
@@ -25,6 +26,7 @@ fun EchoSwitch(
     enabled: Boolean = true,
 ) {
     val colors = EchoTheme.colors
+    val haptics = rememberEchoHaptics()
     val trackColor by animateColorAsState(if (checked) colors.actionPrimaryBg else colors.controlTrack, label = "switchTrack")
     val knobOffset by animateDpAsState(if (checked) 22.dp else 2.dp, label = "switchKnob")
     Box(
@@ -33,7 +35,10 @@ fun EchoSwitch(
             .clip(EchoTheme.radii.pill)
             .background(trackColor)
             .then(
-                if (enabled) Modifier.clickable(onClick = { onCheckedChange(!checked) }) else Modifier,
+                if (enabled) Modifier.clickable(onClick = {
+                    haptics.toggle(!checked)
+                    onCheckedChange(!checked)
+                }) else Modifier,
             ),
     ) {
         Box(

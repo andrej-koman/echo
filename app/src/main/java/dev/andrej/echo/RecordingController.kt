@@ -11,7 +11,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -38,6 +40,11 @@ class RecordingController(
 
     private val _state = MutableStateFlow(RecordUiState())
     val state: StateFlow<RecordUiState> = _state.asStateFlow()
+
+    private val _filed = MutableSharedFlow<String>(extraBufferCapacity = 1)
+
+    /** Ids of takes saved as transcripts; nothing replays, so only a watching screen reacts. */
+    val filed: SharedFlow<String> = _filed
 
     private class Take(val id: String, val file: File, val startedAt: Long) {
         var samplesSeen = 0L
@@ -116,6 +123,7 @@ class RecordingController(
                 createdAt = take.startedAt,
             )
             onRecorded(take.id)
+            _filed.tryEmit(take.id)
         }
     }
 

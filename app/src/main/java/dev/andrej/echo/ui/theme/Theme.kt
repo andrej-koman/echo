@@ -14,7 +14,10 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.core.view.WindowCompat
 import dev.andrej.echo.data.ThemeMode
 
@@ -81,14 +84,19 @@ internal fun resolveDarkTheme(mode: ThemeMode, systemDark: Boolean): Boolean = w
 }
 
 @Composable
-fun EchoTheme(themeMode: ThemeMode = ThemeMode.Dark, content: @Composable () -> Unit) {
+fun EchoTheme(
+    themeMode: ThemeMode = ThemeMode.Dark,
+    hapticsEnabled: Boolean = true,
+    reduceMotion: Boolean = false,
+    content: @Composable () -> Unit,
+) {
     val context = LocalContext.current
     val dark = resolveDarkTheme(themeMode, isSystemInDarkTheme())
     val colors = if (dark) DarkEchoColors else EchoColors()
     val colorScheme = remember(dark) { materialColorScheme(colors, dark) }
     val typography = remember { EchoTypography() }
 
-    val reducedMotion = remember(context) {
+    val systemReducedMotion = remember(context) {
         Settings.Global.getFloat(
             context.contentResolver,
             Settings.Global.ANIMATOR_DURATION_SCALE,
@@ -115,7 +123,10 @@ fun EchoTheme(themeMode: ThemeMode = ThemeMode.Dark, content: @Composable () -> 
         LocalEchoRadii provides EchoRadii(),
         LocalEchoElevation provides if (dark) DarkEchoElevation else EchoElevation(),
         LocalEchoMotion provides EchoMotion(),
-        LocalReducedMotion provides reducedMotion,
+        LocalReducedMotion provides (systemReducedMotion || reduceMotion),
+        LocalHapticsEnabled provides hapticsEnabled,
+        // Compose's own haptics (long-press, text handles) obey the in-app switch too.
+        LocalHapticFeedback provides if (hapticsEnabled) LocalHapticFeedback.current else SilentHapticFeedback,
     ) {
         MaterialTheme(
             colorScheme = colorScheme,
@@ -123,4 +134,8 @@ fun EchoTheme(themeMode: ThemeMode = ThemeMode.Dark, content: @Composable () -> 
             content = content,
         )
     }
+}
+
+private object SilentHapticFeedback : HapticFeedback {
+    override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) = Unit
 }

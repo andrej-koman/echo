@@ -37,6 +37,7 @@ class RecordViewModel(
 ) : ViewModel() {
 
     val uiState: StateFlow<RecordUiState> = controller.state
+    val filed = controller.filed
 
     private val upgrade = MutableStateFlow(false)
     val upgradeRequested = upgrade.asStateFlow()

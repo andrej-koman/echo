@@ -1,5 +1,8 @@
 package dev.andrej.echo.ui.tasks
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,9 +20,15 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -33,6 +42,8 @@ import dev.andrej.echo.ui.formatTime
 import dev.andrej.echo.ui.components.CardPadding
 import dev.andrej.echo.ui.components.EchoCard
 import dev.andrej.echo.ui.theme.EchoTheme
+import dev.andrej.echo.ui.theme.LocalReducedMotion
+import dev.andrej.echo.ui.theme.rememberEchoHaptics
 import java.text.SimpleDateFormat
 import java.time.ZoneId
 import java.util.Date
@@ -191,9 +202,21 @@ internal fun TaskCheckbox(
     overdue: Boolean = false,
     size: Dp = 24.dp,
 ) {
+    val haptics = rememberEchoHaptics()
+    val reducedMotion = LocalReducedMotion.current
+    val pop = remember { Animatable(1f) }
+    var wasDone by remember { mutableStateOf(done) }
+    LaunchedEffect(done) {
+        if (done && !wasDone && !reducedMotion) {
+            pop.snapTo(0.8f)
+            pop.animateTo(1f, spring(dampingRatio = 0.4f, stiffness = Spring.StiffnessMediumLow))
+        }
+        wasDone = done
+    }
     Box(
         modifier = modifier
             .size(size)
+            .graphicsLayer { scaleX = pop.value; scaleY = pop.value }
             .clip(CircleShape)
             .then(
                 if (done) {
@@ -202,7 +225,10 @@ internal fun TaskCheckbox(
                     Modifier.border(1.5.dp, if (overdue) EchoTheme.colors.textDanger else EchoTheme.colors.borderStrong, CircleShape)
                 },
             )
-            .clickable(onClick = onToggle),
+            .clickable {
+                if (done) haptics.tick() else haptics.confirm()
+                onToggle()
+            },
         contentAlignment = Alignment.Center,
     ) {
         if (done) {
@@ -210,7 +236,7 @@ internal fun TaskCheckbox(
                 painter = painterResource(R.drawable.ic_check),
                 contentDescription = "Done",
                 tint = EchoTheme.colors.textInverse,
-                modifier = Modifier.size(14.dp),
+                modifier = Modifier.size(14.dp).graphicsLayer { alpha = ((pop.value - 0.8f) / 0.2f).coerceIn(0f, 1f) },
             )
         }
     }

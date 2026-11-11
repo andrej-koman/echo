@@ -41,6 +41,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.Modifier
@@ -87,6 +88,7 @@ import dev.andrej.echo.ui.record.RecordViewModel
 import dev.andrej.echo.ui.tasks.EditTaskScreen
 import dev.andrej.echo.ui.tasks.TasksViewModel
 import dev.andrej.echo.ui.theme.EchoTheme
+import dev.andrej.echo.ui.theme.rememberEchoHaptics
 import kotlinx.coroutines.flow.StateFlow
 
 private object Routes {
@@ -219,6 +221,8 @@ private fun MainApp(
     val recordViewModel: RecordViewModel = viewModel(factory = viewModelFactory)
     val recording by recordViewModel.uiState.collectAsStateWithLifecycle()
     val upgradeRequested by recordViewModel.upgradeRequested.collectAsStateWithLifecycle()
+    val haptics by rememberUpdatedState(rememberEchoHaptics())
+    LaunchedEffect(recordViewModel) { recordViewModel.filed.collect { haptics.success() } }
     LaunchedEffect(upgradeRequested) {
         if (upgradeRequested) {
             onUpgrade(null)
@@ -399,6 +403,8 @@ private fun MainApp(
                     val aiState by settingsViewModel.aiCardState.collectAsStateWithLifecycle(
                         initialValue = AiCardState.Checking,
                     )
+                    val hapticsEnabled by settingsViewModel.hapticsEnabled.collectAsStateWithLifecycle()
+                    val reduceMotion by settingsViewModel.reduceMotion.collectAsStateWithLifecycle()
                     SettingsScreen(
                         state = settingsState,
                         aiState = aiState,
@@ -423,6 +429,10 @@ private fun MainApp(
                         onSaveBackup = settingsViewModel::saveBackup,
                         onRestoreBackup = settingsViewModel::restoreBackup,
                         onBackupStatusSeen = settingsViewModel::clearBackupStatus,
+                        hapticsEnabled = hapticsEnabled,
+                        onHapticsChange = settingsViewModel.onHapticsChange,
+                        reduceMotion = reduceMotion,
+                        onReduceMotionChange = settingsViewModel.onReduceMotionChange,
                         isPro = isPro,
                         activePlan = activePlan,
                         renewsAt = renewsAt,

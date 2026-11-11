@@ -1,15 +1,24 @@
 package dev.andrej.echo.ui.billing
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
@@ -21,9 +30,15 @@ import dev.andrej.echo.transcribe.TranscriptionStatus
 import dev.andrej.echo.ui.components.*
 import dev.andrej.echo.ui.notes.clock
 import dev.andrej.echo.ui.theme.EchoTheme
+import dev.andrej.echo.ui.theme.CelebrateLandMs
+import dev.andrej.echo.ui.theme.LocalReducedMotion
 import dev.andrej.echo.ui.theme.hairline
+import dev.andrej.echo.ui.theme.rememberEchoHaptics
 import java.text.DateFormat
 import java.util.Date
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /** A capped note being finished after Pro activates. [status] is live; the rest is captured at paywall entry. */
 data class UnlockNote(
@@ -58,8 +73,12 @@ internal fun ProWelcome(
     renewsAt: Long?,
     onOpenNote: (String) -> Unit,
     onDone: () -> Unit,
+    arrival: ProArrival? = null,
+    pending: Boolean = false,
+    onArrivalSeen: () -> Unit = {},
 ) {
     val colors = EchoTheme.colors
+    val celebration = rememberCelebration(arrival, pending, onArrivalSeen)
     Column(
         Modifier.fillMaxSize().background(colors.surfacePage).glow(colors.surfaceAccentSoft)
             .padding(horizontal = EchoTheme.spacing.gutterScreen).statusBarsPadding().navigationBarsPadding(),
@@ -70,9 +89,12 @@ internal fun ProWelcome(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s6, Alignment.CenterVertically),
         ) {
-            Mascot(size = 120.dp)
-            EchoBadge("PRO", tone = BadgeTone.Info)
-            Text("You're on Pro", style = EchoTheme.typography.display, color = colors.textPrimary, textAlign = TextAlign.Center)
+            CelebrationMascot(celebration)
+            EchoBadge("PRO", tone = BadgeTone.Info, modifier = Modifier.graphicsLayer { alpha = celebration.content.value })
+            Text(
+                "You're on Pro", style = EchoTheme.typography.display, color = colors.textPrimary, textAlign = TextAlign.Center,
+                modifier = Modifier.graphicsLayer { alpha = celebration.content.value },
+            )
             Text(
                 if (unlockNote != null) "Every note is now transcribed in full. Echo is finishing your last note now."
                 else "Every note is now transcribed in full.",
@@ -123,6 +145,97 @@ internal fun ProWelcome(
         footer?.let {
             Text(it, style = EchoTheme.typography.caption, color = colors.textTertiary, modifier = Modifier.padding(vertical = EchoTheme.spacing.s6))
         } ?: Spacer(Modifier.height(EchoTheme.spacing.s6))
+    }
+}
+
+private class Celebration(hidden: Boolean) {
+    val mascot = Animatable(if (hidden) 0f else 1f)
+    val content = Animatable(if (hidden) 0f else 1f)
+    val rings = List(2) { Animatable(1f) }
+}
+
+/**
+ * While a purchase is [pending], Pro can activate a frame before [arrival] does, so the mascot
+ * starts hidden then and waits for it instead of flashing in at full size.
+ */
+@Composable
+private fun rememberCelebration(arrival: ProArrival?, pending: Boolean, onArrivalSeen: () -> Unit): Celebration {
+    val haptics = rememberEchoHaptics()
+    val reducedMotion = LocalReducedMotion.current
+    val celebration = remember { Celebration(hidden = pending || arrival == ProArrival.Purchased) }
+    LaunchedEffect(arrival) {
+        when (arrival) {
+            ProArrival.Purchased -> {
+                val secondBeatMs = haptics.celebrate()
+                if (reducedMotion) {
+                    celebration.mascot.snapTo(1f)
+                    celebration.content.snapTo(1f)
+                } else coroutineScope {
+                    launch {
+                        celebration.mascot.animateTo(1f, keyframes {
+                            durationMillis = CelebrateLandMs + 180
+                            0f at 0
+                            1.2f at CelebrateLandMs using FastOutSlowInEasing
+                        })
+                    }
+                    celebration.rings.forEachIndexed { i, ring ->
+                        launch {
+                            delay(if (i == 0) CelebrateLandMs.toLong() else secondBeatMs.toLong())
+                            ring.snapTo(0f)
+                            ring.animateTo(1f, tween(720, easing = LinearOutSlowInEasing))
+                        }
+                    }
+                    launch {
+                        delay(CelebrateLandMs.toLong())
+                        celebration.content.animateTo(1f, tween(260))
+                    }
+                }
+                onArrivalSeen()
+            }
+            ProArrival.Restored -> {
+                haptics.success()
+                celebration.mascot.snapTo(1f)
+                celebration.content.snapTo(1f)
+                onArrivalSeen()
+            }
+            null -> Unit
+        }
+    }
+    LaunchedEffect(pending, arrival) {
+        // A purchase that ended without an arrival, e.g. Pro activating some other way.
+        if (!pending && arrival == null && celebration.mascot.value == 0f) {
+            celebration.mascot.snapTo(1f)
+            celebration.content.snapTo(1f)
+        }
+    }
+    return celebration
+}
+
+@Composable
+private fun CelebrationMascot(celebration: Celebration) {
+    val ring = EchoTheme.colors.textAccent
+    Box(
+        Modifier.size(120.dp).drawBehind {
+            val base = size.minDimension / 2f
+            celebration.rings.forEach { anim ->
+                val p = anim.value
+                if (p < 1f) {
+                    drawCircle(ring.copy(alpha = 0.35f * (1f - p)), radius = base * (0.9f + 0.9f * p), style = Stroke(2.dp.toPx()))
+                }
+            }
+        },
+        contentAlignment = Alignment.Center,
+    ) {
+        Mascot(
+            size = 120.dp,
+            modifier = Modifier.graphicsLayer {
+                val m = celebration.mascot.value
+                val scale = 0.6f + 0.4f * m
+                scaleX = scale
+                scaleY = scale
+                alpha = m.coerceIn(0f, 1f)
+            },
+        )
     }
 }
 

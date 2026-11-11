@@ -78,6 +78,10 @@ class SettingsViewModel(
     private val onSaveBackup: suspend (android.net.Uri) -> Unit = {},
     private val onRestoreBackup: suspend (android.net.Uri) -> Unit = {},
     private val onIdleNotificationChange: (Boolean) -> Unit = {},
+    val hapticsEnabled: StateFlow<Boolean> = MutableStateFlow(true),
+    val onHapticsChange: (Boolean) -> Unit = {},
+    val reduceMotion: StateFlow<Boolean> = MutableStateFlow(false),
+    val onReduceMotionChange: (Boolean) -> Unit = {},
     private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
 

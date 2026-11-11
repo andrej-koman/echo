@@ -319,7 +319,7 @@ Task reminders, Appearance, Storage and data, and About. Speech and notes AI mod
 their sheets expose selection and download actions. The Notifications switch mirrors Android's state and
 only opens the permission prompt or channel settings. The feedback address and privacy URL in
 `SettingsScreen.kt` are placeholders until published.
-Haptics and reduced motion still follow Android, without inactive Settings switches.
+Appearance also holds Haptics and Reduce motion switches (`SettingsStore.hapticsEnabled`/`reduceMotion`, flows on `AppContainer`, passed into `EchoTheme`). Both add to Android's settings rather than replace them: the system haptic setting and animator scale still apply.
 
 ## Notes
 
@@ -480,10 +480,7 @@ analysed: **By speaker** (runs
   directly from `AppContainer`. `SettingsStore` beyond `transcriptionLanguage`: `detectSpeakers`, `autoAnalyze` (gates the
   enqueue after transcription — off means every note waits for a manual Analyze),
   `wifiOnlyDownload` (checked in `AppContainer.downloadModel()` via `ConnectivityManager`, download
-  is skipped rather than queued if off Wi-Fi). The ON-DEVICE AI card shows the one model, no backend picker. Settings' FEEL section (Haptics, Reduce
-  motion) stays read-only by design — threading the setting through `rememberEchoHaptics()`/
-  `LocalReducedMotion` would need a new CompositionLocal reaching every call site, out of scope for
-  this pass; the switches render "on" but ignore taps. Settings' DATA section opens
+  is skipped rather than queued if off Wi-Fi). The ON-DEVICE AI card shows the one model, no backend picker. Settings' DATA section opens
   `StorageScreen`; `scanStorage` totals models, recordings, the Echo database (including its WAL),
   preferences, cache, and other app files. The category totals sum to the displayed total and
   display rounded MB/GB sizes. Scanning runs off the main thread and refreshes on opening the screen.
@@ -559,12 +556,24 @@ Onboarding is ported from the separate "Echo Onboarding" Design artifact
 - Ambient animation (breathing and dots) must check `LocalReducedMotion`, which
   reads `ANIMATOR_DURATION_SCALE`. It is decoration, not feedback. `Waveform` is the exception:
   its bars are a scrolling history of the real mic level, so they keep moving regardless.
-- Haptics live in `ui/theme/Haptics.kt`, reached with `rememberEchoHaptics()`. Four calls:
-  `tick()` (every button, icon button and tab tap), `engage()` / `release()` (record button down
-  and stop), `success()` (the take is filed away). Everything but `success()`
-  goes through `View.performHapticFeedback`, which already honours the system haptic setting.
-  `success()` needs `VibrationEffect.EFFECT_DOUBLE_CLICK` and so needs the `VIBRATE` permission
-  and its own check of `Settings.System.HAPTIC_FEEDBACK_ENABLED`.
+- Haptics live in `ui/theme/Haptics.kt`, reached with `rememberEchoHaptics()`, and are named by
+  meaning: `tick()` (button, icon button, tab, pill and plan-card taps), `engage()`/`release()`
+  (record button), `toggle(on)` (`EchoSwitch`, switch rows), `threshold()`/`thresholdBack()` (sheet
+  drag crossing its 64dp dismiss point), `confirm()` (task completed; uncompleting ticks),
+  `scrubTick()`/`scrubBound()` (player slider per 10 s mark and at the ends), `success()` (a take is
+  saved, from `RecordingController.filed`, or a restore activates Pro) and `celebrate()` (purchase).
+  View-based calls use `View.performHapticFeedback`, which honours the system setting; the API 34
+  constants fall back to older ones. `success()`/`celebrate()` use the Vibrator, so they need the
+  `VIBRATE` permission and their own `HAPTIC_FEEDBACK_ENABLED` check. `LocalHapticsEnabled` gates all
+  of them, and `EchoTheme` swaps `LocalHapticFeedback` for a silent one when it is off, because
+  Compose 1.11 `combinedClickable` already plays its own long-press haptic.
+- `celebrate()` composes QUICK_RISE → THUD → TICK when every primitive is supported, else an
+  amplitude waveform, else `EFFECT_HEAVY_CLICK`. Composition delays count from the end of the
+  previous primitive, and the Galaxy S24's THUD runs 300 ms, so the timing is built from
+  `getPrimitiveDurations` and `celebrate()` returns when its tick plays; `ProWelcome` starts the
+  second ring then. `PaywallState.arrival` tells a purchase (celebrated) from a restore
+  (`success()` only). While the purchase is `busy` the mascot starts hidden, because RevenueCat
+  flips `isPro` before `purchase()` returns. Debug builds preview it from Settings › DEBUG.
 - `EchoTopBar` has three forms: a `title`/`subtitle` one, a slot one taking arbitrary centre
   content, and a searchable one (`title`/`query`/`onQueryChange`/`searchPlaceholder`) that
   delegates to the other two depending on whether its search icon has been tapped. All three draw

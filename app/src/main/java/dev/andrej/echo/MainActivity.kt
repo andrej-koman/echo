@@ -64,7 +64,9 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val themeMode by container.themeMode.collectAsStateWithLifecycle()
-            EchoTheme(themeMode = themeMode) {
+            val hapticsEnabled by container.hapticsEnabled.collectAsStateWithLifecycle()
+            val reduceMotion by container.reduceMotion.collectAsStateWithLifecycle()
+            EchoTheme(themeMode = themeMode, hapticsEnabled = hapticsEnabled, reduceMotion = reduceMotion) {
                 EchoApp(
                     viewModelFactory = container.viewModelFactory,
                     billing = container.billing,

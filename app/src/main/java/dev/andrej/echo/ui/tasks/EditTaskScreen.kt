@@ -147,9 +147,10 @@ fun EditTaskScreen(
                 horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
                 verticalAlignment = Alignment.Top,
             ) {
-                TaskDoneCheckbox(
+                TaskCheckbox(
                     done = task.done,
                     onToggle = { viewModel.setDone(task.id, !task.done) },
+                    modifier = Modifier.padding(top = 2.dp),
                 )
                 Column(modifier = Modifier.weight(1f)) {
                     BasicTextField(
@@ -304,34 +305,6 @@ private fun SectionDivider(label: String) {
             color = EchoTheme.colors.textTertiary,
         )
         HorizontalDivider(modifier = Modifier.weight(1f), color = EchoTheme.colors.borderSubtle)
-    }
-}
-
-@Composable
-private fun TaskDoneCheckbox(done: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .padding(top = 2.dp)
-            .size(24.dp)
-            .clip(CircleShape)
-            .then(
-                if (done) {
-                    Modifier.background(EchoTheme.colors.actionPrimaryBg)
-                } else {
-                    Modifier.border(1.5.dp, EchoTheme.colors.borderStrong, CircleShape)
-                },
-            )
-            .clickable(onClick = onToggle),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (done) {
-            Icon(
-                painter = painterResource(R.drawable.ic_check),
-                contentDescription = "Done",
-                tint = EchoTheme.colors.textInverse,
-                modifier = Modifier.size(14.dp),
-            )
-        }
     }
 }
 

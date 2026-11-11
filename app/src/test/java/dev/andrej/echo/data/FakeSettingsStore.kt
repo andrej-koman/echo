@@ -13,4 +13,6 @@ class FakeSettingsStore(initial: String? = null) : SettingsStore {
     override var cachedIsPro: Boolean = false
     override var themeMode: ThemeMode = ThemeMode.Dark
     override var idleNotification: Boolean = false
+    override var hapticsEnabled: Boolean = true
+    override var reduceMotion: Boolean = false
 }

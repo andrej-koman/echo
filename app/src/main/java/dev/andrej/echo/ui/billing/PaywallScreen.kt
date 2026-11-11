@@ -37,6 +37,7 @@ import dev.andrej.echo.billing.PlanPeriod
 import dev.andrej.echo.ui.components.*
 import dev.andrej.echo.ui.theme.EchoTheme
 import dev.andrej.echo.ui.theme.hairline
+import dev.andrej.echo.ui.theme.rememberEchoHaptics
 import java.text.NumberFormat
 import java.time.Period
 import java.util.Currency
@@ -56,9 +57,10 @@ fun PaywallScreen(
     val context = LocalContext.current
     LaunchedEffect(viewModel) { viewModel.load() }
     if (isPro) {
-        ProWelcome(unlockNote, activePlan, renewsAt, onOpenNote, onBack)
+        ProWelcome(unlockNote, activePlan, renewsAt, onOpenNote, onBack, state.arrival, state.busy, viewModel::consumeArrival)
         return
     }
+    val haptics = rememberEchoHaptics()
     val colors = EchoTheme.colors
     val plans = state.plans.sortedBy { when (it.period) { PlanPeriod.Yearly -> 0; PlanPeriod.Monthly -> 1; PlanPeriod.Lifetime -> 2 } }
     val monthly = plans.firstOrNull { it.period == PlanPeriod.Monthly }
@@ -125,7 +127,10 @@ fun PaywallScreen(
             } else {
                 Column(Modifier.fillMaxWidth().selectableGroup(), verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4)) {
                     plans.forEach { plan ->
-                        PlanCard(plan, monthly, selected = plan.id == selected?.id, enabled = !state.busy, onSelect = { viewModel.select(plan) })
+                        PlanCard(plan, monthly, selected = plan.id == selected?.id, enabled = !state.busy, onSelect = {
+                            if (plan.id != selected?.id) haptics.tick()
+                            viewModel.select(plan)
+                        })
                     }
                 }
             }

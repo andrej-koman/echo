@@ -39,7 +39,9 @@ import dev.andrej.echo.ui.theme.Bronze400
 import dev.andrej.echo.ui.theme.Bronze500
 import dev.andrej.echo.ui.theme.EchoTheme
 import dev.andrej.echo.ui.theme.echoShadow
+import dev.andrej.echo.ui.theme.ScrubFeedback
 import dev.andrej.echo.ui.theme.rememberEchoHaptics
+import dev.andrej.echo.ui.theme.scrubFeedback
 
 internal val PlayDiameter = 64.dp
 
@@ -82,6 +84,7 @@ internal fun ProgressRow(player: NotePlayer, modifier: Modifier = Modifier) {
     val colors = EchoTheme.colors
     var dragging by remember { mutableStateOf<Float?>(null) }
     val duration = player.durationMs.coerceAtLeast(1)
+    val haptics = rememberEchoHaptics()
     val shownMs = dragging?.let { (it * duration).toLong() } ?: player.positionMs
     val sliderColors = SliderDefaults.colors(
         thumbColor = colors.textAccent,
@@ -104,7 +107,15 @@ internal fun ProgressRow(player: NotePlayer, modifier: Modifier = Modifier) {
         )
         Slider(
             value = dragging ?: (player.positionMs.toFloat() / duration).coerceIn(0f, 1f),
-            onValueChange = { dragging = it },
+            onValueChange = {
+                val from = dragging?.let { f -> (f * duration).toLong() } ?: player.positionMs
+                when (scrubFeedback(from, (it * duration).toLong(), duration)) {
+                    ScrubFeedback.Tick -> haptics.scrubTick()
+                    ScrubFeedback.Bound -> haptics.scrubBound()
+                    ScrubFeedback.None -> Unit
+                }
+                dragging = it
+            },
             onValueChangeFinished = {
                 dragging?.let { player.seekTo((it * duration).toLong()) }
                 dragging = null

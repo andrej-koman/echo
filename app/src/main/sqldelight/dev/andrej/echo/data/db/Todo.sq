@@ -14,7 +14,9 @@ CREATE TABLE todo (
     reminderAt INTEGER,
     reminderDate TEXT,
     reminderDelivered INTEGER AS Boolean NOT NULL DEFAULT 0,
-    sourceQuote TEXT
+    sourceQuote TEXT,
+    -- Checked, edited or snoozed by the user; re-analysis keeps these rows as they are.
+    touched INTEGER AS Boolean NOT NULL DEFAULT 0
 );
 
 CREATE INDEX todo_source ON todo(sourceTranscriptId);
@@ -44,19 +46,22 @@ insert:
 INSERT INTO todo VALUES ?;
 
 snooze:
-UPDATE todo SET dueAt = ?, reminderAt = ?, reminderDate = NULL, reminderDelivered = 0, updatedAt = ? WHERE id = ?;
+UPDATE todo SET dueAt = ?, reminderAt = ?, reminderDate = NULL, reminderDelivered = 0, updatedAt = ?, touched = 1 WHERE id = ?;
 
 setDone:
-UPDATE todo SET done = ?, updatedAt = ? WHERE id = ?;
+UPDATE todo SET done = ?, updatedAt = ?, touched = 1 WHERE id = ?;
 
 update:
-UPDATE todo SET text = ?, dueAt = ?, hasTime = ?, hasDate = ?, updatedAt = ? WHERE id = ?;
+UPDATE todo SET text = ?, dueAt = ?, hasTime = ?, hasDate = ?, updatedAt = ?, touched = 1 WHERE id = ?;
 
 delete:
 DELETE FROM todo WHERE id = ?;
 
 deleteFor:
 DELETE FROM todo WHERE sourceTranscriptId = ?;
+
+deleteUntouchedFor:
+DELETE FROM todo WHERE sourceTranscriptId = ? AND touched = 0;
 
 clear:
 DELETE FROM todo;

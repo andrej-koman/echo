@@ -59,7 +59,7 @@ class NoteStatusNotifier(
     fun post(note: Transcript, status: NoteStatus) {
         if (appVisible() || shown[note.id] == status) return
         shown[note.id] = status
-        val title = note.title ?: title(note.text)
+        val title = note.title ?: title(note.text, note.createdAt)
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_echo)
             .setColor(RecordingNotifier.BRONZE)

@@ -174,7 +174,7 @@ class AppContainer(context: Context) {
         dev.andrej.echo.data.SqlTaskReminderRepository(database),
         dev.andrej.echo.notify.AndroidTaskReminderDelivery(applicationContext) { transcriptId ->
             runBlocking { repository.transcripts.first() }.firstOrNull { it.id == transcriptId }
-                ?.let { it.title ?: dev.andrej.echo.ui.notes.title(it.text) }
+                ?.let { it.title ?: dev.andrej.echo.ui.notes.title(it.text, it.createdAt) }
         },
     )
 
@@ -595,6 +595,9 @@ class AppContainer(context: Context) {
                     importDay = { settings.importDay },
                     onRetryTranscription = transcriptions::transcribe,
                     onStopTranscription = transcriptions::stop,
+                    onRetranscribe = transcriptions::retranscribe,
+                    languageOptions = { buildLanguageOptions(WhisperNative.languages().toList()) },
+                    defaultLanguage = { settings.transcriptionLanguage.orEmpty() },
                     onDeleted = transcriptions::discard,
                     audioFile = transcriptions::audioFile,
                     folders = folders.folders,

@@ -11,19 +11,22 @@ CREATE TABLE transcript (
     polishedText TEXT,
     folderId TEXT,
     titleByUser INTEGER NOT NULL DEFAULT 0,
-    transcribedUntilMs INTEGER
+    transcribedUntilMs INTEGER,
+    -- Null follows the Settings language; empty forces auto-detect for this note.
+    languageOverride TEXT
 );
 
 selectAll:
-SELECT id, text, language, createdAt, durationMs, title, summary, analyzedAt, folderId, transcribedUntilMs
+SELECT id, text, language, createdAt, durationMs, title, summary, analyzedAt, folderId, transcribedUntilMs,
+    languageOverride
 FROM transcript ORDER BY createdAt DESC;
 
 existsById:
 SELECT EXISTS(SELECT 1 FROM transcript WHERE id = ?);
 
 insert:
-INSERT INTO transcript (id, text, language, createdAt, durationMs, title, titleByUser)
-VALUES (?, ?, ?, ?, ?, ?, ?);
+INSERT INTO transcript (id, text, language, createdAt, durationMs, title, titleByUser, languageOverride)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 setTranscription:
 UPDATE transcript SET text = ?, language = ?, durationMs = ? WHERE id = ?;
@@ -65,3 +68,6 @@ SELECT transcribedUntilMs FROM transcript WHERE id = ?;
 
 invalidateAnalysis:
 UPDATE transcript SET analyzedAt = NULL WHERE id = ?;
+
+setLanguageOverride:
+UPDATE transcript SET languageOverride = ? WHERE id = ?;

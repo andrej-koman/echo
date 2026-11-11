@@ -68,6 +68,11 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
   `transcription_language` — the old `language` key held a `SpeechRecognizer` locale), or
   auto-detect when unset. The list comes from `WhisperNative.languages()` (99 codes, no model
   needed); `PickerSheet` scrolls for it.
+- **Per-note language** (`transcript.languageOverride`, resolved by `requestedLanguage`): null
+  follows Settings, `""` forces auto-detect (Settings may name a fixed language), a code forces
+  that language. Only the import sheet and the note's More → Language set it; recordings, the
+  widget, tile and shortcuts follow Settings. A choice never changes Settings. The checkpoint's
+  held language still wins on resume.
 
 ## Import and Whisper
 
@@ -124,6 +129,14 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
   `recordings/<id>/speech-complete` before finalizing audio or awaiting analysis. If Android kills
   the process during that later work, WorkManager's restarted job skips Whisper and keeps the
   saved transcript and speaker labels. An explicit uncapped transcription request removes the marker; capped retries preserve it until a Pro continuation starts.
+- **Re-transcribe in another language** (`Transcriptions.retranscribe`): it refuses while a job
+  other than a failed one exists. It awaits analysis cancellation, stores the override, and
+  clears `transcribedUntilMs` so the capped prefix (old language) is not kept; the run re-applies
+  the free cap. A `retranscribe` marker (content `reanalyze` when the note had been analyzed)
+  makes the run keep speaker rows and names: the same audio diarizes into the same voices. At
+  finalize, the marker invalidates `analyzedAt` (the queue skips analyzed notes) and forces
+  analysis when the note had a summary, even with `autoAnalyze` off. The marker is deleted with
+  `transcription-pending` and on a user stop, so a crash mid-run resumes with the same rules.
 - **Speed** (S24, Large V3 Turbo q5_0, measured 2026-11-03 with `whisper_print_timings` →
   logcat tag `whisper`, wall times under tag `Transcriptions`): the encoder is ~95% of the time,
   one pass per 30 s window, 33 s per pass at full clock. Decoding text is cheap. Samsung caps every
@@ -400,6 +413,11 @@ Appearance also holds Haptics and Reduce motion switches (`SettingsStore.haptics
   minted fresh, so re-analysis lands on the same ids and `Task.done` survives it. Before this,
   Analyze silently un-ticked every task. Two rows with the same text under one transcript collapse
   to one (`distinctBy`) — a repeated task from a single note is noise.
+- `todo.touched` is set by checking, editing or snoozing. Re-analysis deletes only untouched
+  rows, and the new result skips ids that a touched row holds. A re-transcribe in another
+  language changes every task's text and so every id; without this flag it would drop checked
+  tasks and their reminders. `updatedAt` can't serve as the signal: re-analysis rewrites it. A
+  deleted task can still come back (no tombstones).
 - **Note screen** (2026-11-02 design, `ui/detail/`): back button, then a pill of Find / Edit /
   Share / ···, a large title, `date · duration · [folder ▾]` (the chip opens the folder picker),
   and a status card while transcription or analysis is pending. Sticky tabs, each shown only once its stage is done — none while Whisper runs, **Full text**

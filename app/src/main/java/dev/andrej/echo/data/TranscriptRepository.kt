@@ -15,7 +15,13 @@ interface TranscriptRepository {
         createdAt: Long = System.currentTimeMillis(),
         title: String? = null,
         titleByUser: Boolean = false,
+        languageOverride: String? = null,
     ): Transcript
+
+    suspend fun setLanguageOverride(id: String, language: String?)
+
+    /** Lets the analysis queue run again for a note it already analyzed. */
+    suspend fun invalidateAnalysis(id: String)
 
     /** Rewritten after every transcribed chunk, so a long import fills in as it goes. */
     suspend fun setTranscription(

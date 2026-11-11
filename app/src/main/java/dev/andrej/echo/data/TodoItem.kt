@@ -18,6 +18,7 @@ data class TodoItem(
     val reminderDate: String? = null,
     val reminderDelivered: Boolean = false,
     val sourceQuote: String? = null,
+    val touched: Boolean = false,
 )
 
 /** What the analyzer produces, before the repository gives it an id. */

@@ -12,4 +12,6 @@ data class Transcript(
     val analyzedAt: Long? = null,
     val folderId: String? = null,
     val transcribedUntilMs: Long? = null,
+    /** Null follows Settings; empty forces auto-detect; otherwise a Whisper code for this note. */
+    val languageOverride: String? = null,
 )

@@ -30,6 +30,7 @@ class TaskReminderMigrationTest {
 
     @Test fun `upgrade from transcription cap schema adds source quote and preserves reminders`() {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            driver.execute(null, "CREATE TABLE transcript (id TEXT NOT NULL PRIMARY KEY)", 0)
             driver.execute(null, """
                 CREATE TABLE todo (
                     id TEXT NOT NULL PRIMARY KEY, sourceTranscriptId TEXT NOT NULL, text TEXT NOT NULL,
@@ -52,6 +53,33 @@ class TaskReminderMigrationTest {
             assertEquals("2026-11-09", task.reminderDate)
             assertTrue(task.reminderDelivered)
             assertNull(task.sourceQuote)
+        }
+    }
+
+    @Test fun `language upgrade marks checked tasks touched and leaves notes following settings`() {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            driver.execute(null, "CREATE TABLE transcript (id TEXT NOT NULL PRIMARY KEY)", 0)
+            driver.execute(null, """
+                CREATE TABLE todo (
+                    id TEXT NOT NULL PRIMARY KEY, sourceTranscriptId TEXT NOT NULL, text TEXT NOT NULL,
+                    dueAt INTEGER NOT NULL, hasTime INTEGER NOT NULL, hasDate INTEGER NOT NULL,
+                    done INTEGER NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL,
+                    sourceOffsetMs INTEGER, reminderAt INTEGER, reminderDate TEXT,
+                    reminderDelivered INTEGER NOT NULL DEFAULT 0, sourceQuote TEXT
+                )
+            """.trimIndent(), 0)
+            driver.execute(null, "INSERT INTO transcript VALUES ('note')", 0)
+            driver.execute(null, "INSERT INTO todo VALUES ('done', 'note', 'Done', 0, 0, 1, 1, 0, 0, NULL, NULL, NULL, 0, NULL)", 0)
+            driver.execute(null, "INSERT INTO todo VALUES ('open', 'note', 'Open', 0, 0, 1, 0, 0, 0, NULL, NULL, NULL, 0, NULL)", 0)
+            EchoDatabase.Schema.migrate(driver, 9, EchoDatabase.Schema.version)
+            val tasks = EchoDatabase(driver).todoQueries.selectAll(::TodoItem).executeAsList().associateBy { it.id }
+            assertTrue(tasks.getValue("done").touched)
+            assertFalse(tasks.getValue("open").touched)
+            val override = driver.executeQuery(null, "SELECT languageOverride FROM transcript", { cursor ->
+                cursor.next()
+                app.cash.sqldelight.db.QueryResult.Value(cursor.getString(0))
+            }, 0).value
+            assertNull(override)
         }
     }
 }

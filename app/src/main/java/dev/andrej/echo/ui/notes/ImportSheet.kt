@@ -35,8 +35,11 @@ import dev.andrej.echo.data.ImportDay
 import dev.andrej.echo.transcribe.ImportFile
 import dev.andrej.echo.ui.components.EchoButton
 import dev.andrej.echo.ui.components.EchoSwitch
+import dev.andrej.echo.ui.components.PickerSheet
 import dev.andrej.echo.ui.components.Sheet
+import dev.andrej.echo.ui.profile.LanguageOption
 import dev.andrej.echo.ui.profile.formatBytes
+import dev.andrej.echo.ui.profile.languageLabel
 import dev.andrej.echo.ui.theme.EchoTheme
 import dev.andrej.echo.ui.theme.hairline
 import java.time.Instant
@@ -52,7 +55,9 @@ import java.util.Locale
 internal fun ImportSheet(
     file: ImportFile?,
     fixedDay: ImportDay?,
-    onImport: (file: ImportFile, createdAt: Long, title: String, always: ImportDay?) -> Unit,
+    languages: List<LanguageOption>,
+    defaultLanguage: String,
+    onImport: (file: ImportFile, createdAt: Long, title: String, always: ImportDay?, language: String) -> Unit,
     onDismiss: () -> Unit,
     now: () -> Long = System::currentTimeMillis,
 ) {
@@ -61,7 +66,7 @@ internal fun ImportSheet(
         var shown by remember { mutableStateOf(file) }
         if (file != null) shown = file
         val current = shown ?: return@Sheet
-        ImportSheetContent(current, fixedDay, onImport, now)
+        ImportSheetContent(current, fixedDay, languages, defaultLanguage, onImport, now)
     }
 }
 
@@ -69,7 +74,9 @@ internal fun ImportSheet(
 private fun ImportSheetContent(
     file: ImportFile,
     fixedDay: ImportDay?,
-    onImport: (file: ImportFile, createdAt: Long, title: String, always: ImportDay?) -> Unit,
+    languages: List<LanguageOption>,
+    defaultLanguage: String,
+    onImport: (file: ImportFile, createdAt: Long, title: String, always: ImportDay?, language: String) -> Unit,
     now: () -> Long,
 ) {
     val colors = EchoTheme.colors
@@ -79,6 +86,8 @@ private fun ImportSheetContent(
     }
     var title by remember(file) { mutableStateOf("") }
     var always by remember(file) { mutableStateOf(false) }
+    var language by remember(file) { mutableStateOf(defaultLanguage) }
+    var pickingLanguage by remember { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5)) {
         Row(
@@ -151,6 +160,33 @@ private fun ImportSheetContent(
             }
         }
 
+        Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s3)) {
+            Text(text = "Language", style = EchoTheme.typography.micro, color = colors.textSecondary)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(EchoTheme.radii.md)
+                    .background(colors.surfaceCard)
+                    .hairline(colors.borderStrong, cornerRadius = 12.dp)
+                    .clickable { pickingLanguage = true }
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (language.isEmpty()) "🌐 Auto-detect" else languageLabel(language),
+                    style = EchoTheme.typography.body,
+                    color = colors.textPrimary,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(
+                    painter = painterResource(R.drawable.ic_chevron_right),
+                    contentDescription = null,
+                    tint = colors.textTertiary,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+        }
+
         if (fixedDay == null) {
             Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s2)) {
                 Text(text = "Which day does it belong to?", style = EchoTheme.typography.heading, color = colors.textPrimary)
@@ -199,11 +235,24 @@ private fun ImportSheetContent(
             text = "Start transcribing",
             onClick = {
                 val createdAt = if (day == ImportDay.Recorded) file.recordedAt ?: today else today
-                onImport(file, createdAt, title, day.takeIf { always && fixedDay == null })
+                onImport(file, createdAt, title, day.takeIf { always && fixedDay == null }, language)
             },
             fullWidth = true,
         )
     }
+
+    PickerSheet(
+        visible = pickingLanguage,
+        title = "Language",
+        options = languages.map { "${it.flag} ${it.label}" to it.code },
+        selected = language,
+        dividerBefore = { code -> languages.firstOrNull { it.code == code }?.dividerBefore == true },
+        onPick = {
+            language = it
+            pickingLanguage = false
+        },
+        onDismiss = { pickingLanguage = false },
+    )
 }
 
 @Composable

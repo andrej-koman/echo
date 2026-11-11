@@ -112,12 +112,14 @@ class TranscriptionCapStorageTest {
                     titleByUser INTEGER NOT NULL DEFAULT 0
                 )
             """.trimIndent(), 0)
+            driver.execute(null, "CREATE TABLE todo (id TEXT NOT NULL PRIMARY KEY, done INTEGER NOT NULL)", 0)
             driver.execute(null, "INSERT INTO transcript (id, text, language, createdAt, durationMs) VALUES ('old', 'spoken', 'sl', 10, 300000)", 0)
-            EchoDatabase.Schema.migrate(driver, 7, 8)
+            EchoDatabase.Schema.migrate(driver, 7, EchoDatabase.Schema.version)
             val note = EchoDatabase(driver).transcriptQueries.selectAll(::Transcript).executeAsOne()
             assertEquals("spoken", note.text)
             assertEquals(300_000L, note.durationMs)
             assertNull(note.transcribedUntilMs)
+            assertNull(note.languageOverride)
         }
     }
 }

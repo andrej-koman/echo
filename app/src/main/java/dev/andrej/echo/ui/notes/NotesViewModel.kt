@@ -37,6 +37,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.first
+import dev.andrej.echo.ui.profile.LanguageOption
 
 enum class PendingSeverity { Parked, Failed }
 
@@ -91,11 +92,16 @@ class NotesViewModel(
     private val onImport: (List<Uri>) -> Unit = {},
     offered: Flow<List<ImportFile>> = flowOf(emptyList()),
     val importStarted: Flow<String> = flowOf(),
-    private val onAcceptImport: (ImportFile, Long, String?, ImportDay?) -> Unit = { _, _, _, _ -> },
+    private val onAcceptImport: (ImportFile, Long, String?, ImportDay?, String?) -> Unit = { _, _, _, _, _ -> },
     private val onDeclineImport: (ImportFile) -> Unit = {},
     val importDay: () -> ImportDay? = { null },
     private val onRetryTranscription: (String) -> Unit = {},
     private val onStopTranscription: (String) -> Unit = {},
+    private val onRetranscribe: (id: String, language: String) -> Unit = { _, _ -> },
+    /** Whisper's languages for pickers; slow enough to call off the main thread. */
+    val languageOptions: () -> List<LanguageOption> = { emptyList() },
+    /** The Settings language, empty for auto-detect. */
+    val defaultLanguage: () -> String = { "" },
     private val onDeleted: (String) -> Unit = {},
     private val audioFile: (String) -> File? = { null },
     folders: Flow<List<Folder>> = flowOf(emptyList()),
@@ -194,8 +200,11 @@ class NotesViewModel(
     val offeredImport: StateFlow<ImportFile?> = offered.map { it.firstOrNull() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    fun acceptImport(file: ImportFile, createdAt: Long, title: String, always: ImportDay?) =
-        onAcceptImport(file, createdAt, title, always)
+    fun acceptImport(file: ImportFile, createdAt: Long, title: String, always: ImportDay?, language: String? = null) =
+        onAcceptImport(file, createdAt, title, always, language)
+
+    /** [language] is a Whisper code, empty for auto-detect. */
+    fun retranscribe(id: String, language: String) = onRetranscribe(id, language)
 
     fun declineImport(file: ImportFile) = onDeclineImport(file)
 
@@ -280,7 +289,7 @@ internal fun rows(
         .map { transcript ->
             NoteRow(
                 id = transcript.id,
-                title = transcript.title ?: title(transcript.text),
+                title = transcript.title ?: title(transcript.text, transcript.createdAt),
                 excerpt = transcript.summary ?: transcript.text.trim(),
                 duration = clock(transcript.durationMs),
                 date = dateLabel(transcript.createdAt, now),
@@ -357,11 +366,12 @@ internal fun AnalysisBlock.toPendingCopy(): PendingCopy? = when (this) {
 
 /**
  * Fallback for a transcript analysis has not named yet — the opening of what was said, cut at
- * the first sentence end or at six words, whichever comes first.
+ * the first sentence end or at six words, whichever comes first. Before anything was heard, the
+ * day the note was made, in the phone's locale format.
  */
-internal fun title(text: String): String {
+internal fun title(text: String, createdAt: Long, locale: java.util.Locale = java.util.Locale.getDefault()): String {
     val trimmed = text.trim()
-    if (trimmed.isEmpty()) return "Untitled"
+    if (trimmed.isEmpty()) return java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM, locale).format(Date(createdAt))
 
     val sentence = trimmed.takeWhile { it != '.' && it != '?' && it != '!' }.trim()
     val words = sentence.split(' ').filter { it.isNotBlank() }

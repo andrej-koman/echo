@@ -29,6 +29,7 @@ class SqlTranscriptRepository(
         createdAt: Long,
         title: String?,
         titleByUser: Boolean,
+        languageOverride: String?,
     ): Transcript {
         val transcript = Transcript(
             id = id,
@@ -37,11 +38,22 @@ class SqlTranscriptRepository(
             createdAt = createdAt,
             durationMs = durationMs,
             title = title,
+            languageOverride = languageOverride,
         )
         withContext(ioDispatcher) {
-            queries.insert(transcript.id, text, language, createdAt, durationMs, title, if (titleByUser) 1L else 0L)
+            queries.insert(transcript.id, text, language, createdAt, durationMs, title, if (titleByUser) 1L else 0L, languageOverride)
         }
         return transcript
+    }
+
+    override suspend fun setLanguageOverride(id: String, language: String?) = withContext(ioDispatcher) {
+        queries.setLanguageOverride(language, id)
+        Unit
+    }
+
+    override suspend fun invalidateAnalysis(id: String) = withContext(ioDispatcher) {
+        queries.invalidateAnalysis(id)
+        Unit
     }
 
     override suspend fun setTranscription(

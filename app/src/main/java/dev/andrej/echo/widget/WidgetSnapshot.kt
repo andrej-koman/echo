@@ -42,14 +42,32 @@ data class WidgetNote(
     val tag: NoteTag? = null,
 )
 
+/** The tasks widget's list: today's when there are any, else the next day that has tasks. */
+data class WidgetAgenda(val label: String = "Today", val tasks: List<WidgetTask> = emptyList())
+
 data class WidgetSnapshot(
     val recording: WidgetRecording = WidgetRecording(RecordingMode.Idle),
     val micAllowed: Boolean = true,
     val today: List<WidgetTask> = emptyList(),
+    val agenda: WidgetAgenda = WidgetAgenda(),
     val recent: List<WidgetNote> = emptyList(),
 )
 
 private val timeFormat = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)
+private val weekdayFormat = DateTimeFormatter.ofPattern("EEEE")
+private val dateFormat = DateTimeFormatter.ofPattern("EEE d MMM")
+
+private fun visibleTasks(items: List<TodoItem>, justDone: Set<String>) =
+    items.filter { !it.done || it.id in justDone }.map { if (it.id in justDone) it.copy(done = false) else it }
+
+private fun TodoItem.toWidget(now: Long, zone: ZoneId, justDone: Set<String>, snoozed: Set<String>) = WidgetTask(
+    id = id,
+    text = text,
+    time = if (hasTime) Instant.ofEpochMilli(dueAt).atZone(zone).toLocalTime().format(timeFormat) else null,
+    overdue = isOverdue(this, now, zone),
+    done = id in justDone,
+    snoozed = id in snoozed,
+)
 
 /**
  * The widget "Today": overdue first, then today's timed and date-only tasks. Undated tasks stay in
@@ -62,21 +80,36 @@ internal fun todayTasks(
     justDone: Set<String> = emptySet(),
     snoozed: Set<String> = emptySet(),
 ): List<WidgetTask> {
-    val visible = items.filter { !it.done || it.id in justDone }.map { if (it.id in justDone) it.copy(done = false) else it }
-    val today = groupByDue(visible, now, zone).firstOrNull { it.label == "Today" }?.items.orEmpty()
-    return today.filter { it.hasDate }.map { task ->
-        WidgetTask(
-            id = task.id,
-            text = task.text,
-            time = if (task.hasTime) Instant.ofEpochMilli(task.dueAt).atZone(zone).toLocalTime().format(timeFormat) else null,
-            overdue = isOverdue(task, now, zone),
-            done = task.id in justDone,
-            snoozed = task.id in snoozed,
-        )
-    }
+    val today = groupByDue(visibleTasks(items, justDone), now, zone).firstOrNull { it.label == "Today" }?.items.orEmpty()
+    return today.filter { it.hasDate }.map { it.toWidget(now, zone, justDone, snoozed) }
 }
 
-internal fun recentNotes(transcripts: List<Transcript>, work: Work, now: Long, count: Int = 3): List<WidgetNote> =
+/** [todayTasks], or when today is clear, the first later day with a task: "Tomorrow", a weekday within the week, else a date. */
+internal fun nextTasks(
+    items: List<TodoItem>,
+    now: Long,
+    zone: ZoneId,
+    justDone: Set<String> = emptySet(),
+    snoozed: Set<String> = emptySet(),
+): WidgetAgenda {
+    val today = todayTasks(items, now, zone, justDone, snoozed)
+    if (today.isNotEmpty()) return WidgetAgenda("Today", today)
+    val date = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+    val (day, tasks) = visibleTasks(items, justDone)
+        .filter { it.hasDate }
+        .groupBy { Instant.ofEpochMilli(it.dueAt).atZone(zone).toLocalDate() }
+        .filterKeys { it > date }
+        .minByOrNull { it.key } ?: return WidgetAgenda()
+    val label = when {
+        day == date.plusDays(1) -> "Tomorrow"
+        day < date.plusDays(7) -> day.format(weekdayFormat)
+        else -> day.format(dateFormat)
+    }
+    val sorted = tasks.sortedWith(compareBy({ !it.hasTime }, { if (it.hasTime) it.dueAt else it.createdAt }))
+    return WidgetAgenda(label, sorted.map { it.toWidget(now, zone, justDone, snoozed) })
+}
+
+internal fun recentNotes(transcripts: List<Transcript>, work: Work, now: Long, count: Int = 20): List<WidgetNote> =
     rows(transcripts, now, work).take(count).map { row ->
         val tag = when (val stage = row.stage) {
             is NoteStage.Transcribing -> NoteTag.Transcribing((stage.fraction * 100).toInt())

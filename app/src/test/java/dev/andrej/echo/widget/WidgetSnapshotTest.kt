@@ -34,4 +34,20 @@ class WidgetSnapshotTest {
         assertEquals(listOf("a", "b"), ticked.map { it.id })
         assertTrue(ticked.first().done)
     }
+
+    @Test fun `with today clear, the agenda falls through to the next day with tasks`() {
+        val tomorrow = listOf(task("dateOnly", at("2026-11-12T00:00:00"), hasTime = false), task("timed", at("2026-11-12T09:00:00")))
+        val agenda = nextTasks(tomorrow + task("later", at("2026-11-20T09:00:00")), now, zone)
+        assertEquals("Tomorrow", agenda.label)
+        assertEquals(listOf("timed", "dateOnly"), agenda.tasks.map { it.id })
+
+        assertEquals("Sunday", nextTasks(listOf(task("sun", at("2026-11-15T09:00:00"))), now, zone).label)
+        assertEquals(listOf("later"), nextTasks(listOf(task("later", at("2026-11-20T09:00:00"))), now, zone).tasks.map { it.id })
+    }
+
+    @Test fun `today wins over later days, and nothing dated leaves the agenda empty`() {
+        val items = listOf(task("today", at("2026-11-11T15:00:00")), task("tomorrow", at("2026-11-12T09:00:00")))
+        assertEquals(WidgetAgenda("Today", todayTasks(items, now, zone)), nextTasks(items, now, zone))
+        assertEquals(WidgetAgenda(), nextTasks(listOf(task("undated", 0, hasTime = false, hasDate = false)), now, zone))
+    }
 }

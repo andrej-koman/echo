@@ -14,6 +14,8 @@ import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.LinearProgressIndicator
+import androidx.glance.appwidget.lazy.LazyColumn
+import androidx.glance.appwidget.lazy.itemsIndexed
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
 import androidx.glance.layout.Alignment
@@ -31,8 +33,12 @@ import androidx.glance.text.Text
 import dev.andrej.echo.R
 import dev.andrej.echo.notify.RecordingMode
 
-/** The last three notes, with how far along each is. */
+/** Recent notes, scrollable, with how far along each is. */
 class RecentWidget : GlanceAppWidget() {
+    override suspend fun providePreview(context: Context, widgetCategory: Int) {
+        provideContent { RecentContent(previewSnapshot) }
+    }
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val widgets = context.widgets()
         provideContent {
@@ -49,10 +55,10 @@ class RecentWidgetReceiver : GlanceAppWidgetReceiver() {
 @Composable
 private fun RecentContent(snapshot: WidgetSnapshot) {
     Column(
-        modifier = GlanceModifier.fillMaxSize().widgetCard().padding(start = 14.dp, end = 12.dp, top = 12.dp, bottom = 10.dp),
+        modifier = GlanceModifier.fillMaxSize().widgetCard().padding(start = 14.dp, end = 7.dp, top = 7.dp, bottom = 10.dp),
     ) {
         Row(
-            modifier = GlanceModifier.fillMaxWidth().height(40.dp).padding(start = 2.dp),
+            modifier = GlanceModifier.fillMaxWidth().height(50.dp).padding(start = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("Recent", style = text(16.sp, WidgetColors.tx, FontWeight.Medium))
@@ -62,9 +68,13 @@ private fun RecentContent(snapshot: WidgetSnapshot) {
         if (snapshot.recent.isEmpty()) {
             Empty(snapshot)
         } else {
-            snapshot.recent.forEachIndexed { index, note ->
-                if (index > 0) Box(GlanceModifier.fillMaxWidth().height(1.dp).background(WidgetColors.hair)) {}
-                NoteRow(note)
+            LazyColumn(modifier = GlanceModifier.fillMaxWidth().defaultWeight()) {
+                itemsIndexed(snapshot.recent, itemId = { _, note -> note.id.hashCode().toLong() }) { index, note ->
+                    Column(modifier = GlanceModifier.fillMaxWidth()) {
+                        if (index > 0) Box(GlanceModifier.fillMaxWidth().height(1.dp).background(WidgetColors.hair)) {}
+                        NoteRow(note)
+                    }
+                }
             }
         }
     }
@@ -74,7 +84,7 @@ private fun RecentContent(snapshot: WidgetSnapshot) {
 private fun NoteRow(note: WidgetNote) {
     val context = LocalContext.current
     Column(
-        modifier = GlanceModifier.fillMaxWidth().height(52.dp).padding(horizontal = 4.dp).clickable(openNote(context, note.id)),
+        modifier = GlanceModifier.fillMaxWidth().height(52.dp).padding(start = 4.dp, end = 9.dp).clickable(openNote(context, note.id)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

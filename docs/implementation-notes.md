@@ -693,11 +693,26 @@ notifications"). Bronze `setColor` on every Echo notification; clay only while a
 ## Widgets
 
 - Glance (`androidx.glance:glance-appwidget`), one `GlanceAppWidget` + receiver per widget in
-  `widget/`: Record 1×1, Combined 4×1, Tasks (responsive narrow/wide), Recent notes 4×2.
+  `widget/`: Record 1×1 (`SizeMode.Exact`, the disc fills the cell, no elapsed time), Combined 4×1,
+  Tasks (responsive narrow/wide), Recent notes 4×2.
 - `WidgetUpdater` (in `AppContainer`) builds one `WidgetSnapshot` from recording mode, tasks, notes
-  and pipeline `Work`, and pushes `updateAll` at most once a second (transcription progress moves per
+  and pipeline `Work`, and pushes at most once a second (transcription progress moves per
   percent). It also re-ticks every 15 min and on app foreground, since overdue rows, the day and mic
   permission change outside any flow. Widgets `collectAsState` the snapshot while their session lives.
+- Pushes render each placed widget with Glance `compose()` and call `AppWidgetManager.updateAppWidget`
+  directly. Glance's `updateAll` goes through a WorkManager `SessionWorker`; One UI cancels that job
+  when Echo is swiped from recents (stop reason 11) and holds it until the app opens, so a widget
+  stayed on the record disc through a whole take. Only `actionRunCallback` and intent actions are
+  used, since lambda actions need a live session.
+- `SizeMode.Responsive` picks the largest bucket that fits, else the smallest. Tasks buckets are
+  110 dp tall: at 200 dp a One UI 4×2 (194 dp) fit neither and got the narrow layout without times.
+- Tasks shows today (overdue included); when that's empty, the first later day with dated tasks,
+  labelled Tomorrow, a weekday within the week, or a date. Tasks and Recent scroll (`LazyColumn`).
+- `RecordDisc` always reserves the 5 dp live halo, so starting a take doesn't shift neighbours; the
+  4×1's middle slot is one fixed width across idle/recording/paused for the same reason.
+- Picker previews are Glance `providePreview` with `previewSnapshot`, pushed by `setWidgetPreviews`
+  (Android 15+) once per install/update; the system rate-limits it, so a failed push retries on the
+  next start.
 - Ticked rows stay ~2 s struck through (`justDone`); snoozed rows show "time · +1h" for ~4 s.
 - Elapsed time uses a framework `Chronometer` via `AndroidRemoteViews` (`widget_chronometer_*.xml`),
   so a live recording needs no per-second widget updates.

@@ -68,11 +68,12 @@ internal fun Glyph(res: Int, size: Dp, tint: ColorProvider, description: String?
 }
 
 /**
- * The record disc in all four states. [diameter] is the disc itself; while live the clay halo adds
- * 5 dp around it, as drawn.
+ * The record disc in all four states. [diameter] is the disc itself; the live clay halo adds 5 dp
+ * around it, and that room is kept in every state so starting a take doesn't shift the layout.
+ * [reserveHalo] off is for callers that size the footprint themselves.
  */
 @Composable
-internal fun RecordDisc(snapshot: WidgetSnapshot, diameter: Dp, icon: Dp = diameter * 0.4f) {
+internal fun RecordDisc(snapshot: WidgetSnapshot, diameter: Dp, icon: Dp = diameter * 0.4f, reserveHalo: Boolean = true) {
     val context = LocalContext.current
     val mode = snapshot.recording.mode
     val (background, size) = when {
@@ -81,18 +82,25 @@ internal fun RecordDisc(snapshot: WidgetSnapshot, diameter: Dp, icon: Dp = diame
         !snapshot.micAllowed -> R.drawable.widget_disc_sunk to diameter
         else -> R.drawable.widget_disc_bronze to diameter
     }
-    Box(
-        modifier = GlanceModifier.size(size).background(ImageProvider(background)).clickable(recordAction(context, snapshot)),
-        contentAlignment = Alignment.Center,
-    ) {
-        when {
-            mode == RecordingMode.Recording -> Box(
-                modifier = GlanceModifier.size(diameter * 0.3f).background(ImageProvider(R.drawable.widget_stop_square)),
-            ) {}
-            mode == RecordingMode.Paused -> Glyph(R.drawable.ic_pause, icon, WidgetColors.onBronze, "Resume recording")
-            !snapshot.micAllowed -> Glyph(R.drawable.ic_mic_off, icon, WidgetColors.tx3, "Microphone access needed, open Echo")
-            else -> Glyph(R.drawable.ic_mic, icon, WidgetColors.onBronze, "Record")
+    val disc = @Composable {
+        Box(
+            modifier = GlanceModifier.size(size).background(ImageProvider(background)).clickable(recordAction(context, snapshot)),
+            contentAlignment = Alignment.Center,
+        ) {
+            when {
+                mode == RecordingMode.Recording -> Box(
+                    modifier = GlanceModifier.size(diameter * 0.3f).background(ImageProvider(R.drawable.widget_stop_square)),
+                ) {}
+                mode == RecordingMode.Paused -> Glyph(R.drawable.ic_pause, icon, WidgetColors.onBronze, "Resume recording")
+                !snapshot.micAllowed -> Glyph(R.drawable.ic_mic_off, icon, WidgetColors.tx3, "Microphone access needed, open Echo")
+                else -> Glyph(R.drawable.ic_mic, icon, WidgetColors.onBronze, "Record")
+            }
         }
+    }
+    if (reserveHalo) {
+        Box(modifier = GlanceModifier.size(diameter + 10.dp), contentAlignment = Alignment.Center) { disc() }
+    } else {
+        disc()
     }
 }
 

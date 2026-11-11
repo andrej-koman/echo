@@ -16,6 +16,8 @@ import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.SizeMode
+import androidx.glance.appwidget.lazy.LazyColumn
+import androidx.glance.appwidget.lazy.items
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
 import androidx.glance.layout.Alignment
@@ -33,9 +35,14 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import dev.andrej.echo.R
 
-/** Today's tasks: tick and snooze in place. Narrow shows text only, a row opens its task. */
+/** Today's tasks, or the next day's: tick and snooze in place. Narrow shows text only, a row opens its task. */
 class TasksWidget : GlanceAppWidget() {
     override val sizeMode = SizeMode.Responsive(setOf(NARROW, WIDE))
+    override val previewSizeMode = SizeMode.Responsive(setOf(WIDE))
+
+    override suspend fun providePreview(context: Context, widgetCategory: Int) {
+        provideContent { TasksContent(previewSnapshot) }
+    }
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val widgets = context.widgets()
@@ -46,8 +53,9 @@ class TasksWidget : GlanceAppWidget() {
     }
 
     private companion object {
-        val NARROW = DpSize(160.dp, 200.dp)
-        val WIDE = DpSize(320.dp, 200.dp)
+        // Glance picks the largest bucket that fits, so these stay at the smallest 2-row height.
+        val NARROW = DpSize(110.dp, 110.dp)
+        val WIDE = DpSize(250.dp, 110.dp)
     }
 }
 
@@ -58,24 +66,19 @@ class TasksWidgetReceiver : GlanceAppWidgetReceiver() {
 @Composable
 private fun TasksContent(snapshot: WidgetSnapshot) {
     val context = LocalContext.current
-    val size = LocalSize.current
-    val wide = size.width >= 250.dp
-    val tasks = snapshot.today
-    // Header 40, the "+N more" line 18, padding 22; whatever is left holds 44 dp rows.
-    val fits = ((size.height.value - 80) / 44).toInt().coerceAtLeast(1)
-    val shown = if (tasks.size > fits) tasks.take(fits) else tasks
-    val more = tasks.count { !it.done } - shown.count { !it.done }
+    val wide = LocalSize.current.width >= 250.dp
+    val (label, tasks) = snapshot.agenda
 
     Column(
         modifier = GlanceModifier.fillMaxSize().widgetCard()
-            .padding(start = if (wide) 14.dp else 12.dp, end = if (wide) 12.dp else 10.dp, top = 12.dp, bottom = 10.dp),
+            .padding(start = if (wide) 14.dp else 12.dp, end = if (wide) 7.dp else 5.dp, top = 7.dp, bottom = 10.dp),
     ) {
         Row(
-            modifier = GlanceModifier.fillMaxWidth().height(40.dp).padding(start = 2.dp),
+            modifier = GlanceModifier.fillMaxWidth().height(50.dp).padding(start = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(modifier = GlanceModifier.clickable(openToday(context)), verticalAlignment = Alignment.CenterVertically) {
-                Text("Today", style = text(16.sp, WidgetColors.tx, FontWeight.Medium))
+                Text(label, style = text(16.sp, WidgetColors.tx, FontWeight.Medium), maxLines = 1)
                 val open = tasks.count { !it.done }
                 if (open > 0) {
                     Spacer(GlanceModifier.width(if (wide) 8.dp else 6.dp))
@@ -93,14 +96,8 @@ private fun TasksContent(snapshot: WidgetSnapshot) {
         if (tasks.isEmpty()) {
             Empty()
         } else {
-            shown.forEach { TaskRow(it, wide) }
-            Spacer(GlanceModifier.defaultWeight())
-            if (more > 0) {
-                Text(
-                    "+$more more",
-                    style = text(12.sp, WidgetColors.accTx, FontWeight.Medium),
-                    modifier = GlanceModifier.padding(start = if (wide) 8.dp else 6.dp).clickable(openToday(context)),
-                )
+            LazyColumn(modifier = GlanceModifier.fillMaxWidth().defaultWeight()) {
+                items(tasks, itemId = { it.id.hashCode().toLong() }) { TaskRow(it, wide) }
             }
         }
     }
@@ -109,7 +106,7 @@ private fun TasksContent(snapshot: WidgetSnapshot) {
 @Composable
 private fun TaskRow(task: WidgetTask, wide: Boolean) {
     val context = LocalContext.current
-    val row = GlanceModifier.fillMaxWidth().height(44.dp).padding(start = 6.dp, end = if (wide) 2.dp else 4.dp)
+    val row = GlanceModifier.fillMaxWidth().height(44.dp).padding(start = 6.dp, end = if (wide) 7.dp else 9.dp)
         .let { if (task.overdue && !task.done) it.background(ImageProvider(R.drawable.widget_row_warn)) else it }
         .let { if (!wide && !task.done) it.clickable(openTask(context, task.id)) else it }
     Row(modifier = row, verticalAlignment = Alignment.CenterVertically) {

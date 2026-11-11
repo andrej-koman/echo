@@ -1,11 +1,15 @@
 package dev.andrej.echo.widget
 
 import android.Manifest
+import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
-import androidx.glance.appwidget.updateAll
+import android.util.Log
+import androidx.glance.appwidget.GlanceAppWidget
+import androidx.glance.appwidget.GlanceAppWidgetManager
+import androidx.glance.appwidget.compose
 import dev.andrej.echo.data.DerivedRepository
 import dev.andrej.echo.data.TodoItem
 import dev.andrej.echo.data.Transcript
@@ -13,6 +17,7 @@ import dev.andrej.echo.notify.mode
 import dev.andrej.echo.ui.notes.Work
 import dev.andrej.echo.ui.record.RecordUiState
 import java.time.ZoneId
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -64,6 +69,7 @@ class WidgetUpdater internal constructor(
                     recording = rec,
                     micAllowed = micAllowed(),
                     today = todayTasks(tasks, time, ZoneId.systemDefault(), done, later),
+                    agenda = nextTasks(tasks, time, ZoneId.systemDefault(), done, later),
                     recent = recentNotes(list, current, time),
                 )
             }.distinctUntilChanged().collectLatest { next ->
@@ -72,6 +78,7 @@ class WidgetUpdater internal constructor(
                 delay(1_000)
             }
         }
+        scope.launch { publishWidgetPreviews(context) }
         // Overdue rows and the day roll over with the clock, not with any data change.
         scope.launch {
             while (true) {
@@ -105,10 +112,25 @@ class WidgetUpdater internal constructor(
     private fun micAllowed() =
         ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
+    /**
+     * Renders and pushes each placed widget directly. Glance's `updateAll` only reaches a widget
+     * through its WorkManager session, and the system can cancel that job (One UI does when Echo is
+     * swiped from recents) and hold it until the app is opened again, leaving the widget stale.
+     */
     private suspend fun updateAll() {
-        RecordWidget().updateAll(context)
-        CombinedWidget().updateAll(context)
-        TasksWidget().updateAll(context)
-        RecentWidget().updateAll(context)
+        val manager = AppWidgetManager.getInstance(context)
+        val glance = GlanceAppWidgetManager(context)
+        val widgets: List<GlanceAppWidget> = listOf(RecordWidget(), CombinedWidget(), TasksWidget(), RecentWidget())
+        for (widget in widgets) {
+            for (id in glance.getGlanceIds(widget.javaClass)) {
+                val appWidgetId = glance.getAppWidgetId(id)
+                try {
+                    manager.updateAppWidget(appWidgetId, widget.compose(context, id, manager.getAppWidgetOptions(appWidgetId)))
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    Log.w("WidgetUpdater", "Couldn't update widget $appWidgetId", e)
+                }
+            }
+        }
     }
 }

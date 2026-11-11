@@ -43,7 +43,7 @@ class SettingsViewModelTest {
         derived = SqlDerivedRepository(testDatabase(), dispatcher),
         aiCardState = flowOf(AiCardState.Checking),
         litertModelBytes = 977_000_000L,
-        onDownloadModel = {},
+        onDownloadModel = { true },
         onCancelDownload = {},
         onDeleteModel = {},
         storageUsage = storageUsage,

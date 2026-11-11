@@ -3,6 +3,7 @@ package dev.andrej.echo.ui.profile
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.andrej.echo.ai.AiCardState
+import dev.andrej.echo.ai.ModelState
 import dev.andrej.echo.ai.NotesAiModel
 import dev.andrej.echo.ai.NotesAiModelStatus
 import dev.andrej.echo.data.DerivedRepository
@@ -35,6 +36,8 @@ data class SettingsUiState(
     val languages: List<LanguageOption> = emptyList(),
     val speechModel: WhisperModel? = null,
     val speechModels: List<WhisperModel> = emptyList(),
+    /** Aligned with [speechModels]. */
+    val speechModelStates: List<ModelState> = emptyList(),
     val importDay: ImportDay? = null,
     val litertModelBytes: Long = 0,
     val autoAnalyze: Boolean = true,
@@ -62,12 +65,16 @@ class SettingsViewModel(
     private val whisperLanguages: () -> List<String>,
     private val speechModels: List<WhisperModel> = emptyList(),
     private val currentSpeechModel: () -> WhisperModel? = { null },
+    speechModelStates: Flow<List<ModelState>> = kotlinx.coroutines.flow.flowOf(emptyList()),
+    val onDownloadSpeechModel: (WhisperModel) -> Boolean = { true },
+    val onCancelSpeechDownload: () -> Unit = {},
+    val onDeleteSpeechModel: (WhisperModel) -> Unit = {},
     transcripts: TranscriptRepository,
     derived: DerivedRepository,
     val aiCardState: Flow<AiCardState>,
     notesAiModelStates: Flow<List<NotesAiModelStatus>> = kotlinx.coroutines.flow.flowOf(emptyList()),
     private val litertModelBytes: Long,
-    val onDownloadModel: (NotesAiModel) -> Unit,
+    val onDownloadModel: (NotesAiModel) -> Boolean,
     val onCancelDownload: (String?) -> Unit,
     val onDeleteModel: (String) -> Unit,
     val onSelectNotesAiModel: (NotesAiModel) -> Unit = {},
@@ -98,6 +105,7 @@ class SettingsViewModel(
                             languages = _state.value.languages,
                             storage = _state.value.storage,
                             notesAiModels = _state.value.notesAiModels,
+                            speechModelStates = _state.value.speechModelStates,
                             backup = _state.value.backup,
                         )
                 }
@@ -106,6 +114,12 @@ class SettingsViewModel(
         viewModelScope.launch {
             notesAiModelStates.collect { models ->
                 _state.value = _state.value.copy(notesAiModels = models)
+            }
+        }
+        viewModelScope.launch {
+            // A finished Settings download switches the model, so re-read the current one too.
+            speechModelStates.collect { states ->
+                _state.value = _state.value.copy(speechModelStates = states, speechModel = currentSpeechModel())
             }
         }
     }

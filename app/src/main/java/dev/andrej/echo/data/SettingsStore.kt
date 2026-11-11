@@ -17,7 +17,7 @@ interface SettingsStore {
     /** Diarization after each transcription, on by default. */
     var detectSpeakers: Boolean
 
-    /** Gates AppContainer.downloadModel() — on, a download started off Wi-Fi is skipped. */
+    /** Gates AppContainer's Settings downloads — on, a download started off Wi-Fi is refused. */
     var wifiOnlyDownload: Boolean
 
     var onboardingDone: Boolean

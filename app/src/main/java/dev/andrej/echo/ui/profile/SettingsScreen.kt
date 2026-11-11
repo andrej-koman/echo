@@ -9,7 +9,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,7 +52,6 @@ import dev.andrej.echo.R
 import dev.andrej.echo.ai.AiCardState
 import dev.andrej.echo.ai.ModelState
 import dev.andrej.echo.ai.NotesAiModel
-import dev.andrej.echo.ai.NotesAiModelStatus
 import dev.andrej.echo.billing.PlanPeriod
 import dev.andrej.echo.ui.billing.periodOf
 import dev.andrej.echo.ui.components.BadgeTone
@@ -96,10 +94,13 @@ fun SettingsScreen(
     onIdleNotificationChange: (Boolean) -> Unit,
     onWifiOnlyDownloadChange: (Boolean) -> Unit,
     onDeleteAllData: () -> Unit,
-    onDownloadModel: (NotesAiModel) -> Unit,
+    onDownloadModel: (NotesAiModel) -> Boolean,
     onCancelDownload: (String?) -> Unit,
     onDeleteModel: (String) -> Unit,
     onSelectNotesAiModel: (NotesAiModel) -> Unit,
+    onDownloadSpeechModel: (WhisperModel) -> Boolean = { true },
+    onCancelSpeechDownload: () -> Unit = {},
+    onDeleteSpeechModel: (WhisperModel) -> Unit = {},
     onTestModelDownloadNotification: () -> Unit = {},
     onReplayOnboarding: () -> Unit = {},
     onOpenDictionary: () -> Unit = {},
@@ -127,6 +128,9 @@ fun SettingsScreen(
     var pickingSpeechModel by remember { mutableStateOf(false) }
     var managingAiModel by remember { mutableStateOf(false) }
     var modelDetails by remember { mutableStateOf<NotesAiModel?>(null) }
+    var speechDetails by remember { mutableStateOf<WhisperModel?>(null) }
+    var waitingForWifi by remember { mutableStateOf<Any?>(null) }
+    var pendingDelete by remember { mutableStateOf<PendingDelete?>(null) }
     var pickingImportDay by remember { mutableStateOf(false) }
     var previewingCelebration by remember { mutableStateOf(false) }
     var pickingTheme by remember { mutableStateOf(false) }
@@ -450,18 +454,58 @@ fun SettingsScreen(
         onDismiss = { pickingImportDay = false },
     )
 
+    fun speechState(model: WhisperModel): ModelState =
+        state.speechModelStates.getOrNull(state.speechModels.indexOf(model)) ?: ModelState.Absent
+
     state.speechModel?.let { current ->
         PickerSheet(
-            visible = pickingSpeechModel,
+            visible = pickingSpeechModel && speechDetails == null,
             title = "Speech model",
             options = state.speechModels.map { it.name.removePrefix("Whisper ") to it },
             selected = current,
-            subtitle = { it.hint },
-            onPick = {
-                onSpeechModelChange(it)
-                pickingSpeechModel = false
-            },
+            subtitle = { modelPickerLine(it.hint.substringBefore(" ·"), it.spec.bytes, speechState(it)) },
+            onPick = { speechDetails = it },
             onDismiss = { pickingSpeechModel = false },
+        )
+    }
+    Sheet(visible = speechDetails != null && pendingDelete == null, onDismiss = {
+        pickingSpeechModel = false
+        speechDetails = null
+    }) {
+        val model = rememberLast(speechDetails) ?: return@Sheet
+        val modelState = speechState(model)
+        ModelDetails(
+            kind = "Speech model",
+            title = model.name,
+            description = model.hint.substringBefore(" ·"),
+            publishedBytes = model.spec.bytes,
+            state = modelState,
+            active = model == state.speechModel,
+            paused = false,
+            waitingForWifi = waitingForWifi == model,
+            wifiOnly = state.wifiOnlyDownload,
+            onWifiOnlyChange = onWifiOnlyDownloadChange,
+            onBack = { speechDetails = null },
+            onDownload = { waitingForWifi = if (onDownloadSpeechModel(model)) null else model },
+            onCancel = onCancelSpeechDownload,
+            onUse = {
+                onSpeechModelChange(model)
+                pickingSpeechModel = false
+                speechDetails = null
+            },
+            onDelete = {
+                pendingDelete = PendingDelete(
+                    title = "Delete ${model.name}?",
+                    message = "Frees ${formatBytes((modelState as? ModelState.Ready)?.file?.length() ?: model.spec.bytes)}. " +
+                        if (model == state.speechModel) "Echo downloads it again before your next transcription." else "You can download it again any time.",
+                    delete = { onDeleteSpeechModel(model) },
+                )
+            },
+            footnote = if (model == state.speechModel && modelState !is ModelState.Ready) {
+                "In use. Echo downloads it before your next transcription if you don't."
+            } else {
+                null
+            },
         )
     }
 
@@ -470,42 +514,74 @@ fun SettingsScreen(
         title = "Notes model",
         options = listOf("None" to null) + state.notesAiModels.map { it.model.title to it.model },
         selected = activeNotesModel,
-        subtitle = { model -> state.notesAiModels.firstOrNull { it.model == model }?.let(::modelStatusLine) },
+        subtitle = { model ->
+            state.notesAiModels.firstOrNull { it.model == model }?.let {
+                modelPickerLine(notesModelDescription(it.model), it.model.spec.bytes, it.state, it.pending)
+            }
+        },
         onPick = { model ->
             if (model == null) {
                 managingAiModel = false
                 confirmingNoModel = true
-            } else if (state.notesAiModels.any { it.model == model && it.state is ModelState.Ready }) {
-                onSelectNotesAiModel(model)
-                managingAiModel = false
             } else {
                 modelDetails = model
             }
         },
         onDismiss = { managingAiModel = false },
     )
-    Sheet(visible = managingAiModel && modelDetails != null, onDismiss = {
+    Sheet(visible = managingAiModel && modelDetails != null && pendingDelete == null, onDismiss = {
         managingAiModel = false
         modelDetails = null
     }) {
-        NotesAiModelSheet(
-            models = state.notesAiModels,
-            activeAiState = aiState,
-            details = modelDetails,
+        val model = rememberLast(modelDetails) ?: return@Sheet
+        val status = state.notesAiModels.firstOrNull { it.model == model }
+        val modelState = status?.state ?: ModelState.Absent
+        val active = status?.active == true && modelState is ModelState.Ready
+        ModelDetails(
+            kind = "Notes model",
+            title = model.title,
+            description = notesModelDescription(model),
+            publishedBytes = model.spec.bytes,
+            state = modelState,
+            active = active,
+            paused = status?.pending == true,
+            waitingForWifi = waitingForWifi == model,
             wifiOnly = state.wifiOnlyDownload,
             onWifiOnlyChange = onWifiOnlyDownloadChange,
-            onOpenDetails = { modelDetails = it },
             onBack = { modelDetails = null },
-            onDownload = onDownloadModel,
-            onCancel = onCancelDownload,
-            onDelete = onDeleteModel,
-            onSelect = { model ->
+            onDownload = { waitingForWifi = if (onDownloadModel(model)) null else model },
+            onCancel = { onCancelDownload(model.id) },
+            onUse = {
                 onSelectNotesAiModel(model)
                 managingAiModel = false
                 modelDetails = null
             },
+            onDelete = {
+                pendingDelete = PendingDelete(
+                    title = "Delete ${model.title}?",
+                    message = "Frees ${formatBytes((modelState as? ModelState.Ready)?.file?.length() ?: model.spec.bytes)}. " +
+                        if (active) {
+                            "Echo switches to another downloaded notes model, or stops writing summaries until you download one."
+                        } else {
+                            "You can download it again any time."
+                        },
+                    delete = { onDeleteModel(model.id) },
+                )
+            },
+            footnote = (aiState as? AiCardState.Unsupported)?.reason?.takeIf { active },
         )
     }
+    ConfirmSheet(
+        visible = pendingDelete != null,
+        title = pendingDelete?.title.orEmpty(),
+        message = pendingDelete?.message.orEmpty(),
+        confirmLabel = "Delete",
+        onConfirm = {
+            pendingDelete?.delete?.invoke()
+            pendingDelete = null
+        },
+        onDismiss = { pendingDelete = null },
+    )
     ConfirmSheet(
         visible = confirmingNoModel,
         title = "Use no Notes model?",
@@ -847,147 +923,21 @@ internal fun SwitchSettingsRow(
     )
 }
 
+/** Keeps a sheet's content while it animates out after its subject was cleared. */
 @Composable
-private fun SwitchRow(
-    iconRes: Int,
-    label: String,
-    subtitle: String?,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    enabled: Boolean = true,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = EchoTheme.spacing.s5),
-        horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            painter = painterResource(iconRes),
-            contentDescription = null,
-            tint = EchoTheme.colors.textSecondary,
-            modifier = Modifier.size(18.dp),
-        )
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = label, style = EchoTheme.typography.body, color = EchoTheme.colors.textPrimary)
-            if (subtitle != null) {
-                Text(text = subtitle, style = EchoTheme.typography.caption, color = EchoTheme.colors.textTertiary)
-            }
-        }
-        EchoSwitch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
-    }
+private fun <T : Any> rememberLast(value: T?): T? {
+    val last = remember { arrayOfNulls<Any>(1) }
+    if (value != null) last[0] = value
+    @Suppress("UNCHECKED_CAST")
+    return last[0] as T?
 }
 
-@Composable
-private fun NotesAiModelSheet(
-    models: List<NotesAiModelStatus>,
-    activeAiState: AiCardState,
-    details: NotesAiModel?,
-    wifiOnly: Boolean,
-    onWifiOnlyChange: (Boolean) -> Unit,
-    onOpenDetails: (NotesAiModel) -> Unit,
-    onBack: () -> Unit,
-    onDownload: (NotesAiModel) -> Unit,
-    onCancel: (String?) -> Unit,
-    onDelete: (String) -> Unit,
-    onSelect: (NotesAiModel) -> Unit,
-) {
-    Column {
-        if (details == null) {
-            Text(text = "Choose a model", style = EchoTheme.typography.bodySm, color = EchoTheme.colors.textSecondary)
-            if (models.isEmpty()) {
-                Text(text = "Checking model files…", style = EchoTheme.typography.caption, color = EchoTheme.colors.textTertiary)
-            }
-            models.forEach { status ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                    ) { onOpenDetails(status.model) }
-                        .padding(vertical = EchoTheme.spacing.s5),
-                    horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(text = status.model.title, style = EchoTheme.typography.body, color = EchoTheme.colors.textPrimary)
-                        Text(
-                            text = modelStatusLine(status),
-                            style = EchoTheme.typography.caption,
-                            color = EchoTheme.colors.textTertiary,
-                        )
-                    }
-                    if (status.active) EchoBadge(text = "Active", tone = BadgeTone.Success)
-                }
-                if (status != models.last()) HorizontalDivider(color = EchoTheme.colors.borderSubtle)
-            }
-        } else {
-            val status = models.firstOrNull { it.model == details }
-            EchoButton(text = "All models", onClick = onBack, variant = ButtonVariant.Ghost)
-            Text(text = details.title, style = EchoTheme.typography.heading, color = EchoTheme.colors.textPrimary)
-            Text(
-                text = status?.let(::modelStatusLine) ?: "Checking availability…",
-                style = EchoTheme.typography.bodySm,
-                color = EchoTheme.colors.textSecondary,
-            )
-            if (status?.state is ModelState.Downloading) {
-                val downloading = status.state
-                LinearProgressIndicator(
-                    progress = { downloading.fraction },
-                    modifier = Modifier.fillMaxWidth(),
-                    color = EchoTheme.colors.textAccent,
-                    trackColor = EchoTheme.colors.surfaceAccentSoft,
-                )
-            }
-            HorizontalDivider(color = EchoTheme.colors.borderSubtle)
-            SwitchRow(
-                iconRes = R.drawable.ic_settings,
-                label = "Download on Wi-Fi only",
-                subtitle = "AI model downloads wait for Wi-Fi",
-                checked = wifiOnly,
-                onCheckedChange = onWifiOnlyChange,
-            )
-            when (status?.state) {
-                is ModelState.Absent, is ModelState.Failed, null -> {
-                    EchoButton(
-                        text = "Download",
-                        onClick = { onDownload(details) },
-                        variant = ButtonVariant.Secondary,
-                        fullWidth = true,
-                    )
-                }
-                is ModelState.Downloading -> {
-                    EchoButton(
-                        text = "Cancel",
-                        onClick = { onCancel(details.id) },
-                        variant = ButtonVariant.Secondary,
-                        fullWidth = true,
-                    )
-                }
-                is ModelState.Ready -> {
-                    if (status.active) {
-                        Text(text = "This model is active", style = EchoTheme.typography.caption, color = EchoTheme.colors.textTertiary)
-                    } else {
-                        EchoButton(text = "Use this model", onClick = { onSelect(details) }, fullWidth = true)
-                    }
-                    EchoButton(
-                        text = "Remove model",
-                        onClick = { onDelete(details.id) },
-                        variant = ButtonVariant.Danger,
-                        fullWidth = true,
-                    )
-                }
-            }
-            if (status?.active == true && activeAiState is AiCardState.Unsupported) {
-                Text(text = activeAiState.reason, style = EchoTheme.typography.caption, color = EchoTheme.colors.textTertiary)
-            }
-        }
-    }
-}
+private class PendingDelete(val title: String, val message: String, val delete: () -> Unit)
 
-private fun modelStatusLine(status: NotesAiModelStatus): String = when (val state = status.state) {
-    ModelState.Absent -> "${formatBytes(status.model.spec.bytes)} · ${if (status.pending) "Download paused" else "Not downloaded"}"
-    is ModelState.Downloading -> "${formatBytes(status.model.spec.bytes)} · Downloading ${(state.fraction * 100).toInt()}%"
-    is ModelState.Ready -> "${formatBytes(state.file.length())} · on this device"
-    is ModelState.Failed -> "${formatBytes(status.model.spec.bytes)} · Download failed"
+private fun notesModelDescription(model: NotesAiModel): String = when (model) {
+    NotesAiModel.Fast -> "Quickest, shorter summaries"
+    NotesAiModel.Default -> "Balanced summaries and tasks"
+    NotesAiModel.Multilingual -> "Writes notes in their own language"
 }
 
 private fun modelStatus(state: AiCardState): String = when (state) {

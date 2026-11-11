@@ -19,6 +19,9 @@ interface LlmRunner {
 
     val modelName: String get() = "AI model"
 
+    /** False answers non-English notes in English; see [answersInEnglish]. */
+    val writesNoteLanguage: Boolean get() = false
+
     suspend fun availability(): LlmAvailability
 
     /** Pulls the model into memory so the first real call is not the slow one. Best effort. */

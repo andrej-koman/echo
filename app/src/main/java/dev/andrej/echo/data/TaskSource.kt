@@ -10,6 +10,19 @@ private val sourceFiller = setOf(
     "go", "get", "make", "have", "do", "be", "it", "please", "remind", "need", "should", "will",
 )
 
+/**
+ * Same word, allowing for a changed ending: an inflected language says "kupiti" where the task
+ * reads "Kupi", and "poklicati" for "Pokliči".
+ */
+private fun sameWord(spoken: String, action: String): Boolean {
+    if (spoken == action) return true
+    val shorter = minOf(spoken.length, action.length)
+    val common = spoken.commonPrefixWith(action).length
+    return common >= 4 && common >= shorter * 0.6
+}
+
+private fun Set<String>.hasWord(spoken: String) = any { sameWord(spoken, it) }
+
 /** Character ranges keep a sentence intact even when Whisper split it across segments. */
 fun taskSentences(text: String): List<IntRange> {
     val continuation = "(?:then|also|oh,? and also|and (?:(?:i )?(?:need|have|will|should)|buy|call|go|pick|turn|visit|water|send|email|meet|pay|submit|finish|take|book|make|do|bring|collect))\\b"
@@ -39,7 +52,7 @@ fun taskSource(text: String, action: String, quote: String? = null, near: Int? =
     if (quoted != null && !validateAction) {
         if (quoted.isEmpty() || (quoted.size > 1 && near == null)) return null
         val range = quoted.minBy { kotlin.math.abs(it.first - (near ?: it.first)) }
-        val actionWord = sourceWords.findAll(text.substring(range)).firstOrNull { it.value.lowercase(Locale.ROOT) in words }
+        val actionWord = sourceWords.findAll(text.substring(range)).firstOrNull { words.hasWord(it.value.lowercase(Locale.ROOT)) }
         val start = actionWord?.let { range.first + it.range.first } ?: near?.takeIf { it in range } ?: range.first
         return TaskSource(range.first, range.last + 1, start)
     }
@@ -52,8 +65,9 @@ fun taskSource(text: String, action: String, quote: String? = null, near: Int? =
         }
     } else taskSentences(text)
     val scored = candidates.mapNotNull { range ->
-        val matches = sourceWords.findAll(text.substring(range)).filter { it.value.lowercase(Locale.ROOT) in words }.toList()
-        val score = matches.map { it.value.lowercase(Locale.ROOT) }.toSet().size
+        val matches = sourceWords.findAll(text.substring(range)).filter { words.hasWord(it.value.lowercase(Locale.ROOT)) }.toList()
+        val spoken = matches.map { it.value.lowercase(Locale.ROOT) }
+        val score = words.count { action -> spoken.any { sameWord(it, action) } }
         if (score.toDouble() / words.size < 0.6) null
         else Triple(range, score, range.first + matches.first().range.first)
     }

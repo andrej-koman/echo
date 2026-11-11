@@ -55,6 +55,10 @@ class TranscriptAnalyzer(
         val lines = timed.map { it.text }.ifEmpty { sentences(transcript.text) }
         val chunks = chunkLines(lines, CHUNK_WORDS)
 
+        // Whisper's code for what was actually heard; empty for notes from before detection was kept.
+        val language = transcript.language.ifBlank { null }
+        val english = answersInEnglish(language) && !runner.writesNoteLanguage
+        val answerIn = if (english) "en" else language
         val totalSteps = chunks.size * 3 + if (chunks.size > 1) 1 else 0
         var completedSteps = 0
         fun progress() = onProgress(AnalysisProgress(transcript.id, runner.modelName, completedSteps.toFloat() / totalSteps))
@@ -72,28 +76,29 @@ class TranscriptAnalyzer(
 
         return try {
             val parts = chunks.map { chunk ->
-                generate(runner, buildSummaryPrompt(chunk.joinToString(" ") { it.value }), ::parseSummary).also { completed() }
+                generate(runner, buildSummaryPrompt(chunk.joinToString(" ") { it.value }, answerIn), ::parseSummary).also { completed() }
             }
-            val summary = parts.singleOrNull() ?: generate(runner, buildMergePrompt(parts), ::parseSummary).also { completed() }
+            val summary = parts.singleOrNull() ?: generate(runner, buildMergePrompt(parts, answerIn), ::parseSummary).also { completed() }
 
             val items = chunks.flatMap { chunk ->
-                val plans = generate(runner, buildIntentPrompt(chunk.joinToString(" ") { it.value }), ::parseIntent)
+                val plans = generate(runner, buildIntentPrompt(chunk.joinToString(" ") { it.value }, language), ::parseIntent)
                 completed()
                 if (!plans) {
                     completed()
                     return@flatMap emptyList()
                 }
                 // A task whose text is only its time earns the retry; on the last attempt it is dropped.
-                generate(runner, buildTasksPrompt(chunk, recordedAt)) { raw, last ->
+                generate(runner, buildTasksPrompt(chunk, recordedAt, language, answerIn)) { raw, last ->
                     val parsed = parseTasks(raw, zone, today, recordedAt) { line -> timed.getOrNull(line)?.startMs }
                         ?: return@generate null
-                    val valid = parsed.filterNot { isScheduleOnly(it.text) }
+                    val valid = parsed.filterNot { isScheduleOnly(it.text, answerIn) }
                     if (valid.size < parsed.size) logWarn("task text holds only a date or time")
                     valid.takeIf { last || it.size == parsed.size }
                 }.also { completed() }
             }
 
-            val grounded = groundTasks(items, lines, timed.map { it.startMs }, recordedAt, zone)
+            // An English task's words can't match the note, so only its verbatim quote places it.
+            val grounded = groundTasks(items, lines, timed.map { it.startMs }, recordedAt, zone, language, matchActionWords = !english)
             AnalysisOutcome.Success(Analysis(summary.title, summary.summary, grounded))
         } catch (e: StepFailed) {
             AnalysisOutcome.Blocked(e.reason)

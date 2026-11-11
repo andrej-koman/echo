@@ -67,6 +67,20 @@ class TaskParsingTest {
     }
 
     @Test
+    fun `an answer closed with a parenthesis instead of a brace still parses`() {
+        val summary = parseSummary("""{"title":"Test and doctor appointment","summary":"Doctor at 10 am tomorrow.")""")!!
+        assertEquals("Test and doctor appointment", summary.title)
+        val items = parse("""{"items":[{"text":"Go to the doctor.","due":null}]""")!!
+        assertEquals("Go to the doctor.", items.single().text)
+    }
+
+    @Test
+    fun `quoted line numbers are dropped from the source`() {
+        val item = parse("""{"items":[{"text":"Pojdi k zdravniku.","source":"[1] Jutri grem k zdravniku.","due":null}]}""")!!.single()
+        assertEquals("Jutri grem k zdravniku.", item.sourceQuote)
+    }
+
+    @Test
     fun `an empty array is an answer, not a failure`() {
         assertEquals(emptyList<Any>(), parse("""{"items":[]}"""))
     }
@@ -126,6 +140,21 @@ class PromptTest {
         assertTrue(prompt.contains("Today is 2026-09-03"))
         assertTrue(prompt.contains("the current time is 11:05"))
         assertTrue(prompt.contains("[7] call the plumber"))
+    }
+
+    @Test
+    fun `prompts name the note's language instead of leaving it to the model`() {
+        val summary = buildSummaryPrompt("Jutri grem k zdravniku.", "sl")
+        assertTrue(summary.contains("in Slovenian, the language of the note"))
+        assertTrue(buildSummaryPrompt("x", "en").contains("at most 6 words, in English."))
+        // Same-language examples get copied into the answer, so there are none.
+        assertTrue(summary.contains("Dripping kitchen tap"))
+        assertTrue(!summary.contains("Kapljajoča"))
+        val tasks = buildTasksPrompt(listOf(IndexedValue(0, "Jutri grem k zdravniku.")), LocalDate.of(2026, 9, 3).atTime(11, 5), "sl")
+        assertTrue(tasks.contains("in Slovenian"))
+        assertTrue(tasks.contains("pol desetih"))
+        assertTrue(buildSummaryPrompt("Hola", "es").contains("in Spanish"))
+        assertTrue(buildSummaryPrompt("Hi", null).contains("in the language the speaker used"))
     }
 
     @Test

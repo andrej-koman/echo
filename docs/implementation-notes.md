@@ -87,8 +87,12 @@ builds one feature and redesigns its UI only when that phase arrives. Decisions 
   ~7.3) → Large V3 Turbo q5_0 (574 MB), else Small q5_1 (190 MB). Settings → Speech model
   overrides it (`SettingsStore.speechModel`, a `WhisperModel.id`; `SpeechModels` resolves it):
   Large Turbo, Medium q5_0, Small, Base q5_1 — Large and Medium offered only where the default
-  would be Large. The pick applies from the next job, which downloads it; once it loads, the
-  other Whisper files are deleted so a switch doesn't keep two on disk. Ungated
+  would be Large. Picking a model opens its detail sheet (`ui/profile/ModelSheet.kt`, shared with
+  Notes models): a downloaded one switches at once; otherwise `AppContainer.downloadSpeechModel()`
+  downloads it and switches only once the file is complete, so a cancelled or failed download keeps
+  the old model. Once a model loads in a job, the other Whisper files are deleted so a switch
+  doesn't keep two on disk. Both sheets offer "Delete from phone" for any downloaded model; deleting
+  the Whisper model in use is allowed because the next job downloads it again. Ungated
   `ggerganov/whisper.cpp` on HuggingFace, through the same `ModelStore`/`HttpModelDownloader` as
   the LLM. It downloads on the first import, or from onboarding's explicit download button.
 - **Import sheet** (`ui/notes/ImportSheet.kt`): every picked or shared file waits in
@@ -497,8 +501,9 @@ analysed: **By speaker** (runs
   now takes the same `aiCardState`/`onDownloadModel`/`onCancelDownload`/`onDeleteModel` shape
   directly from `AppContainer`. `SettingsStore` beyond `transcriptionLanguage`: `detectSpeakers`, `autoAnalyze` (gates the
   enqueue after transcription — off means every note waits for a manual Analyze),
-  `wifiOnlyDownload` (checked in `AppContainer.downloadModel()` via `ConnectivityManager`, download
-  is skipped rather than queued if off Wi-Fi). The ON-DEVICE AI card shows the one model, no backend picker. Settings' DATA section opens
+  `wifiOnlyDownload` (checked in `AppContainer.downloadModel()` and `downloadSpeechModel()` via
+  `ConnectivityManager`; off Wi-Fi the download is refused, not queued, and the call returns false
+  so the model sheet can say why nothing started). The ON-DEVICE AI card shows the one model, no backend picker. Settings' DATA section opens
   `StorageScreen`; `scanStorage` totals models, recordings, the Echo database (including its WAL),
   preferences, cache, and other app files. The category totals sum to the displayed total and
   display rounded MB/GB sizes. Scanning runs off the main thread and refreshes on opening the screen.
@@ -752,6 +757,32 @@ notifications"). Bronze `setColor` on every Echo notification; clay only while a
 
 ## On-device AI
 
+- **Note language**: a non-English note is read in its own language but answered in English
+  (`answersInEnglish`): title, summary and task commands in English, task quotes copied verbatim
+  in the note's language, times also as `when_en`. Tasks are placed only by that quote
+  (`matchActionWords = false`), since English words can't match the note. Why: Qwen3 1.7B reads
+  Slovenian well but writes it badly. Asked for Slovenian, it copied the transcript as its
+  "summary" and every sentence as a task. A translate-back prompt produced nonsense ("Spremam se
+  preizkazati… predati v gimnaziju"). Its English answers for the same note were accurate.
+  `NotesAiModel.writesNoteLanguage` lifts this per model: Gemma 4 E2B
+  (`GEMMA4_E2B`, Apache-2.0, ungated, 2.59 GB, pinned commit) is an opt-in third choice, added
+  2026-11-11 to test native-language output on device; it answers in the note's language. Prompt examples are
+  English for every language: given Slovenian examples, the model copied their content (a
+  dripping tap) into the note. Slovenian gets a one-line time hint
+  ("pol desetih" is 9:30), deterministic grounding in `SlovenianSchedule.kt`, and a Slovenian
+  schedule-only check. Source matching (`taskSource`) accepts changed endings (a shared prefix
+  of at least 4 letters and 60% of the shorter word), so "Kupi" finds "kupiti". The model may
+  quote the `[n]` line numbers; `parseTasks` strips them.
+- **`when_en`**: every non-English note's tasks prompt also asks for the stated time rendered in
+  plain English ("tomorrow at 9:30 a.m.", "on Friday", "in 20 minutes"), and grounding reads it
+  with the English rules. This is how all ~99 languages get deterministic times without a table
+  each, instead of translating the whole note (too slow on the 1.7B model, error-prone, and it
+  would break quote links). It also grounds a task whose source sentence wasn't found. Slovenian
+  tries its own rules first, then `when_en`. English notes aren't asked for it. A
+  per-language schedule file stays an optional override for a language where the model's
+  translation of times proves unreliable. Source matching (`taskSource`) accepts changed
+  endings (a shared prefix of at least 4 letters and 60% of the shorter word), so "Kupi" finds
+  "kupiti". The model may quote the `[n]` line numbers; `parseTasks` strips them.
 - Analysis is an explicit transcription-job phase: the job waits for the analysis queue, so
   leaving its last speech status in place would show “Finding speakers… 100%” until analysis ends.
   The same detail progress row shows “Analyzing…”, the running runner's model name, and completion

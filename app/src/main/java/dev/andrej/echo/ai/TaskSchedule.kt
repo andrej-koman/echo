@@ -19,17 +19,21 @@ internal fun groundTasks(
     offsets: List<Long>,
     recordedAt: LocalDateTime,
     zone: ZoneId,
+    language: String? = null,
+    /** False when task text is in another language than the note, so only the quote can place it. */
+    matchActionWords: Boolean = true,
 ): List<NewTodo> {
     val text = lines.joinToString(" ")
     val starts = lines.runningFold(0) { at, line -> at + line.length + 1 }
     return items.map { item ->
         val near = offsets.indexOf(item.sourceOffsetMs).takeIf { it >= 0 }?.let { starts[it] }
-        val source = taskSource(text, item.text, item.sourceQuote, near, validateAction = true)
+        val source = taskSource(text, item.text, item.sourceQuote, near, validateAction = matchActionWords)
             ?: taskSource(text, item.text, near = near)
-            ?: return@map item.copy(sourceOffsetMs = null, sourceQuote = null)
+            ?: return@map spokenWhen(item, recordedAt, zone)
+                .let { item.copy(dueAt = it.at, hasTime = it.hasTime, hasDate = it.hasDate, sourceOffsetMs = null, sourceQuote = null) }
         val phrase = text.substring(source.start, source.end)
         val actionLine = lines.indices.lastOrNull { starts[it] <= source.actionStart }
-        val schedule = sourceSchedule(text, source, recordedAt, zone, item)
+        val schedule = sourceSchedule(text, source, recordedAt, zone, item, language)
         item.copy(
             dueAt = schedule.at,
             hasTime = schedule.hasTime,
@@ -40,9 +44,29 @@ internal fun groundTasks(
     }
 }
 
-private fun sourceSchedule(text: String, source: TaskSource, recorded: LocalDateTime, zone: ZoneId, item: NewTodo): Due {
+private fun sourceSchedule(text: String, source: TaskSource, recorded: LocalDateTime, zone: ZoneId, item: NewTodo, language: String?): Due {
     val context = taskSentences(text).firstOrNull { source.actionStart in it }
     val phrase = text.substring(context ?: (source.start until source.end)).lowercase(Locale.ROOT)
+    val before = text.substring(0, context?.first ?: source.start)
+    val model = Due(item.dueAt, item.hasTime, item.hasDate)
+    return when (language) {
+        null, "", "en" -> englishSchedule(phrase, before, recorded, zone, item)
+        "sl" -> slovenianSchedule(phrase, before, recorded, zone, item).takeUnless { it == model }
+            ?: spokenWhen(item, recorded, zone)
+        // Any other language: the model's English rendering of the time, read by the English rules.
+        else -> if (item.whenEn.isNullOrBlank()) englishSchedule(phrase, before, recorded, zone, item)
+            else spokenWhen(item, recorded, zone)
+    }
+}
+
+/** The model's own values unless its `when_en` names a time the English rules can read. */
+private fun spokenWhen(item: NewTodo, recorded: LocalDateTime, zone: ZoneId): Due {
+    val spoken = item.whenEn?.trim()?.takeUnless { it.isEmpty() || it.equals("null", ignoreCase = true) }
+        ?: return Due(item.dueAt, item.hasTime, item.hasDate)
+    return englishSchedule(spoken.lowercase(Locale.ROOT), "", recorded, zone, item)
+}
+
+private fun englishSchedule(phrase: String, before: String, recorded: LocalDateTime, zone: ZoneId, item: NewTodo): Due {
     val duration = Regex("\\bin\\s+(\\d+|an?|one)\\s+(minutes?|hours?)\\b").find(phrase)
     if (duration != null) {
         val amount = duration.groupValues[1].toLongOrNull() ?: 1L
@@ -54,7 +78,7 @@ private fun sourceSchedule(text: String, source: TaskSource, recorded: LocalDate
     }
     val unsupportedDate = Regex("\\b(?:on\\s+(?:\\p{L}+\\s+)?\\d{1,2}|(?:next|this)\\s+(?:week|month|year)|in\\s+\\d+\\s+days?)\\b").containsMatchIn(phrase)
     val localDate = statedDate(phrase, recorded.toLocalDate())
-    val date = localDate ?: if (unsupportedDate) null else sharedDate(text.substring(0, context?.first ?: source.start), recorded.toLocalDate())
+    val date = localDate ?: if (unsupportedDate) null else sharedDate(before, recorded.toLocalDate())
     val clock = statedTime(phrase)
     val allDay = Regex("\\ball[ -]day\\b").containsMatchIn(phrase)
     if (date == null && clock == null && !allDay) return Due(item.dueAt, item.hasTime, item.hasDate)

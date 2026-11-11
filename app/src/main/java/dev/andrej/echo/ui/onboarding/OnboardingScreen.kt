@@ -9,6 +9,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -204,7 +206,8 @@ private const val STEP_COUNT = 5
 
 /**
  * The numbered steps' shared frame: back arrow, progress segments, optional Skip, a scrolling
- * body (large font scales must not push content off screen), and actions pinned below it.
+ * body (large font scales must not push content off screen) at least as tall as the space, and
+ * actions pinned below it.
  */
 @Composable
 private fun StepFrame(
@@ -248,11 +251,16 @@ private fun StepFrame(
                 Spacer(modifier = Modifier.size(width = 54.dp, height = 34.dp))
             }
         }
-        Column(
-            modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s6),
-            content = content,
-        )
+        BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .heightIn(min = maxHeight),
+                verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s6),
+                content = content,
+            )
+        }
         actions()
     }
 }

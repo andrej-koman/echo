@@ -26,11 +26,15 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.withLink
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.andrej.echo.R
@@ -160,32 +164,15 @@ internal fun ColumnScope.HowItWorksStep() {
         body = "Echo writes down what you say, then pulls out the tasks and plans inside it.",
     )
 
+    val tasks = remember { demoTasks() }
+    var done by remember { mutableStateOf(setOf<String>()) }
+    var focused by remember { mutableStateOf<String?>(null) }
+    val focus = { id: String -> focused = if (focused == id) null else id }
+
     EchoCard(tone = CardTone.Raised, padding = CardPadding.Md, modifier = Modifier.fillMaxWidth()) {
-        Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4),
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_audio_waveform),
-                    contentDescription = null,
-                    tint = EchoTheme.colors.textSecondary,
-                    modifier = Modifier.size(15.dp),
-                )
-                Text(
-                    text = "You said",
-                    style = EchoTheme.typography.caption.copy(fontWeight = FontWeight.Medium),
-                    color = EchoTheme.colors.textSecondary,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    text = "0:14",
-                    style = EchoTheme.typography.caption.copy(fontWeight = FontWeight.Medium),
-                    color = EchoTheme.colors.textSecondary,
-                )
-            }
+        Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s6)) {
+            DemoTranscript(focused = focused, onTaskClick = focus)
             Waveform(modifier = Modifier.fillMaxWidth(), bars = 36)
-            DemoTranscript()
         }
     }
 
@@ -201,23 +188,27 @@ internal fun ColumnScope.HowItWorksStep() {
             modifier = Modifier.size(15.dp),
         )
         Text(
-            text = "A moment after you stop, tasks appear",
+            text = "After a short wait, tasks appear",
             style = EchoTheme.typography.caption.copy(fontWeight = FontWeight.Medium),
             color = EchoTheme.colors.textSuccess,
         )
     }
 
     EchoCard(tone = CardTone.Paper, padding = CardPadding.Sm, modifier = Modifier.fillMaxWidth()) {
-        val tasks = remember { demoTasks() }
-        var done by remember { mutableStateOf(setOf<String>()) }
         Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s1)) {
             tasks.forEach { task ->
-                TaskRow(
-                    task = task.copy(done = task.id in done),
-                    onToggle = { done = if (task.id in done) done - task.id else done + task.id },
-                    onEdit = {},
-                    showDate = true,
-                )
+                Box(
+                    modifier = Modifier
+                        .clip(EchoTheme.radii.md)
+                        .background(if (task.id == focused) EchoTheme.colors.taskHighlight else Color.Transparent),
+                ) {
+                    TaskRow(
+                        task = task.copy(done = task.id in done),
+                        onToggle = { done = if (task.id in done) done - task.id else done + task.id },
+                        onEdit = { focus(task.id) },
+                        showDate = true,
+                    )
+                }
             }
         }
     }
@@ -238,27 +229,38 @@ private fun demoTasks(): List<TodoItem> {
     )
 }
 
-private val DemoSegments = listOf(
-    "Remind me to " to false,
-    "call John about client project at nine tomorrow" to true,
-    ". Oh, and I need to " to false,
-    "send my notes" to true,
-    " before the " to false,
-    "FDC meeting on Friday at one" to true,
-    "." to false,
+/** Transcript segments; a non-null id links the phrase to that demo task. */
+private val DemoSegments: List<Pair<String, String?>> = listOf(
+    "Remind me to " to null,
+    "call John about client project at nine tomorrow" to "demo-1",
+    ". Oh, and I need to " to null,
+    "send my notes" to "demo-2",
+    " before the " to null,
+    "FDC meeting on Friday at one" to "demo-2",
+    "." to null,
 )
 
 @Composable
-private fun DemoTranscript() {
-    val highlight = SpanStyle(
-        color = EchoTheme.colors.textPrimary,
-        fontWeight = FontWeight.Medium,
-        background = EchoTheme.colors.transcriptHighlight,
-    )
+private fun DemoTranscript(focused: String?, onTaskClick: (String) -> Unit) {
+    val colors = EchoTheme.colors
     Text(
         text = buildAnnotatedString {
-            DemoSegments.forEach { (text, emphasis) ->
-                if (emphasis) withStyle(highlight) { append(text) } else append(text)
+            DemoSegments.forEach { (text, taskId) ->
+                if (taskId == null) {
+                    append(text)
+                } else {
+                    val style = SpanStyle(
+                        color = colors.textPrimary,
+                        fontWeight = FontWeight.Medium,
+                        background = if (taskId == focused) colors.taskHighlight else colors.transcriptHighlight,
+                    )
+                    val link = LinkAnnotation.Clickable(
+                        tag = taskId,
+                        styles = TextLinkStyles(style = style),
+                        linkInteractionListener = { onTaskClick(taskId) },
+                    )
+                    withLink(link) { append(text) }
+                }
             }
         },
         style = EchoTheme.typography.body.copy(lineHeight = 24.3.sp),
@@ -319,19 +321,38 @@ internal fun ColumnScope.PriorityStep(
         title = "What matters most?",
         body = "Echo picks the speech model that fits. You can change it any time in Settings.",
     )
-    options.forEach { option ->
-        val (title, subtitle) = when (option.priority) {
-            Priority.Faster -> "Faster results" to "Notes ready sooner, a few more mistakes"
-            Priority.Accurate -> "More accurate" to "Best text, takes longer to process"
-            Priority.HelpMeChoose -> "Help me choose" to "Echo picks for your phone"
+    EqualHeightColumn(spacing = EchoTheme.spacing.s6) {
+        options.forEach { option ->
+            val (title, subtitle) = when (option.priority) {
+                Priority.Faster -> "Faster results" to "Notes ready sooner, a few more mistakes"
+                Priority.Accurate -> "More accurate" to "Best text, takes longer to process"
+                Priority.HelpMeChoose -> "Help me choose" to "Echo picks for your phone"
+            }
+            val size = if (option.ready) "No download" else formatSize(option.speech.spec.bytes)
+            ChoiceCard(
+                title = title,
+                subtitle = "$subtitle\n${option.speech.name} · $size",
+                selected = option.priority == selected,
+                onClick = { onSelect(option.priority) },
+            )
         }
-        val size = if (option.ready) "No download" else formatSize(option.speech.spec.bytes)
-        ChoiceCard(
-            title = title,
-            subtitle = "$subtitle\n${option.speech.name} · $size",
-            selected = option.priority == selected,
-            onClick = { onSelect(option.priority) },
-        )
+    }
+}
+
+/** Stacks children at the tallest child's height, so cards with longer text don't stand out. */
+@Composable
+private fun EqualHeightColumn(spacing: Dp, content: @Composable () -> Unit) {
+    Layout(content = content, modifier = Modifier.fillMaxWidth()) { measurables, constraints ->
+        val height = measurables.maxOfOrNull { it.maxIntrinsicHeight(constraints.maxWidth) } ?: 0
+        val gap = spacing.roundToPx()
+        val placeables = measurables.map {
+            it.measure(constraints.copy(minHeight = height, maxHeight = height))
+        }
+        val total = placeables.sumOf { it.height } + gap * (placeables.size - 1).coerceAtLeast(0)
+        layout(constraints.maxWidth, total) {
+            var y = 0
+            placeables.forEach { it.placeRelative(0, y); y += it.height + gap }
+        }
     }
 }
 
@@ -455,9 +476,9 @@ internal fun ColumnScope.FirstNoteStep(
     DownloadStatus(status, onRetry)
 
     Column(
-        modifier = Modifier.fillMaxWidth().padding(vertical = EchoTheme.spacing.s6),
+        modifier = Modifier.fillMaxWidth().weight(1f),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(22.dp),
+        verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s5, Alignment.CenterVertically),
     ) {
         RecordButton(state = RecordButtonState.Idle, onClick = onRecord, size = RecordButtonSize.Lg)
         Text(
@@ -475,7 +496,7 @@ internal fun ColumnScope.FirstNoteStep(
         }
     }
 
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(EchoTheme.spacing.s4)) {
         Text(
             text = "Try saying",
             style = EchoTheme.typography.microCaps.copy(fontWeight = FontWeight.Medium),
@@ -573,13 +594,15 @@ private fun ChoiceCard(title: String, subtitle: String, selected: Boolean, onCli
                 )
                 Text(text = subtitle, style = EchoTheme.typography.bodySm, color = EchoTheme.colors.textSecondary)
             }
-            if (selected) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_check),
-                    contentDescription = "Selected",
-                    tint = EchoTheme.colors.textAccent,
-                    modifier = Modifier.size(18.dp),
-                )
+            Box(modifier = Modifier.size(18.dp)) {
+                if (selected) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_check),
+                        contentDescription = "Selected",
+                        tint = EchoTheme.colors.textAccent,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
             }
         }
     }

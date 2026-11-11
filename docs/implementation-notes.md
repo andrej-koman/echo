@@ -827,7 +827,9 @@ Six screens (`ui/onboarding/`): Welcome, How it works, What will you record? (+ 
 matters most?, Your setup (downloads), First note. Progress shows five segments after Welcome. One
 composable switches on `OnboardingStep` — no NavHost, hard cuts like the rest of the app; the back
 arrow and system back step back (choices live in `OnboardingViewModel`, so they survive), and
-system back leaves the app on Welcome. Body content scrolls; actions stay pinned below it.
+system back leaves the app on Welcome. Body content scrolls but is at least the viewport's
+height, so First note centres the record button in spare space and fits on one page on normal
+phones; actions stay pinned below it.
 
 - **Gate:** `AppContainer.onboardingDone` = `SettingsStore.onboardingDone`, or any transcript
   already on disk — an install that predates onboarding goes straight to Notes.
@@ -858,7 +860,11 @@ system back leaves the app on Welcome. Body content scrolls; actions stay pinned
   first remain. Import audio → finish, then `MainApp` opens the import picker through
   `pendingOpenImport` in `EchoApp`.
 - How it works' demo rows are real `TaskRow`s over in-memory `TodoItem`s (never stored), with
-  dates relative to now.
+  dates relative to now. Tapping a highlighted phrase (or a row) focuses that task with
+  `taskHighlight`, like note detail; rows sit in a clipped box so the press ripple and highlight
+  follow the rounded corners. Copy says tasks appear "after a short wait", since analysis is not instant.
+- Priority cards share one height (`EqualHeightColumn`), and `ChoiceCard` always reserves the
+  check slot, so selecting never re-wraps text.
 - Button labels follow the design system's bumped scale: Sm/Md/Lg = 14/15/17sp semibold (was
   13/14/15 medium). The same update made the record glyph (`recordGlyph`, mic and stop on the
   record gradients) dark ink instead of white, darkened `textTertiary`/`waveformIdle`/
